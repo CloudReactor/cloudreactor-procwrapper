@@ -93,6 +93,9 @@ DEFAULT_TRANSFORM_SEPARATOR = '|'
 
 AWS_ECS_METADATA_TIMEOUT_SECONDS = 60
 
+_logger = logging.getLogger(__name__)
+_logger.addHandler(logging.NullHandler())
+
 caught_sigterm = False
 
 
@@ -108,10 +111,12 @@ def _signal_handler(signum, frame):
     # This will cause the exit handler to be executed, if it is registered.
     raise RuntimeError('Caught SIGTERM, exiting.')
 
+
 # From glglgl on
 # https://stackoverflow.com/questions/4978738/is-there-a-python-equivalent-of-the-c-sharp-null-coalescing-operator
 def _coalesce(*arg):
     return next((a for a in arg if a is not None), None)
+
 
 def _string_to_bool(s: Optional[str],
         default_value: Optional[bool] = None) -> Optional[bool]:
@@ -144,7 +149,8 @@ def _string_to_int(s: Optional[Any],
         return x
 
 
-def _encode_int(x: Optional[int], empty_value: Optional[int]=None) -> Optional[int]:
+def _encode_int(x: Optional[int], empty_value: Optional[int] = None) -> \
+        Optional[int]:
     if x is None:
         return empty_value
     else:
@@ -170,6 +176,7 @@ class CachedEnvValueEntry(NamedTuple):
 
         return (time.time() - self.fetched_at) > ttl_seconds
 
+
 class RuntimeMetadata(NamedTuple):
     execution_method: Dict[str, Any]
     raw: Dict[str, Any]
@@ -187,9 +194,9 @@ class ProcWrapper:
     STATUS_EXITED_AFTER_MARKED_DONE = 'EXITED_AFTER_MARKED_DONE'
     STATUS_ABORTED = 'ABORTED'
 
-    _ALLOWED_FINAL_STATUSES =  set([
-      STATUS_SUCCEEDED, STATUS_FAILED, STATUS_TERMINATED_AFTER_TIME_OUT,
-      STATUS_EXITED_AFTER_MARKED_DONE, STATUS_ABORTED
+    _ALLOWED_FINAL_STATUSES = set([
+        STATUS_SUCCEEDED, STATUS_FAILED, STATUS_TERMINATED_AFTER_TIME_OUT,
+        STATUS_EXITED_AFTER_MARKED_DONE, STATUS_ABORTED
     ])
 
     _EXIT_CODE_SUCCESS = 0
@@ -229,7 +236,7 @@ class ProcWrapper:
         parser.add_argument('--api-retries',
                 help=f"Number of retries per API request. Defaults to {DEFAULT_API_RETRIES}.")
         parser.add_argument('--api-retries-for-final-update',
-                help=f"Number of retries for final process status update. -1 (the default) means to keep trying indefinitely.")
+                help='Number of retries for final process status update. -1 (the default) means to keep trying indefinitely.')
         parser.add_argument('--api-task-execution-creation-conflict-timeout',
                 help=f"Number of seconds to keep retrying Task Execution creation after conflict is detected. -1 means to keep trying indefinitely. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS} for concurrency limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS} otherwise.")
         parser.add_argument('--api-task-execution-creation-conflict-retry-delay',
@@ -271,7 +278,7 @@ class ProcWrapper:
         parser.add_argument('--status-update-message-max-bytes',
                 help=f"The maximum number of bytes status update messages can be. Defaults to {DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES}")
         parser.add_argument('--status-update-interval',
-                help=f"Minimum of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.")
+                help='Minimum of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.')
         parser.add_argument('--send-pid', action='store_true', help='Send the process ID to the API server')
         parser.add_argument('--send-hostname', action='store_true', help='Send the hostname to the API server')
         parser.add_argument('--send-aws-metadata', action='store_true', help='Send metadata from AWS about the runtime environment')
@@ -294,9 +301,6 @@ class ProcWrapper:
 
     def __init__(self, args=None, embedded_mode=True,
             env_override: Optional[Dict[str, Any]] = None) -> None:
-        self._logger = logging.getLogger(__name__)
-        self._logger.addHandler(logging.NullHandler())
-
         if env_override:
             self.env = env_override
         else:
@@ -435,7 +439,7 @@ class ProcWrapper:
                         or args.task_name
 
                 if (not self.task_uuid) and (not self.task_name):
-                    self._logger.critical("No Task UUID or name specified, exiting.")
+                    _logger.critical("No Task UUID or name specified, exiting.")
                     return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
             self.task_version_number = resolved_env.get('PROC_WRAPPER_TASK_VERSION_NUMBER') \
@@ -455,7 +459,7 @@ class ProcWrapper:
 
         if not self.offline_mode:
             if not self.api_key:
-                self._logger.critical('No API key specified, exiting.')
+                _logger.critical('No API key specified, exiting.')
                 return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
             self.api_retries = cast(int, _string_to_int(
@@ -494,8 +498,8 @@ class ProcWrapper:
             self.api_task_execution_creation_conflict_timeout = _string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_TASK_CREATION_CONFLICT_TIMEOUT_SECONDS'),
                     default_value=_coalesce(
-                    args.api_task_execution_creation_conflict_timeout,
-                    default_task_execution_creation_conflict_timeout))
+                            args.api_task_execution_creation_conflict_timeout,
+                            default_task_execution_creation_conflict_timeout))
 
             self.api_task_execution_creation_conflict_retry_delay = _string_to_int(
                     resolved_env.get('PROC_WRAPPER_api_task_execution_creation_conflict_retry_delay_SECONDS'),
@@ -513,8 +517,8 @@ class ProcWrapper:
         if other_instance_metadata_str:
             try:
                 self.other_instance_metadata = json.loads(other_instance_metadata_str)
-            except:
-                self._logger.exception(f"Failed to parse instance metadata: '{other_instance_metadata_str}'")
+            except Exception:
+                _logger.exception(f"Failed to parse instance metadata: '{other_instance_metadata_str}'")
 
         self.in_pytest = _string_to_bool(os.environ.get('IN_PYTEST')) or False
 
@@ -545,12 +549,12 @@ class ProcWrapper:
         if self.task_is_service:
             if (args.process_timeout is not None) \
                     and ((_string_to_int(args.process_timeout) or 0) > 0):
-                self._logger.warning(
+                _logger.warning(
                         'Ignoring argument --process-timeout since Task is a service')
 
             if env_process_timeout_seconds \
                     and ((_string_to_int(env_process_timeout_seconds) or 0) > 0):
-                self._logger.warning(
+                _logger.warning(
                         'Ignoring environment variable PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS since Task is a service')
         else:
             self.process_timeout = _string_to_int(
@@ -562,7 +566,7 @@ class ProcWrapper:
                 default_value=args.prevent_offline_execution) or False
 
         if self.offline_mode and self.prevent_offline_execution:
-            self._logger.critical('Offline mode and offline execution prevention cannot both be enabled.')
+            _logger.critical('Offline mode and offline execution prevention cannot both be enabled.')
             return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
         self.process_max_retries = _string_to_int(
@@ -617,12 +621,12 @@ class ProcWrapper:
                     negative_value=-1))
 
             if self.process_check_interval <= 0:
-                self._logger.critical(f"Process check interval {self.process_check_interval} must be positive.")
+                _logger.critical(f"Process check interval {self.process_check_interval} must be positive.")
                 return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
             # TODO: allow command override if API key has developer permission
             if not args.command:
-                self._logger.critical('Command expected in wrapped mode, but not found')
+                _logger.critical('Command expected in wrapped mode, but not found')
                 return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
             self.command = args.command
@@ -652,64 +656,64 @@ class ProcWrapper:
         self.log_configuration()
 
     def log_configuration(self):
-        self._logger.info(f"Task Execution UUID = {self.task_execution_uuid}")
-        self._logger.info(f"Task UUID = {self.task_uuid}")
-        self._logger.info(f"Task name = {self.task_name}")
-        self._logger.info(f"Deployment = '{self.deployment}'")
+        _logger.info(f"Task Execution UUID = {self.task_execution_uuid}")
+        _logger.info(f"Task UUID = {self.task_uuid}")
+        _logger.info(f"Task name = {self.task_name}")
+        _logger.info(f"Deployment = '{self.deployment}'")
 
-        self._logger.info(f"Task version number = {self.task_version_number}")
-        self._logger.info(f"Task version text = {self.task_version_text}")
-        self._logger.info(f"Task version signature = {self.task_version_signature}")
-        self._logger.info(f"Task instance metadata = {self.other_instance_metadata}")
-        self._logger.debug(f"Wrapper version = {ProcWrapper.VERSION}")
-        self._logger.debug(f"Task is a service = {self.task_is_service}")
-        self._logger.debug(f"Max concurrency = {self.max_concurrency}")
-        self._logger.debug(f"Offline mode = {self.offline_mode}")
-        self._logger.debug(f"Prevent offline execution = {self.prevent_offline_execution}")
-        self._logger.debug(f"Process retries = {self.process_max_retries}")
-        self._logger.debug(f"Process retry delay = {self.process_retry_delay}")
-        self._logger.debug(f"Process check interval = {self.process_check_interval}")
+        _logger.info(f"Task version number = {self.task_version_number}")
+        _logger.info(f"Task version text = {self.task_version_text}")
+        _logger.info(f"Task version signature = {self.task_version_signature}")
+        _logger.info(f"Task instance metadata = {self.other_instance_metadata}")
+        _logger.debug(f"Wrapper version = {ProcWrapper.VERSION}")
+        _logger.debug(f"Task is a service = {self.task_is_service}")
+        _logger.debug(f"Max concurrency = {self.max_concurrency}")
+        _logger.debug(f"Offline mode = {self.offline_mode}")
+        _logger.debug(f"Prevent offline execution = {self.prevent_offline_execution}")
+        _logger.debug(f"Process retries = {self.process_max_retries}")
+        _logger.debug(f"Process retry delay = {self.process_retry_delay}")
+        _logger.debug(f"Process check interval = {self.process_check_interval}")
 
-        self._logger.debug(f"Maximum age of conflicting processes in seconds = {self.max_conflicting_age_seconds}")
+        _logger.debug(f"Maximum age of conflicting processes in seconds = {self.max_conflicting_age_seconds}")
 
         if not self.offline_mode:
-            self._logger.debug(f"API base URL = '{self.api_base_url}'")
+            _logger.debug(f"API base URL = '{self.api_base_url}'")
 
             if self.log_secrets:
-                self._logger.debug(f"API key = '{self.api_key}'")
+                _logger.debug(f"API key = '{self.api_key}'")
 
-            self._logger.debug(f"API heartbeat interval in seconds = {self.api_heartbeat_interval}")
-            self._logger.debug(f"API timeout = {self.api_timeout}")
-            self._logger.debug(f"API retries = {self.api_retries}")
-            self._logger.debug(f"API retries for final update = {self.api_retries_for_final_update}")
-            self._logger.debug(f"API retry delay in seconds = {self.api_retry_delay}")
-            self._logger.debug(f"API Task Execution creation conflict timeout in seconds = {self.api_task_execution_creation_conflict_timeout}")
-            self._logger.debug(f"API Task Execution creation conflict retry delay in seconds = {self.api_task_execution_creation_conflict_retry_delay}")
+            _logger.debug(f"API heartbeat interval in seconds = {self.api_heartbeat_interval}")
+            _logger.debug(f"API timeout = {self.api_timeout}")
+            _logger.debug(f"API retries = {self.api_retries}")
+            _logger.debug(f"API retries for final update = {self.api_retries_for_final_update}")
+            _logger.debug(f"API retry delay in seconds = {self.api_retry_delay}")
+            _logger.debug(f"API Task Execution creation conflict timeout in seconds = {self.api_task_execution_creation_conflict_timeout}")
+            _logger.debug(f"API Task Execution creation conflict retry delay in seconds = {self.api_task_execution_creation_conflict_retry_delay}")
 
         if self.log_secrets:
-            self._logger.debug(f"Rollbar API key = '{self.rollbar_access_token}'")
+            _logger.debug(f"Rollbar API key = '{self.rollbar_access_token}'")
 
         if self.rollbar_access_token:
-            self._logger.debug(f"Rollbar timeout in seconds = {self.rollbar_timeout}")
-            self._logger.debug(f"Rollbar retries = {self.rollbar_retries}")
-            self._logger.debug(f"Rollbar retry delay in seconds = {self.rollbar_retry_delay}")
+            _logger.debug(f"Rollbar timeout in seconds = {self.rollbar_timeout}")
+            _logger.debug(f"Rollbar retries = {self.rollbar_retries}")
+            _logger.debug(f"Rollbar retry delay in seconds = {self.rollbar_retry_delay}")
         else:
-            self._logger.debug('Rollbar is disabled')
+            _logger.debug('Rollbar is disabled')
 
         if not self._embedded_mode:
-            self._logger.info(f"Command = {self.command}")
-            self._logger.info(f"Work dir = '{self.working_dir}'")
+            _logger.info(f"Command = {self.command}")
+            _logger.info(f"Work dir = '{self.working_dir}'")
 
             enable_status_update_listener = (self.status_update_socket_port is not None)
-            self._logger.debug(f"Enable status listener = {enable_status_update_listener}")
+            _logger.debug(f"Enable status listener = {enable_status_update_listener}")
 
             if enable_status_update_listener:
-                self._logger.debug(f"Status socket port = {self.status_update_socket_port}")
-                self._logger.debug(f"Status update message max bytes = {self.status_update_message_max_bytes}")
+                _logger.debug(f"Status socket port = {self.status_update_socket_port}")
+                _logger.debug(f"Status update message max bytes = {self.status_update_message_max_bytes}")
 
-        self._logger.debug(f"Status update interval = {self.status_update_interval}")
+        _logger.debug(f"Status update interval = {self.status_update_interval}")
 
-        self._logger.debug(f"Resolved environment variable TTL = {self.resolved_env_ttl}")
+        _logger.debug(f"Resolved environment variable TTL = {self.resolved_env_ttl}")
 
     def resolve_env(self) -> Tuple[Dict[str, str], List[str]]:
         """
@@ -724,7 +728,7 @@ class ProcWrapper:
                 DEFAULT_RESOLVABLE_ENV_VAR_PREFIX)
         prefix_length = len(prefix)
 
-        suffix =_coalesce(self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_SUFFIX'),
+        suffix = _coalesce(self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_SUFFIX'),
                 DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX)
         suffix_length = len(suffix)
 
@@ -741,14 +745,14 @@ class ProcWrapper:
                         pass
                     elif (not self.overwrite_env_during_secret_resolution) \
                             and (env_name in self.env):
-                        self._logger.info(f"Skipping overwriting of environment variable '{key}'")
+                        _logger.info(f"Skipping overwriting of environment variable '{key}'")
                     else:
                         resolved[env_name] = env_value
                 except Exception:
                     msg = f"Failed to resolve environment variable '{env_name}'"
                     if self.log_secrets:
                         msg += f" which had value '{value}'"
-                    self._logger.exception(msg)
+                    _logger.exception(msg)
                     failed_env_names.append(env_name)
             else:
                 resolved[name] = value
@@ -778,13 +782,13 @@ class ProcWrapper:
                 DEFAULT_TRANSFORM_SEPARATOR)
         separator_index = value.find(transform_separator)
         if (separator_index > 0) and (separator_index < len(value) - 2):
-            transform_expr_str = value_to_lookup[separator_index+1:]
+            transform_expr_str = value_to_lookup[(separator_index + 1):]
 
             if transform_expr_str.startswith(JSON_PATH_TRANSFORM_PREFIX):
                 try:
-                    import jsonpath_ng # type: ignore
+                    import jsonpath_ng  # type: ignore
                 except ImportError as import_error:
-                    self._logger.exception('jsonpath_ng is not available to import, please include your python environment')
+                    _logger.exception('jsonpath_ng is not available to import, please include your python environment')
                     raise import_error
 
                 jsonpath_expr_str = transform_expr_str[len(JSON_PATH_TRANSFORM_PREFIX):]
@@ -796,7 +800,7 @@ class ProcWrapper:
                 try:
                     jsonpath_expr = jsonpath_ng.parse(jsonpath_expr_str)
                 except Exception as ex:
-                    self._logger.exception(f"Could not parse '{jsonpath_expr_str}' as a JSON Path expression")
+                    _logger.exception(f"Could not parse '{jsonpath_expr_str}' as a JSON Path expression")
                     raise ex
 
                 value_to_lookup = value_to_lookup[0:separator_index]
@@ -834,7 +838,7 @@ class ProcWrapper:
         try:
             parsed_entry = cached_env_value_entry.parsed()
         except Exception as ex:
-            self._logger.exception(f"Error parsing value for key '{value_to_lookup}' for JSON path lookup")
+            _logger.exception(f"Error parsing value for key '{value_to_lookup}' for JSON path lookup")
             raise ex
 
         # Save the parsed value so we don't have to reparse.
@@ -853,7 +857,7 @@ class ProcWrapper:
         results_len = len(results)
 
         if results_len == 0:
-            self._logger.warning(f"Got no results for environment variable '{env_name}' with JSON path '{path_expr}'")
+            _logger.warning(f"Got no results for environment variable '{env_name}' with JSON path '{path_expr}'")
             if should_splat:
                 return '[]'
 
@@ -875,7 +879,6 @@ class ProcWrapper:
         # TODO: implement a way to output comma-separated values
         return json.dumps([r.value for r in results])
 
-
     def get_or_create_aws_secrets_manager_client(self):
         if not self.aws_secrets_manager_client:
             if self.aws_secrets_manager_client_create_attempted_at:
@@ -886,7 +889,7 @@ class ProcWrapper:
             try:
                 import boto3
             except ImportError as import_error:
-                self._logger.exception('boto3 is not available to import, please include your python environment')
+                _logger.exception('boto3 is not available to import, please include your python environment')
                 raise import_error
 
             region_name = self.env.get('PROC_WRAPPER_SECRETS_AWS_REGION') or \
@@ -911,7 +914,7 @@ class ProcWrapper:
         if client is None:
             raise RuntimeError("Can't create AWS Secrets Manager client")
 
-        self._logger.info(f"Looking up Secrets Manager secret '{value}'")
+        _logger.info(f"Looking up Secrets Manager secret '{value}'")
         response = client.get_secret_value(SecretId=value)
 
         # Binary secrets are left Base-64 encoded
@@ -925,7 +928,7 @@ class ProcWrapper:
         self.fetched_runtime_metadata_at = time.time()
 
         if self.env.get('ECS_CONTAINER_METADATA_URI_V4') \
-            or self.env.get('ECS_CONTAINER_METADATA_URI'):
+                or self.env.get('ECS_CONTAINER_METADATA_URI'):
             self.runtime_metadata = self.fetch_ecs_container_metadata()
 
         return self.runtime_metadata
@@ -947,9 +950,9 @@ class ProcWrapper:
                 return self.convert_ecs_metadata(parsed_metadata)
             except HTTPError as http_error:
                 status_code = http_error.code
-                self._logger.warning(f'Unable to fetch ECS task metadata endpoint. Response code = {status_code}.')
+                _logger.warning(f'Unable to fetch ECS task metadata endpoint. Response code = {status_code}.')
             except Exception:
-                self._logger.exception('Unable to fetch ECS task metadata endpoint or convert metadata.')
+                _logger.exception('Unable to fetch ECS task metadata endpoint or convert metadata.')
 
         return None
 
@@ -967,7 +970,6 @@ class ProcWrapper:
             execution_method['allocated_cpu_units'] = limits.get('CPU')
             execution_method['allocated_memory_mb'] = limits.get('Memory')
 
-
         # Only available for Fargate platform 1.4+
         az = metadata.get('AvailibilityZone')
 
@@ -978,14 +980,14 @@ class ProcWrapper:
             region = self.compute_region_from_ecs_cluster_arn(cluster_arn)
 
         aws_props = {
-          'network': {
-              'availability_zone': az,
-              'region': region,
-          },
+            'network': {
+                'availability_zone': az,
+                'region': region,
+            },
         }
 
         derived = {
-          'aws': aws_props
+            'aws': aws_props
         }
 
         return RuntimeMetadata(execution_method=execution_method,
@@ -999,7 +1001,7 @@ class ProcWrapper:
             parts = cluster_arn.split(':')
             return parts[3]
 
-        self._logger.warning(f"Can't determine AWS region from cluster ARN '{cluster_arn}'")
+        _logger.warning(f"Can't determine AWS region from cluster ARN '{cluster_arn}'")
         return None
 
     @property
@@ -1022,9 +1024,9 @@ class ProcWrapper:
         if self.send_hostname:
             try:
                 self.hostname = socket.gethostname()
-                self._logger.debug(f"Hostname = '{self.hostname}'")
-            except:
-                self._logger.warning("Can't get hostname", exc_info=True)
+                _logger.debug(f"Hostname = '{self.hostname}'")
+            except Exception:
+                _logger.warning("Can't get hostname", exc_info=True)
 
         if self.send_runtime_metadata:
             self.fetch_runtime_metadata()
@@ -1050,7 +1052,7 @@ class ProcWrapper:
                 'max_conflicting_age_seconds': self.max_conflicting_age_seconds,
                 'prevent_offline_execution': str(self.prevent_offline_execution).upper(),
                 'process_termination_grace_period_seconds': self.process_termination_grace_period_seconds,
-                'wrapper_log_level': logging.getLevelName(self._logger.getEffectiveLevel()),
+                'wrapper_log_level': logging.getLevelName(_logger.getEffectiveLevel()),
                 'wrapper_version': ProcWrapper.VERSION,
                 'schedule': self.schedule,
                 'api_timeout_seconds': _encode_int(self.api_timeout, empty_value=-1),
@@ -1110,10 +1112,10 @@ class ProcWrapper:
             f = self._send_api_request(req,
                     is_task_execution_creation_request=True)
             if f is None:
-                self._logger.warning('Task Execution creation request failed non-fatally')
+                _logger.warning('Task Execution creation request failed non-fatally')
             else:
                 with f:
-                    self._logger.info("Task Execution creation request was successful.")
+                    _logger.info("Task Execution creation request was successful.")
 
                     fd = f.read()
 
@@ -1121,18 +1123,18 @@ class ProcWrapper:
                         raise RuntimeError('Unexpected None result of reading Task Execution creation response')
 
                     response_body = fd.decode('utf-8')
-                    self._logger.debug(f"Got creation response '{response_body}'")
+                    _logger.debug(f"Got creation response '{response_body}'")
 
                     response_dict = json.loads(response_body)
 
                     if not self.task_execution_uuid:
                         self.task_execution_uuid = response_dict.get('uuid')
         except Exception as ex:
-            self._logger.exception('request_process_start_if_max_concurrency_ok() failed with exception')
+            _logger.exception('request_process_start_if_max_concurrency_ok() failed with exception')
             if self.prevent_offline_execution:
                 raise ex
             else:
-                self._logger.info('Not preventing offline execution, so continuing')
+                _logger.info('Not preventing offline execution, so continuing')
 
     def update_status(self, failed_attempts=None, timed_out_attempts=None,
             pid=None, success_count=None, error_count=None,
@@ -1167,8 +1169,8 @@ class ProcWrapper:
         should_send = self.is_status_update_due()
 
         # These are important updates that should be sent no matter what.
-        if not ((failed_attempts is None) and (timed_out_attempts is None) and \
-            (pid is None)) and (last_status_message is None):
+        if not ((failed_attempts is None) and (timed_out_attempts is None)
+                and (pid is None)) and (last_status_message is None):
             should_send = True
 
         if should_send:
@@ -1206,9 +1208,8 @@ class ProcWrapper:
             raise RuntimeError("managed_call() argument is not callable")
 
         if self.failed_env_names:
-            self._logger.critical(f'Failed to resolve one or more environment variables: {self.failed_env_names}')
+            _logger.critical(f'Failed to resolve one or more environment variables: {self.failed_env_names}')
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-
 
         self.request_process_start_if_max_concurrency_ok()
 
@@ -1221,7 +1222,7 @@ class ProcWrapper:
         while self.attempt_count < self.max_execution_attempts:
             self.attempt_count += 1
 
-            self._logger.info(f"Calling managed function (attempt {self.attempt_count}/{self.max_execution_attempts}) ...")
+            _logger.info(f"Calling managed function (attempt {self.attempt_count}/{self.max_execution_attempts}) ...")
 
             try:
                 rv = fun(self, data)
@@ -1229,16 +1230,16 @@ class ProcWrapper:
             except Exception as ex:
                 saved_ex = ex
                 self.failed_count += 1
-                self._logger.exception('Managed function failed')
+                _logger.exception('Managed function failed')
 
                 if self.attempt_count < self.max_execution_attempts:
 
                     self.send_update(failed_attempts=self.failed_count)
 
                     if self.process_retry_delay:
-                        self._logger.debug('Sleeping after managed function failed ...')
+                        _logger.debug('Sleeping after managed function failed ...')
                         time.sleep(self.process_retry_delay)
-                        self._logger.debug('Done sleeping after managed function failed.')
+                        _logger.debug('Done sleeping after managed function failed.')
 
             if success:
                 self.send_completion(status=ProcWrapper.STATUS_SUCCEEDED,
@@ -1258,25 +1259,25 @@ class ProcWrapper:
         self._ensure_non_embedded_mode()
 
         if self.command is None:
-            self._logger.critical('Command is required to run in wrapped mode.')
+            _logger.critical('Command is required to run in wrapped mode.')
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
             return
 
         if self.failed_env_names:
-            self._logger.critical(f'Failed to resolve one or more environment variables: {self.failed_env_names}')
+            _logger.critical(f'Failed to resolve one or more environment variables: {self.failed_env_names}')
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
             return
 
         if self.offline_mode:
-            self._logger.info('Starting in offline mode ...')
+            _logger.info('Starting in offline mode ...')
         else:
             self.request_process_start_if_max_concurrency_ok()
-            self._logger.info(f"Created Task Execution {self.task_execution_uuid}, starting now.")
+            _logger.info(f"Created Task Execution {self.task_execution_uuid}, starting now.")
 
         process_env = self.make_process_env()
 
         if self.log_secrets:
-            self._logger.debug(f"Process environment = {process_env}")
+            _logger.debug(f"Process environment = {process_env}")
 
         self.attempt_count = 0
         self.timeout_count = 0
@@ -1287,7 +1288,7 @@ class ProcWrapper:
             self.attempt_count += 1
             self.timed_out = False
 
-            self._logger.info(f"Running process (attempt {self.attempt_count}/{self.max_execution_attempts}) ...")
+            _logger.info(f"Running process (attempt {self.attempt_count}/{self.max_execution_attempts}) ...")
 
             current_time = time.time()
 
@@ -1303,10 +1304,10 @@ class ProcWrapper:
             if self.process_check_interval:
                 next_process_check_time = current_time + self.process_check_interval
 
-            self._logger.debug(f"command = {self.command}, cwd={self.working_dir}")
+            _logger.debug(f"command = {self.command}, cwd={self.working_dir}")
 
             if self.log_secrets:
-                self._logger.debug(f"process_env={process_env}")
+                _logger.debug(f"process_env={process_env}")
 
             # Set the session ID so we can kill the process as a group, so we kill
             # all subprocesses. See https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true
@@ -1316,7 +1317,7 @@ class ProcWrapper:
                     preexec_fn=os.setsid)
 
             pid = self.process.pid
-            self._logger.info(f"pid = {pid}")
+            _logger.info(f"pid = {pid}")
 
             if pid and self.send_pid:
                 self.send_update(pid=pid)
@@ -1340,7 +1341,7 @@ class ProcWrapper:
                             self.send_update(failed_attempts=self.failed_count,
                                               timed_out_attempts=self.timeout_count)
 
-                        self._logger.warning(f"Process timed out after {self.process_timeout} seconds, sending SIGTERM ...")
+                        _logger.warning(f"Process timed out after {self.process_timeout} seconds, sending SIGTERM ...")
                         self._terminate_or_kill_process()
                     else:
                         if (self.process_check_interval is not None) \
@@ -1362,16 +1363,16 @@ class ProcWrapper:
                         sleep_duration = sleep_until - current_time
 
                         if sleep_duration > 0:
-                            self._logger.debug(f'Waiting {sleep_duration} seconds while process is running ...')
+                            _logger.debug(f'Waiting {sleep_duration} seconds while process is running ...')
                             try:
                                 self.process.wait(sleep_duration)
                             except TimeoutExpired:
-                                self._logger.debug('Process wait time expired')
+                                _logger.debug('Process wait time expired')
 
-                            self._logger.debug('Done waiting while process is running.')
+                            _logger.debug('Done waiting while process is running.')
 
                 else:
-                    self._logger.info(f"Process exited with exit code {exit_code}")
+                    _logger.info(f"Process exited with exit code {exit_code}")
 
                     done_polling = True
 
@@ -1389,9 +1390,9 @@ class ProcWrapper:
                             exit_code=exit_code)
 
                     if self.process_retry_delay:
-                        self._logger.debug(f'Sleeping {self.process_retry_delay} seconds after process failed ...')
+                        _logger.debug(f'Sleeping {self.process_retry_delay} seconds after process failed ...')
                         time.sleep(self.process_retry_delay)
-                        self._logger.debug('Done sleeping after process failed.')
+                        _logger.debug('Done sleeping after process failed.')
 
                     if self.resolved_env_ttl is not None:
                         self.resolved_env, self.failed_env_names = self.resolve_env()
@@ -1410,7 +1411,7 @@ class ProcWrapper:
         # Exit handler will send update to API server
 
     def _handle_exit(self):
-        self._logger.debug(f"Exit handler, Task Execution UUID = {self.task_execution_uuid}")
+        _logger.debug(f"Exit handler, Task Execution UUID = {self.task_execution_uuid}")
 
         if self.called_exit:
             return
@@ -1439,12 +1440,12 @@ class ProcWrapper:
                 if exit_code == 0:
                     status = self.STATUS_SUCCEEDED
         except Exception:
-            self._logger.exception('Exception in process termination')
+            _logger.exception('Exception in process termination')
         finally:
             try:
                 if self.task_execution_uuid:
                     if self.was_conflict:
-                        self._logger.debug('Process update conflict detected, not notifying because server-side should have notified already.')
+                        _logger.debug('Process update conflict detected, not notifying because server-side should have notified already.')
                         notification_required = False
                         status = self.STATUS_ABORTED
 
@@ -1455,7 +1456,7 @@ class ProcWrapper:
                                              exit_code=exit_code, pid=pid)
                         notification_required = False
             except Exception:
-                self._logger.exception('Exception in final update')
+                _logger.exception('Exception in final update')
             finally:
                 self._close_status_socket()
 
@@ -1470,37 +1471,37 @@ class ProcWrapper:
 
                 self._send_rollbar_error(error_message, self.last_api_request_data)
             else:
-                self._logger.info("Can't notify any valid sink!")
+                _logger.info("Can't notify any valid sink!")
 
     def _terminate_or_kill_process(self):
         self._ensure_non_embedded_mode()
 
         if (not self.process) or (not self.process.pid):
-            self._logger.info('No process found, not terminating')
+            _logger.info('No process found, not terminating')
             return None
 
         pid = self.process.pid
 
         exit_code = self.process.poll()
         if exit_code is not None:
-            self._logger.info(f"Process {pid} already exited with code {exit_code}, not terminating")
+            _logger.info(f"Process {pid} already exited with code {exit_code}, not terminating")
             return exit_code
 
-        self._logger.warning(f"Sending SIGTERM ...")
+        _logger.warning('Sending SIGTERM ...')
 
         os.killpg(os.getpgid(pid), signal.SIGTERM)
 
         try:
             self.process.communicate(timeout=self.process_termination_grace_period_seconds)
 
-            self._logger.info("Process terminated successfully after SIGTERM.")
+            _logger.info("Process terminated successfully after SIGTERM.")
         except TimeoutExpired:
-            self._logger.info("Timeout after SIGTERM expired, killing with SIGKILL ...")
+            _logger.info("Timeout after SIGTERM expired, killing with SIGKILL ...")
             try:
                 os.killpg(os.getpgid(pid), signal.SIGKILL)
                 self.process.communicate()
             except Exception:
-                self._logger.exception(f"Could not kill process with pid {pid}")
+                _logger.exception(f"Could not kill process with pid {pid}")
 
         self.process = None
         return None
@@ -1511,19 +1512,19 @@ class ProcWrapper:
 
     def _open_status_socket(self) -> Optional[socket.socket]:
         if self.offline_mode or (self.status_update_socket_port is None):
-            self._logger.info('Not opening status socket.')
+            _logger.info('Not opening status socket.')
             return None
 
         try:
-            self._logger.info('Opening status update socket ...')
+            _logger.info('Opening status update socket ...')
             self._status_socket = socket.socket(socket.AF_INET,
                     socket.SOCK_DGRAM)
             self._status_socket.bind(('127.0.0.1', self.status_update_socket_port))
             self._status_socket.setblocking(False)
-            self._logger.info('Successfully created status update socket')
+            _logger.info('Successfully created status update socket')
             return self._status_socket
         except Exception:
-            self._logger.exception("Can't create status update socket")
+            _logger.exception("Can't create status update socket")
             self._close_status_socket()
             return None
 
@@ -1551,7 +1552,7 @@ class ProcWrapper:
 
                 bytes_to_copy = end_index_for_copy - start_index
                 if len(self._status_buffer) + bytes_to_copy > self.status_update_message_max_bytes:
-                    self._logger.warning(f"Discarding status message which exceeded maximum size: {self._status_buffer}")
+                    _logger.warning(f"Discarding status message which exceeded maximum size: {self._status_buffer}")
                     self._status_buffer.clear()
                 else:
                     self._status_message_so_far.extend(self._status_buffer[start_index:end_index_for_copy])
@@ -1566,7 +1567,7 @@ class ProcWrapper:
             try:
                 self._status_socket.close()
             except Exception:
-                self._logger.warning("Can't close socket")
+                _logger.warning("Can't close socket")
 
             self._status_socket = None
 
@@ -1574,7 +1575,7 @@ class ProcWrapper:
         try:
             message = self._status_message_so_far.decode('utf-8')
 
-            self._logger.debug(f"Got status message '{message}'")
+            _logger.debug(f"Got status message '{message}'")
 
             try:
                 self.status_dict.update(json.loads(message))
@@ -1582,16 +1583,16 @@ class ProcWrapper:
                 if self.is_status_update_due():
                     self.send_update()
             except json.JSONDecodeError:
-                self._logger.debug('Error decoding JSON, this can happen due to missing out of order messages')
+                _logger.debug('Error decoding JSON, this can happen due to missing out of order messages')
         except UnicodeDecodeError:
-            self._logger.debug('Error decoding message as UTF-8, this can happen due to missing out of order messages')
+            _logger.debug('Error decoding message as UTF-8, this can happen due to missing out of order messages')
         finally:
             self._status_message_so_far.clear()
 
     def is_status_update_due(self) -> bool:
-        return (self.last_update_sent_at is None) or \
-               ((self.status_update_interval is not None) and \
-                (time.time() - self.last_update_sent_at > self.status_update_interval))
+        return (self.last_update_sent_at is None) \
+                or ((self.status_update_interval is not None)
+                and (time.time() - self.last_update_sent_at > self.status_update_interval))
 
     def _make_headers(self) -> Dict[str, str]:
         headers = {
@@ -1673,15 +1674,15 @@ class ProcWrapper:
         return process_env
 
     def send_update(self, status: Optional[str] = None,
-            failed_attempts: Optional[int]=None,
-            timed_out_attempts=None,
-            exit_code: Optional[int]=None,
-            pid: Optional[int]=None) -> None:
+            failed_attempts: Optional[int] = None,
+            timed_out_attempts: Optional[int] = None,
+            exit_code: Optional[int] = None,
+            pid: Optional[int] = None) -> None:
         if self.offline_mode:
             return
 
         if not self.task_execution_uuid:
-            self._logger.debug('_send_update() skipping update since no Task Execution UUID was available')
+            _logger.debug('_send_update() skipping update since no Task Execution UUID was available')
             return
 
         if status is None:
@@ -1716,26 +1717,27 @@ class ProcWrapper:
         text_data = json.dumps(body)
         data = text_data.encode('utf-8')
 
-        self._logger.debug(f"Sending update '{text_data}' ...")
+        _logger.debug(f"Sending update '{text_data}' ...")
 
         req = Request(url, data=data, headers=headers, method='PATCH')
         f = self._send_api_request(req, api_retries=api_retries)
         if f is None:
-            self._logger.debug('Update request failed non-fatally')
+            _logger.debug('Update request failed non-fatally')
         else:
             with f:
-                self._logger.debug('Update sent successfully.')
+                _logger.debug('Update sent successfully.')
                 self.last_update_sent_at = time.time()
                 self.status_dict = {}
 
     def _send_api_request(self, req: Request, api_retries: Optional[int] = -1,
-            is_task_execution_creation_request: bool=False) -> Optional[RawIOBase]:
-        self._logger.debug(f"Sending {req.method} request to {req.full_url} ....")
+            is_task_execution_creation_request: bool = False) -> \
+            Optional[RawIOBase]:
+        _logger.debug(f"Sending {req.method} request to {req.full_url} ....")
 
         self._refresh_api_server_retries_exhausted()
 
         if self.api_server_retries_exhausted:
-            self._logger.debug('Not sending API request because all retries are exhausted')
+            _logger.debug('Not sending API request because all retries are exhausted')
             return None
 
         if api_retries == -1:
@@ -1766,7 +1768,7 @@ class ProcWrapper:
             attempt_count += 1
             retry_delay = self.api_retry_delay
 
-            self._logger.info(f"Sending API request (attempt {attempt_count}/{max_attempts}) ...")
+            _logger.info(f"Sending API request (attempt {attempt_count}/{max_attempts}) ...")
 
             try:
                 resp = urlopen(req, timeout=self.api_timeout)
@@ -1784,8 +1786,8 @@ class ProcWrapper:
 
                 try:
                     response_body = str(http_error.read())
-                except:
-                    self._logger.warning("Can't read error response body")
+                except Exception:
+                    _logger.warning("Can't read error response body")
 
                 if self.rollbar_access_token:
                     api_request_data.pop('error', None)
@@ -1798,7 +1800,7 @@ class ProcWrapper:
                     self.last_api_request_failed_at = time.time()
 
                     error_message = f"Endpoint temporarily not available, status code = {status_code}"
-                    self._logger.warning(error_message)
+                    _logger.warning(error_message)
 
                     if self.rollbar_access_token:
                         self._send_rollbar_error(error_message, api_request_data)
@@ -1806,12 +1808,12 @@ class ProcWrapper:
                     self.was_conflict = True
 
                     if is_task_execution_creation_request \
-                            and ((self.api_task_execution_creation_conflict_timeout is None) \
+                            and ((self.api_task_execution_creation_conflict_timeout is None)
                             or (time.time() - first_attempt_at > self.api_task_execution_creation_conflict_timeout)):
                         retry_delay = self.api_task_execution_creation_conflict_retry_delay
-                        self._logger.info(f"Response code = 409, will retry Task Execution creation")
+                        _logger.info('Response code = 409, will retry Task Execution creation')
                     else:
-                        self._logger.error(
+                        _logger.error(
                                 'Got response code 409 during execution and Task Execution creation timeout expired, exiting.')
                         exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code,
                                 self._EXIT_CODE_GENERIC_ERROR)
@@ -1821,19 +1823,19 @@ class ProcWrapper:
                     self.last_api_request_failed_at = time.time()
 
                     error_message = f"Got error response code = {status_code}"
-                    self._logger.error(error_message)
+                    _logger.error(error_message)
 
                     if self.rollbar_access_token:
                         self._send_rollbar_error(error_message, api_request_data)
 
                     if self.prevent_offline_execution:
-                        self._logger.critical(f"Response code = {status_code}, exiting since we are preventing offline execution.")
+                        _logger.critical(f"Response code = {status_code}, exiting since we are preventing offline execution.")
                         self.last_api_request_data = api_request_data
                         exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code, self._EXIT_CODE_GENERIC_ERROR)
                         self._exit_or_raise(exit_code)
                         return None
                     else:
-                        self._logger.warning(f"Response code = {status_code}, but continuing since we are allowing offline execution.")
+                        _logger.warning(f"Response code = {status_code}, but continuing since we are allowing offline execution.")
 
                     return None
             except Exception as ex:
@@ -1846,25 +1848,25 @@ class ProcWrapper:
                     api_request_data['error'] = {
                         'reason': str(ex.reason)
                     }
-                    self._logger.error(error_message)
+                    _logger.error(error_message)
                 else:
                     error_message = f"Unhandled exception: {ex}"
-                    self._logger.exception(error_message)
+                    _logger.exception(error_message)
 
                 if self.rollbar_access_token:
                     self._send_rollbar_error(error_message, api_request_data)
 
                 if attempt_count >= max_attempts:
                     self.api_server_retries_exhausted = True
-                    self._logger.error('Exhausted all retries, not sending any more API requests.')
+                    _logger.error('Exhausted all retries, not sending any more API requests.')
 
             if api_retries and (attempt_count < max_attempts):
-                self._logger.debug(f"Sleeping {retry_delay} seconds after request error ...")
+                _logger.debug(f"Sleeping {retry_delay} seconds after request error ...")
                 time.sleep(retry_delay)
-                self._logger.debug('Done sleeping after request error.')
+                _logger.debug('Done sleeping after request error.')
 
         if is_task_execution_creation_request and self.prevent_offline_execution:
-            self._logger.critical('Exiting because process creation retries exhausted and offline execution is prevented')
+            _logger.critical('Exiting because process creation retries exhausted and offline execution is prevented')
 
             exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code or 0,
                     self._EXIT_CODE_GENERIC_ERROR)
@@ -1882,7 +1884,7 @@ class ProcWrapper:
             elapsed_time = time.time() - self.last_api_request_failed_at
 
             if elapsed_time > self.api_resume_delay:
-                self._logger.info(f"Resuming API requests after {int(elapsed_time)} seconds after the last bad request")
+                _logger.info(f"Resuming API requests after {int(elapsed_time)} seconds after the last bad request")
                 self.api_server_retries_exhausted = False
 
         return self.api_server_retries_exhausted
@@ -1906,11 +1908,11 @@ class ProcWrapper:
 
     def _send_rollbar_error(self, message, data=None, level='error') -> bool:
         if not self.rollbar_access_token:
-            self._logger.warning(f"Not sending '{message}' to Rollbar since no access token found")
+            _logger.warning(f"Not sending '{message}' to Rollbar since no access token found")
             return False
 
         if self.rollbar_retries_exhausted:
-            self._logger.debug(f"Not sending '{message}' to Rollbar since all retries are exhausted")
+            _logger.debug(f"Not sending '{message}' to Rollbar since all retries are exhausted")
             return False
 
         payload = {
@@ -1963,47 +1965,31 @@ class ProcWrapper:
         while (max_attempts < 0) or (attempt_count < max_attempts):
             attempt_count += 1
 
-            self._logger.info(f"Sending Rollbar request (attempt {attempt_count}/{max_attempts}) ...")
+            _logger.info(f"Sending Rollbar request attempt {attempt_count}/{max_attempts}) ...")
 
             try:
                 with urlopen(req, timeout=self.rollbar_timeout) as f:
                     response_body = f.read().decode('utf-8')
-                    self._logger.debug(f"Got Rollbar response '{response_body}'")
+                    _logger.debug(f"Got Rollbar response '{response_body}'")
 
                     response_dict = json.loads(response_body)
                     uuid = response_dict['result']['uuid']
 
-                    self._logger.debug(f"Rollbar request returned UUID {uuid}.")
+                    _logger.debug(f"Rollbar request returned UUID {uuid}.")
 
                     return True
             except HTTPError as http_error:
                 status_code = http_error.code
-                self._logger.critical(f"Rollbar response code = {status_code}, giving up.")
+                _logger.critical(f"Rollbar response code = {status_code}, giving up.")
                 return False
             except URLError as url_error:
-                self._logger.error(f"Rollbar URL error: {url_error}")
+                _logger.error(f"Rollbar URL error: {url_error}")
 
                 if self.rollbar_retry_delay:
-                    self._logger.debug('Sleeping after Rollbar request error ...')
+                    _logger.debug('Sleeping after Rollbar request error ...')
                     time.sleep(self.rollbar_retry_delay)
-                    self._logger.debug('Done sleeping after Rollbar request error.')
+                    _logger.debug('Done sleeping after Rollbar request error.')
 
         self.rollbar_retries_exhausted = True
-        self._logger.error("Exhausted all retries, giving up.")
+        _logger.error("Exhausted all retries, giving up.")
         return False
-
-
-if __name__ == '__main__':
-    main_parser = ProcWrapper.make_arg_parser(require_command=True)
-    main_args = main_parser.parse_args()
-
-    log_level = (main_args.log_level or os.environ.get('PROC_WRAPPER_LOG_LEVEL', _DEFAULT_LOG_LEVEL)).upper()
-    numeric_log_level = getattr(logging, log_level, None)
-    if not isinstance(numeric_log_level, int):
-        logging.warning(f"Invalid log level: {log_level}, defaulting to {_DEFAULT_LOG_LEVEL}")
-        numeric_log_level = getattr(logging, _DEFAULT_LOG_LEVEL, None)
-
-    logging.basicConfig(level=numeric_log_level,
-        format=f"PROC_WRAPPER: %(asctime)s %(levelname)s: %(message)s")
-
-    ProcWrapper(args=main_args, embedded_mode=False).run()

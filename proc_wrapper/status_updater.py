@@ -20,11 +20,14 @@
 # and distribute software on your own terms without any open source license
 # obligations.
 
+from typing import Any, Dict, Optional
+
 import json
 import logging
 import os
 import socket
 import atexit
+
 
 def _exit_handler(updater):
     atexit.unregister(_exit_handler)
@@ -38,7 +41,7 @@ class StatusUpdater:
         self._logger = logging.getLogger(__name__)
         self._logger.addHandler(logging.NullHandler())
 
-        self.socket = None
+        self.socket: Optional[socket.socket] = None
         self.port = None
         self.enabled = os.environ.get('PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER', 'FALSE').upper() == 'TRUE'
 
@@ -58,12 +61,16 @@ class StatusUpdater:
 
         atexit.register(_exit_handler, self)
 
-    def send_update(self, success_count=None, error_count=None, skipped_count=None,
-        expected_count=None, last_status_message=None, extra_props=None):
+    def send_update(self, success_count: Optional[int] = None,
+            error_count: Optional[int] = None,
+            skipped_count: Optional[int] = None,
+            expected_count: Optional[int] = None,
+            last_status_message: Optional[str] = None,
+            extra_props: Optional[Dict[str, Any]] = None) -> None:
         if not self.enabled:
             return
 
-        status_hash = {}
+        status_hash: Dict[str, Any] = {}
 
         if self.incremental_count_mode:
             if success_count == 0:
@@ -82,7 +89,7 @@ class StatusUpdater:
             if self.incremental_count_mode:
                 self.success_count += success_count
             else:
-              self.success_count = success_count
+                self.success_count = success_count
 
             status_hash['success_count'] = self.success_count
 
@@ -127,7 +134,7 @@ class StatusUpdater:
             self._logger.debug("Can't send status update, resetting socket")
             self.socket = None
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         if self.socket:
             self._logger.info('Closing status update socket ...')
             try:
@@ -136,7 +143,7 @@ class StatusUpdater:
             finally:
                 self.socket = None
 
-    def reuse_or_create_socket(self):
+    def reuse_or_create_socket(self) -> socket.socket:
         if not self.socket:
             self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
             self.socket.setblocking(False)

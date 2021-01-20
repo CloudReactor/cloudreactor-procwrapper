@@ -2,7 +2,10 @@
 name = "cloudreactor-procwrapper"
 version = "2.0.0"
 description = "Wraps the execution of processes so that a service API endpoint is informed of the progress. Also implements retries, timeouts, and secret injection from AWS into the environment."
-authors = ["Jeff Tsay <jtsay@cloudreactor.io>"]
+authors = [
+  "Jeff Tsay <jeff@cloudreactor.io>",
+  "Mike Waldner <mwaldner@gmail.com>",
+]
 license = "Dual license, MPL 2.0 or commercial"
 readme = "README.md"
 repository = "https://github.com/jtsay362/cloudreactor-procwrapper"
@@ -38,13 +41,17 @@ docs = [
 ]
 
 [tool.poetry.dev-dependencies]
+boto3 = "^1.16.56"
+jsonpath-ng = "^1.5.2"
 black = "^20.8b1"
 flake8 = "^3.8.4"
 isort = "^5.6.4"
-pytest = "^6.1.2"
+pytest = "^6.2.1"
 pytest-cov = "^2.10.1"
-pyupgrade = {version = "^2.7.4", python = "^3.6.1"}
+pytest-env = "^0.6.2"
 tox = "^3.20.1"
+mypy = "^0.790"
+boto3-stubs = "^1.16.56.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

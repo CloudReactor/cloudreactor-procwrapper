@@ -1,9 +1,5 @@
-import logging
-from typing import Any, Dict
-
-import pytest
-
 from proc_wrapper import ProcWrapper
+
 
 RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_TASK_NAME': 'Foo',
@@ -12,20 +8,22 @@ RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_SECRETS_AWS_REGION': 'us-east-2',
 }
 
+
 def test_wrapped_offline_mode():
     args = ProcWrapper.make_arg_parser().parse_args(['echo'])
 
     env_override = {
         'PROC_WRAPPER_LOG_LEVEL': 'DEBUG',
         'PROC_WRAPPER_OFFLINE_MODE': 'TRUE',
-
     }
     proc_wrapper = ProcWrapper(args=args, env_override=env_override,
             embedded_mode=False)
     proc_wrapper.run()
 
+
 def callback(wrapper: ProcWrapper, cbdata: str) -> str:
     return 'super' + cbdata
+
 
 def test_embedded_offline_mode_success():
     env_override = {
@@ -34,8 +32,10 @@ def test_embedded_offline_mode_success():
     proc_wrapper = ProcWrapper(env_override=env_override)
     assert proc_wrapper.managed_call(callback, 'duper') == 'superduper'
 
+
 def bad_callback(wrapper: ProcWrapper, cbdata: str) -> str:
     raise RuntimeError('Nope!')
+
 
 def test_embedded_offline_mode_failure():
     env_override = {
@@ -50,6 +50,7 @@ def test_embedded_offline_mode_failure():
     else:
         assert False
 
+
 def test_resolve_env_with_json_path():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override['SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = '{"a": "bug"}|JP:$.a'
@@ -62,6 +63,7 @@ def put_aws_sm_secret(sm_client, name: str, value: str) -> str:
         Name=name,
         SecretString=value,
     )['ARN']
+
 
 def test_resolve_env_with_aws_secrets_manager():
     import boto3
@@ -84,6 +86,7 @@ def test_resolve_env_with_aws_secrets_manager():
         assert process_env['SOME_ENV'] == 'Secret PW'
         assert process_env['ANOTHER_ENV'] == 'Secret PW 2'
 
+
 def test_resolve_env_with_aws_secrets_manager_and_json_path():
     import boto3
     from moto import mock_secretsmanager
@@ -94,11 +97,14 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
         sm = boto3.client('secretsmanager', region_name='us-east-2')
 
         secret_arn = put_aws_sm_secret(sm, 'config', '{"a": "food", "b": [false, 250]}')
-        env_override['AWS_SM_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = secret_arn + '|JP:$.a'
-        env_override['AWS_SM_ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = secret_arn + '|JP:$.b[1]'
+        env_override['AWS_SM_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = \
+                secret_arn + '|JP:$.a'
+        env_override['AWS_SM_ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = \
+                secret_arn + '|JP:$.b[1]'
 
         secret_arn = put_aws_sm_secret(sm, 'details', '{"b": {"c": false}}')
-        env_override['AWS_SM_YET_ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = secret_arn + '|JP:$.b.c'
+        env_override['AWS_SM_YET_ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = \
+                secret_arn + '|JP:$.b.c'
 
         proc_wrapper = ProcWrapper(env_override=env_override)
         process_env = proc_wrapper.make_process_env()
