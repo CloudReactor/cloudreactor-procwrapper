@@ -1314,7 +1314,7 @@ class ProcWrapper:
             # TODO: allow non-shell mode
             self.process = Popen(' '.join(self.command), shell=True, stdout=None,
                     stderr=None, env=process_env, cwd=self.working_dir,
-                    preexec_fn=getattr(os, 'setsid'))
+                    preexec_fn=getattr(os, 'setsid', None))
 
             pid = self.process.pid
             _logger.info(f"pid = {pid}")
