@@ -1,6 +1,5 @@
 from proc_wrapper import ProcWrapper
 
-
 RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_TASK_NAME': 'Foo',
     'PROC_WRAPPER_API_KEY': 'XXX',

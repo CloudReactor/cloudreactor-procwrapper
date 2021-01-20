@@ -20,13 +20,12 @@
 # and distribute software on your own terms without any open source license
 # obligations.
 
-from typing import Any, Dict, Optional
-
+import atexit
 import json
 import logging
 import os
 import socket
-import atexit
+from typing import Any, Dict, Optional
 
 
 def _exit_handler(updater):

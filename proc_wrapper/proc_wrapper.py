@@ -21,23 +21,22 @@
 # and distribute software on your own terms without any open source license
 # obligations.
 
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, cast
-
-from io import RawIOBase
+import argparse
+import atexit
+import json
 import logging
 import math
-import argparse
-import signal
-from subprocess import Popen, TimeoutExpired
 import os
+import signal
 import socket
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
-from urllib.parse import quote_plus
-from http import HTTPStatus
-import json
 import time
-import atexit
+from http import HTTPStatus
+from io import RawIOBase
+from subprocess import Popen, TimeoutExpired
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, cast
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote_plus
+from urllib.request import Request, urlopen
 
 _DEFAULT_LOG_LEVEL = 'WARNING'
 

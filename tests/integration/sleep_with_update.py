@@ -1,8 +1,8 @@
 #!/usr/local/bin/python
 import logging
 import os
-import signal
 import random
+import signal
 import time
 
 from status_updater import StatusUpdater
