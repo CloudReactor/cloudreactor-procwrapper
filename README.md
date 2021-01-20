@@ -27,8 +27,9 @@
   <img src="https://img.shields.io/pypi/l/cloudreactor-procwrapper.svg?style=flat-square" alt="License">
 </p>
 
-Wraps the execution of processes so that a service API endpoint (CloudReactor)
-is optionally informed of the progress. Also implements retries, timeouts, and
+Wraps the execution of processes so that a service API endpoint (
+[CloudReactor](https://cloudreactor.io/))
+can monitor and manage them. Also implements retries, timeouts, and
 secret injection from AWS into the environment.
 
 ## Installation
@@ -36,6 +37,12 @@ secret injection from AWS into the environment.
 Install this via pip (or your favourite package manager):
 
 `pip install cloudreactor-procwrapper`
+
+Fetching secrets from AWS Secrets Manager requires that
+[boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) is available to import in your python environment.
+
+JSON Path transformation requires that [jsonpath-ng](https://github.com/h2non/jsonpath-ng)
+be available to import in your python environment.
 
 ## Usage
 
@@ -292,7 +299,7 @@ except that these properties are copied/overridden:
 In embedded mode, you include this package in your python project's
 dependencies. To run a task you want to be monitored:
 
-    def fun(data):
+    def fun(data, config):
         print(data)
         return data['a']
 
@@ -301,6 +308,79 @@ dependencies. To run a task you want to be monitored:
     args.task_name = 'embedded_test'
     proc_wrapper = ProcWrapper(args=args)
     proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
+
+## Secret Fetching
+
+Both usage modes can fetch secrets from
+[AWS Secrets Manager](https://aws.amazon.com/secrets-manager/), optionally extract
+embedded data, then inject them into the environment (in the case of wrapped mode)
+or a configuration dictionary (in the case of embedded mode).
+
+To enable secret resolution from AWS Secrets Manager
+with target environment variable MY_SECRET, run the code with an
+environment variable
+
+    AWS_SM_MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE
+
+set to the ARN of the secret, for example:
+
+    arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY
+
+Then when the wrapped process is run, it will see the environment variable
+MY_SECRET resolved to the value of the secret in Secrets Manager. Or, if
+running in embedded mode, the `config` dict argument will have the key
+`MY_SECRET` mapped to the value of the secret.
+
+If the secret was stored in Secrets Manager as binary, the
+corresponding environment variable will be set to the Base-64 encoded value.
+
+boto3 is used to fetch secrets. It will try to access to AWS Secrets Manager
+using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY if they
+are set, or use the EC2 instance role, ECS task role, or Lambda execution role
+if available.
+
+## Secret Tranformation
+
+Secret fetching is relatively expensive and it makes sense to group related
+secrets together. Therefore it is common to store JSON values as secrets.
+To facilitate this, pieces of JSON values can be extracted to individual
+environment variables using [jsonpath-ng](https://github.com/h2non/jsonpath-ng).
+To specify that a variable be extracted from a JSON value using
+a JSON Path expression, append "|JP:" followed by the JSON Path expression
+in the environment variable value. For example, if the AWS Secrets Manager
+ARN is
+
+    arn:aws:secretsmanager:us-east-2:1234567890:secret:dbconfig-PPrpY
+
+and the value is
+
+    {
+      "username": "postgres",
+      "password": "badpassword"
+    }
+
+Then you can populate the environment variable DB_PASSWORD by setting the
+environment variable
+
+    AWS_SM_DB_USERNAME_FOR_PROC_WRAPPER_TO_RESOLVE
+
+to
+
+    arn:aws:secretsmanager:us-east-2:1234567890:secret:dbconfig-PPrpY|JP:$.username
+
+If you do something similar to get the username from the same JSON value, proc_wrapper is
+smart enough to cache the JSON value, so that the secret is only fetched once.
+
+Since JSON path expressions yield a list of results, we implement the following rules to
+transform the list to the environment variable value:
+
+1. If the list of results has a single value, that value is used as the environment variable value,
+unless `[*]` is appended to the JSON path expression. If the value is boolean, the value
+will be converted to a string and capitalized. If the value is a string or number, it will
+be simply left/converted to a string. Otherwise, the value is serialized to a JSON string
+and set to the environment variable value.
+2. Otherwise, the list of results is serialized to a JSON string and set to the environment variable value.
+
 
 ## Contributors ✨
 
