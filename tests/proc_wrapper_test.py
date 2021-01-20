@@ -1,3 +1,5 @@
+from typing import Dict
+
 from proc_wrapper import ProcWrapper
 
 RESOLVE_ENV_BASE_ENV = {
@@ -20,7 +22,8 @@ def test_wrapped_offline_mode():
     proc_wrapper.run()
 
 
-def callback(wrapper: ProcWrapper, cbdata: str) -> str:
+def callback(wrapper: ProcWrapper, cbdata: str,
+        config: Dict[str, str]) -> str:
     return 'super' + cbdata
 
 
@@ -32,7 +35,8 @@ def test_embedded_offline_mode_success():
     assert proc_wrapper.managed_call(callback, 'duper') == 'superduper'
 
 
-def bad_callback(wrapper: ProcWrapper, cbdata: str) -> str:
+def bad_callback(wrapper: ProcWrapper, cbdata: str,
+        config: Dict[str, str]) -> str:
     raise RuntimeError('Nope!')
 
 
@@ -74,6 +78,8 @@ def test_resolve_env_with_aws_secrets_manager():
         sm = boto3.client('secretsmanager', region_name='us-east-2')
         secret_arn = put_aws_sm_secret(sm, 'mypass', 'Secret PW')
 
+        print("secret_arn = " + secret_arn)
+
         env_override['AWS_SM_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = secret_arn
 
         secret_arn = put_aws_sm_secret(sm, 'anotherpass', 'Secret PW 2')
@@ -84,6 +90,10 @@ def test_resolve_env_with_aws_secrets_manager():
         process_env = proc_wrapper.make_process_env()
         assert process_env['SOME_ENV'] == 'Secret PW'
         assert process_env['ANOTHER_ENV'] == 'Secret PW 2'
+
+def callback_with_config(wrapper: ProcWrapper, cbdata: str,
+        config: Dict[str, str]) -> str:
+    return 'super' + cbdata + config['ANOTHER_ENV']
 
 
 def test_resolve_env_with_aws_secrets_manager_and_json_path():
@@ -96,6 +106,7 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
         sm = boto3.client('secretsmanager', region_name='us-east-2')
 
         secret_arn = put_aws_sm_secret(sm, 'config', '{"a": "food", "b": [false, 250]}')
+        env_override['PROC_WRAPPER_OFFLINE_MODE'] = 'TRUE'
         env_override['AWS_SM_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = \
                 secret_arn + '|JP:$.a'
         env_override['AWS_SM_ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = \
@@ -111,3 +122,6 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
         assert process_env['SOME_ENV'] == 'food'
         assert process_env['ANOTHER_ENV'] == '250'
         assert process_env['YET_ANOTHER_ENV'] == 'FALSE'
+
+        assert proc_wrapper.managed_call(callback_with_config,
+                'duper') == 'superduper250'

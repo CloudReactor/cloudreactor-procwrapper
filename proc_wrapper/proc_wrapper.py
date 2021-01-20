@@ -1218,6 +1218,8 @@ environment.
 
         self.request_process_start_if_max_concurrency_ok()
 
+        config = self.make_process_env()
+
         self.attempt_count = 0
         self.failed_count = 0
 
@@ -1230,7 +1232,7 @@ environment.
             _logger.info(f"Calling managed function (attempt {self.attempt_count}/{self.max_execution_attempts}) ...")
 
             try:
-                rv = fun(self, data)
+                rv = fun(self, data, config)
                 success = True
             except Exception as ex:
                 saved_ex = ex
@@ -1238,13 +1240,20 @@ environment.
                 _logger.exception('Managed function failed')
 
                 if self.attempt_count < self.max_execution_attempts:
-
                     self.send_update(failed_attempts=self.failed_count)
 
                     if self.process_retry_delay:
                         _logger.debug('Sleeping after managed function failed ...')
                         time.sleep(self.process_retry_delay)
                         _logger.debug('Done sleeping after managed function failed.')
+
+                    if self.resolved_env_ttl is not None:
+                        self.resolved_env, self.failed_env_names = self.resolve_env()
+
+                        # In case API key(s) change
+                        self.initialize_fields(mutable_only=True)
+
+                        config = self.make_process_env()
 
             if success:
                 self.send_completion(status=ProcWrapper.STATUS_SUCCEEDED,
