@@ -14,8 +14,6 @@ jobs:
         linter:
           - name: Flake8
             run: flake8
-          - name: Black
-            run: black --check .
           - name: isort
             run: isort -c -v .
     runs-on: ubuntu-latest
