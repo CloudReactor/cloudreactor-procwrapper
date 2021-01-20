@@ -91,6 +91,7 @@ def test_resolve_env_with_aws_secrets_manager():
         assert process_env['SOME_ENV'] == 'Secret PW'
         assert process_env['ANOTHER_ENV'] == 'Secret PW 2'
 
+
 def callback_with_config(wrapper: ProcWrapper, cbdata: str,
         config: Dict[str, str]) -> str:
     return 'super' + cbdata + config['ANOTHER_ENV']
