@@ -1310,10 +1310,11 @@ class ProcWrapper:
 
             # Set the session ID so we can kill the process as a group, so we kill
             # all subprocesses. See https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true
+            # On Windows, os does not have setsid function.
             # TODO: allow non-shell mode
             self.process = Popen(' '.join(self.command), shell=True, stdout=None,
                     stderr=None, env=process_env, cwd=self.working_dir,
-                    preexec_fn=os.setsid)
+                    preexec_fn=getattr(os, 'setsid'))
 
             pid = self.process.pid
             _logger.info(f"pid = {pid}")
