@@ -29,17 +29,6 @@ jobs:
       - name: ${{ matrix.linter.name }}
         run: poetry run ${{ matrix.linter.run }}
 
-  # Make sure commit messages follow the conventional commits convention:
-  # https://www.conventionalcommits.org
-  commitlint:
-    name: Lint Commit Messages
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
-      - uses: wagoid/commitlint-github-action@v2.1.0
-
   test:
     strategy:
       fail-fast: false
