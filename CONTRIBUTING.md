@@ -8,7 +8,7 @@ You can contribute in many ways:
 
 ### Report Bugs
 
-Report bugs at <https://github.com/jtsay362/cloudreactor-procwrapper/issues>.
+Report bugs at <https://github.com/CloudReactor/cloudreactor-procwrapper/issues>.
 
 If you are reporting a bug, please include:
 

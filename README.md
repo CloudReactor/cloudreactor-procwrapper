@@ -1,14 +1,14 @@
 # cloudreactor-procwrapper
 
 <p align="center">
-  <a href="https://github.com/jtsay362/cloudreactor-procwrapper/actions?query=workflow%3ACI">
-    <img src="https://img.shields.io/github/workflow/status/jtsay362/cloudreactor-procwrapper/CI/main?label=CI&logo=github&style=flat-square" alt="CI Status" >
+  <a href="https://github.com/CloudReactor/cloudreactor-procwrapper/actions?query=workflow%3ACI">
+    <img src="https://img.shields.io/github/workflow/status/CloudReactor/cloudreactor-procwrapper/CI/main?label=CI&logo=github&style=flat-square" alt="CI Status" >
   </a>
   <a href="https://cloudreactor-procwrapper.readthedocs.io">
     <img src="https://img.shields.io/readthedocs/cloudreactor-procwrapper.svg?logo=read-the-docs&logoColor=fff&style=flat-square" alt="Documentation Status">
   </a>
-  <a href="https://codecov.io/gh/jtsay362/cloudreactor-procwrapper">
-    <img src="https://img.shields.io/codecov/c/github/jtsay362/cloudreactor-procwrapper.svg?logo=codecov&logoColor=fff&style=flat-square" alt="Test coverage percentage">
+  <a href="https://codecov.io/gh/CloudReactor/cloudreactor-procwrapper">
+    <img src="https://img.shields.io/codecov/c/github/CloudReactor/cloudreactor-procwrapper.svg?logo=codecov&logoColor=fff&style=flat-square" alt="Test coverage percentage">
   </a>
 </p>
 <p align="center">

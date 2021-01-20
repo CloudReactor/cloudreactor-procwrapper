@@ -8,7 +8,7 @@ authors = [
 ]
 license = "Dual license, MPL 2.0 or commercial"
 readme = "README.md"
-repository = "https://github.com/jtsay362/cloudreactor-procwrapper"
+repository = "https://github.com/CloudReactor/cloudreactor-procwrapper"
 documentation = "https://cloudreactor-procwrapper.readthedocs.io"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -22,7 +22,7 @@ packages = [
 ]
 
 [tool.poetry.urls]
-"Bug Tracker" = "https://github.com/jtsay362/cloudreactor-procwrapper/issues"
+"Bug Tracker" = "https://github.com/CloudReactor/cloudreactor-procwrapper/issues"
 "Changelog" = "https://cloudreactor-procwrapper.readthedocs.io/changelog.html"
 
 [tool.poetry.dependencies]

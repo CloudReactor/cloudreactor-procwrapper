@@ -16,6 +16,8 @@ jobs:
             run: flake8
           - name: isort
             run: isort -c -v .
+          - name: mypy
+            run: mypy -m proc_wrapper
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
