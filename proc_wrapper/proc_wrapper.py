@@ -216,7 +216,13 @@ class ProcWrapper:
 
     @staticmethod
     def make_arg_parser(require_command=True):
-        parser = argparse.ArgumentParser()
+        parser = argparse.ArgumentParser(prog='python -m proc_wrapper',
+                description="""
+Wraps the execution of processes so that a service API endpoint (CloudReactor)
+is optionally informed of the progress.
+Also implements retries, timeouts, and secret injection from AWS into the
+environment.
+        """)
 
         if require_command:
             parser.add_argument('command', nargs=argparse.REMAINDER)
@@ -261,7 +267,7 @@ class ProcWrapper:
         parser.add_argument('--log-secrets', action='store_true', help='Log sensitive information')
         parser.add_argument('--work-dir', help='Working directory')
         parser.add_argument('--process-timeout',
-                help=f"Timeout for process, in seconds. Defaults to {DEFAULT_PROCESS_TIMEOUT_SECONDS} for non-services, infinite for services. -1 means no timeout")
+                help=f"Timeout for process, in seconds. Defaults to {DEFAULT_PROCESS_TIMEOUT_SECONDS} for non-services, infinite for services. -1 means no timeout.")
         parser.add_argument('--process-max-retries',
                 help='Maximum number of times to retry failed processes. -1 means to retry forever. Defaults to 0.')
         parser.add_argument('--process-retry-delay',
@@ -273,9 +279,9 @@ class ProcWrapper:
         parser.add_argument('--enable-status-update-listener', action='store_true',
                 help='Listen for status updates from the process, sent on the status socket port via UDP. If not specified, status update messages will not be read.')
         parser.add_argument('--status-update-socket-port',
-                help=f"The port used to receive status updates from the process. Defaults to {DEFAULT_STATUS_UPDATE_SOCKET_PORT}")
+                help=f"The port used to receive status updates from the process. Defaults to {DEFAULT_STATUS_UPDATE_SOCKET_PORT}.")
         parser.add_argument('--status-update-message-max-bytes',
-                help=f"The maximum number of bytes status update messages can be. Defaults to {DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES}")
+                help=f"The maximum number of bytes status update messages can be. Defaults to {DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES}.")
         parser.add_argument('--status-update-interval',
                 help='Minimum of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.')
         parser.add_argument('--send-pid', action='store_true', help='Send the process ID to the API server')

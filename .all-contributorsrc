@@ -1,6 +1,6 @@
 {
   "projectName": "cloudreactor-procwrapper",
-  "projectOwner": "jtsay362",
+  "projectOwner": "CloudReactor",
   "repoType": "github",
   "repoHost": "https://github.com",
   "files": [
@@ -9,7 +9,29 @@
   "imageSize": 80,
   "commit": true,
   "commitConvention": "angular",
-  "contributors": [],
+  "contributors": [
+    {
+      "login": "jtsay362",
+      "name": "Jeff Tsay",
+      "avatar_url": "https://avatars0.githubusercontent.com/u/1079646?s=460&v=4",
+      "profile": "https://github.com/jtsay362",
+      "contributions": [
+        "code",
+        "doc",
+        "infra",
+        "maintenance"
+      ]
+    },
+    {
+      "login": "mwaldne",
+      "name": "Mike Waldner",
+      "avatar_url": "https://avatars0.githubusercontent.com/u/40419?s=460&u=3a5266861feeb27db392622371ecc57ebca09f32&v=4",
+      "profile": "https://github.com/mwaldne",
+      "contributions": [
+        "code"
+      ]
+    }
+  ],
   "contributorsPerLine": 7,
   "skipCi": true
 }

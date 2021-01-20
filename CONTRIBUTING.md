@@ -30,7 +30,7 @@ cloudreactor-procwrapper could always use more documentation, whether as part of
 
 ### Submit Feedback
 
-The best way to send feedback is to file an issue at <https://github.com/jtsay362/cloudreactor-procwrapper/issues>.
+The best way to send feedback is to file an issue at <https://github.com/CloudReactor/cloudreactor-procwrapper/issues>.
 
 If you are proposing a feature:
 
