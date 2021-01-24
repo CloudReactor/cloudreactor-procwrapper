@@ -1,6 +1,22 @@
-from typing import Dict
+import json
+from typing import Any, Dict, List, Optional
+from urllib.parse import quote_plus
+
+from pytest_httpserver import HTTPServer
+from werkzeug.wrappers import Request, Response
 
 from proc_wrapper import ProcWrapper
+
+TEST_API_PORT = 6777
+TEST_API_KEY = 'SOMEAPIKEY'
+DEFAULT_TASK_UUID = '13b4cfbc-6ed5-4fd5-85e8-73e84e2f1b82'
+DEFAULT_TASK_EXECUTION_UUID = 'd9554f00-eaeb-4a16-96e4-9adda91a2750'
+
+CLIENT_HEADERS = {
+    'Authorization': f'Token {TEST_API_KEY}',
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+}
 
 RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_TASK_NAME': 'Foo',
@@ -8,6 +24,35 @@ RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_RESOLVE_SECRETS': 'TRUE',
     'PROC_WRAPPER_SECRETS_AWS_REGION': 'us-east-2',
 }
+
+
+def make_online_base_env(port: int) -> Dict[str, str]:
+    return {
+        'PROC_WRAPPER_LOG_LEVEL': 'DEBUG',
+        'PROC_WRAPPER_TASK_UUID': DEFAULT_TASK_UUID,
+        'PROC_WRAPPER_API_BASE_URL': f'http://localhost:{port}',
+        'PROC_WRAPPER_API_KEY': TEST_API_KEY,
+        'PROC_WRAPPER_API_TASK_CREATION_ERROR_TIMEOUT_SECONDS': '1',
+        'PROC_WRAPPER_API_TASK_CREATION_CONFLICT_TIMEOUT_SECONDS': '1',
+        'PROC_WRAPPER_API_TASK_CREATION_CONFLICT_RETRY_DELAY_SECONDS': '1',
+        'PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS': '1',
+        'PROC_WRAPPER_API_RETRY_DELAY_SECONDS': '1',
+        'PROC_WRAPPER_API_RESUME_DELAY_SECONDS': '-1',
+    }
+
+
+def make_capturing_handler(response_data: Dict[str, Any],
+        status: int = 200):
+    captured_request_data: List[Optional[Dict[str, Any]]] = [None]
+
+    def handler(request: Request) -> Response:
+        captured_request_data[0] = json.loads(request.data)
+        return Response(json.dumps(response_data), status, None, content_type='application/json')
+
+    def fetch_captured_request_data() -> Optional[Dict[str, Any]]:
+        return captured_request_data[0]
+
+    return handler, fetch_captured_request_data
 
 
 def test_wrapped_offline_mode():
@@ -20,6 +65,45 @@ def test_wrapped_offline_mode():
     proc_wrapper = ProcWrapper(args=args, env_override=env_override,
             embedded_mode=False)
     proc_wrapper.run()
+
+
+def test_wrapped_mode_with_server(httpserver: HTTPServer):
+    env_override = make_online_base_env(httpserver.port)
+
+    creation_handler, fetch_creation_request_data = make_capturing_handler(
+            response_data={
+                'uuid': DEFAULT_TASK_EXECUTION_UUID
+            }, status=201)
+
+    httpserver.expect_ordered_request('/api/v1/task_executions/',
+            method='POST', headers=CLIENT_HEADERS) \
+            .respond_with_handler(creation_handler)
+
+    update_handler, fetch_update_request_data = make_capturing_handler(
+            response_data={}, status=200)
+
+    httpserver.expect_ordered_request(
+            '/api/v1/task_executions/' + quote_plus(DEFAULT_TASK_EXECUTION_UUID) + '/',
+            method='PATCH', headers=CLIENT_HEADERS) \
+            .respond_with_handler(update_handler)
+
+    args = ProcWrapper.make_arg_parser().parse_args(['echo'])
+    proc_wrapper = ProcWrapper(args=args, env_override=env_override,
+            embedded_mode=False)
+    proc_wrapper.run()
+
+    httpserver.check_assertions()
+
+    crd = fetch_creation_request_data()
+    assert crd['status'] == ProcWrapper.STATUS_RUNNING
+    task = crd['task']
+    assert task['uuid'] == DEFAULT_TASK_UUID
+
+    urd = fetch_update_request_data()
+    assert urd['status'] == ProcWrapper.STATUS_SUCCEEDED
+    assert urd['exit_code'] == 0
+    assert urd['failed_attempts'] == 0
+    assert urd['timed_out_attempts'] == 0
 
 
 def callback(wrapper: ProcWrapper, cbdata: str,
@@ -77,8 +161,6 @@ def test_resolve_env_with_aws_secrets_manager():
     with mock_secretsmanager():
         sm = boto3.client('secretsmanager', region_name='us-east-2')
         secret_arn = put_aws_sm_secret(sm, 'mypass', 'Secret PW')
-
-        print("secret_arn = " + secret_arn)
 
         env_override['AWS_SM_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = secret_arn
 

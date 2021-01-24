@@ -62,14 +62,16 @@ programming language the running machine supports.
                                   [--api-base-url API_BASE_URL]
                                   [--api-key API_KEY]
                                   [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
-                                  [--api-retries API_RETRIES]
-                                  [--api-retries-for-final-update API_RETRIES_FOR_FINAL_UPDATE]
-                                  [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
-                                  [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY]
+                                  [--api-error-timeout API_ERROR_TIMEOUT]
+                                  [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT]
                                   [--api-retry-delay API_RETRY_DELAY]
                                   [--api-resume-delay API_RESUME_DELAY]
-                                  [--api-timeout API_TIMEOUT] [--offline-mode]
-                                  [--service] [--max-concurrency MAX_CONCURRENCY]
+                                  [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT]
+                                  [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
+                                  [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY]
+                                  [--api-request-timeout API_REQUEST_TIMEOUT]
+                                  [--offline-mode] [--service]
+                                  [--max-concurrency MAX_CONCURRENCY]
                                   [--max-conflicting-age MAX_CONFLICTING_AGE]
                                   [--prevent-offline-execution]
                                   [--log-level LOG_LEVEL] [--log-secrets]
@@ -126,23 +128,15 @@ programming language the running machine supports.
       --api-heartbeat-interval API_HEARTBEAT_INTERVAL
                             Number of seconds to wait between sending heartbeats
                             to the API server. -1 means to not send heartbeats.
-                            Defaults to 30 for concurrency limited services, 600
+                            Defaults to 30 for concurrency limited services, 300
                             otherwise.
-      --api-retries API_RETRIES
-                            Number of retries per API request. Defaults to 2.
-      --api-retries-for-final-update API_RETRIES_FOR_FINAL_UPDATE
-                            Number of retries for final process status update. -1
-                            (the default) means to keep trying indefinitely.
-      --api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT
-                            Number of seconds to keep retrying Task Execution
-                            creation after conflict is detected. -1 means to keep
-                            trying indefinitely. Defaults to 1800 for concurrency
-                            limited services, 300 otherwise.
-      --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
-                            Number of seconds between attempts to retry Task
-                            Execution creation after conflict is detected.
-                            Defaults to 60 for concurrency-limited services, 120
-                            otherwise.
+      --api-error-timeout API_ERROR_TIMEOUT
+                            Number of seconds to wait while receiving recoverable
+                            errors from the API server. Defaults to 250.
+      --api-final-update-timeout API_FINAL_UPDATE_TIMEOUT
+                            Number of seconds to wait while receiving recoverable
+                            errors from the API server when sending the final
+                            update before exiting. Defaults to 1800.
       --api-retry-delay API_RETRY_DELAY
                             Number of seconds to wait before retrying an API
                             request. Defaults to 120.
@@ -150,7 +144,22 @@ programming language the running machine supports.
                             Number of seconds to wait before resuming API
                             requests, after retries are exhausted. Defaults to
                             600. -1 means no resumption.
-      --api-timeout API_TIMEOUT
+      --api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT
+                            Number of seconds to keep retrying Task Execution
+                            creation while receiving error responses from the API
+                            server. -1 means to keep trying indefinitely. Defaults
+                            to 300.
+      --api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT
+                            Number of seconds to keep retrying Task Execution
+                            creation while conflict is detected by the API server.
+                            -1 means to keep trying indefinitely. Defaults to 1800
+                            for concurrency limited services, 0 otherwise.
+      --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
+                            Number of seconds between attempts to retry Task
+                            Execution creation after conflict is detected.
+                            Defaults to 60 for concurrency-limited services, 120
+                            otherwise.
+      --api-request-timeout API_REQUEST_TIMEOUT
                             Timeout for contacting API server, in seconds.
                             Defaults to 30.
       --offline-mode        Do not communicate with or rely on an API server
@@ -242,12 +251,13 @@ Environment variables read, take precedence over command-line arguments:
 * PROC_WRAPPER_API_BASE_URL
 * PROC_WRAPPER_API_KEY
 * PROC_WRAPPER_API_HEARTBEAT_INTERVAL_SECONDS
-* PROC_WRAPPER_API_RETRIES
-* PROC_WRAPPER_API_RETRIES_FOR_TASK_CREATION_CONFLICT
-* PROC_WRAPPER_API_RETRIES_FOR_FINAL_UPDATE
+* PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_RETRY_DELAY_SECONDS
-* PROC_WRAPPER_API_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_RESUME_DELAY_SECONDS
+* PROC_WRAPPER_API_TASK_CREATION_ERROR_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_TASK_CREATION_CONFLICT_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_TIMEOUT_SECONDS
 * PROC_WRAPPER_SEND_PID
 * PROC_WRAPPER_SEND_HOSTNAME
 * PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN
@@ -270,9 +280,10 @@ except that these properties are copied/overridden:
 * PROC_WRAPPER_DEPLOYMENT
 * PROC_WRAPPER_API_BASE_URL
 * PROC_WRAPPER_API_KEY
-* PROC_WRAPPER_API_RETRIES
+* PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_RETRY_DELAY_SECONDS
-* PROC_WRAPPER_API_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_RESUME_DELAY_SECONDS
+* PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
 * PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN
 * PROC_WRAPPER_ROLLBAR_TIMEOUT_SECONDS
 * PROC_WRAPPER_ROLLBAR_RETRIES
@@ -288,6 +299,7 @@ except that these properties are copied/overridden:
 * PROC_WRAPPER_SCHEDULE
 * PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS
 * PROC_WRAPPER_MAX_CONCURRENCY
+* PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION
 * PROC_WRAPPER_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS
 * PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER
 * PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT
@@ -309,7 +321,7 @@ dependencies. To run a task you want to be monitored:
     proc_wrapper = ProcWrapper(args=args)
     proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
 
-## Secret Fetching
+### Secret Fetching
 
 Both usage modes can fetch secrets from
 [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/), optionally extract
@@ -339,7 +351,7 @@ using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY if they
 are set, or use the EC2 instance role, ECS task role, or Lambda execution role
 if available.
 
-## Secret Tranformation
+### Secret Tranformation
 
 Secret fetching is relatively expensive and it makes sense to group related
 secrets together. Therefore it is common to store JSON values as secrets.
@@ -359,7 +371,7 @@ and the value is
       "password": "badpassword"
     }
 
-Then you can populate the environment variable DB_PASSWORD by setting the
+Then you can populate the environment variable DB_USERNAME by setting the
 environment variable
 
     AWS_SM_DB_USERNAME_FOR_PROC_WRAPPER_TO_RESOLVE
@@ -368,7 +380,7 @@ to
 
     arn:aws:secretsmanager:us-east-2:1234567890:secret:dbconfig-PPrpY|JP:$.username
 
-If you do something similar to get the username from the same JSON value, proc_wrapper is
+If you do something similar to get the password from the same JSON value, proc_wrapper is
 smart enough to cache the JSON value, so that the secret is only fetched once.
 
 Since JSON path expressions yield a list of results, we implement the following rules to
@@ -376,7 +388,7 @@ transform the list to the environment variable value:
 
 1. If the list of results has a single value, that value is used as the environment variable value,
 unless `[*]` is appended to the JSON path expression. If the value is boolean, the value
-will be converted to a string and capitalized. If the value is a string or number, it will
+will be converted to either "TRUE" or "FALSE". If the value is a string or number, it will
 be simply left/converted to a string. Otherwise, the value is serialized to a JSON string
 and set to the environment variable value.
 2. Otherwise, the list of results is serialized to a JSON string and set to the environment variable value.

@@ -43,17 +43,17 @@ _DEFAULT_LOG_LEVEL = 'WARNING'
 HEARTBEAT_DELAY_TOLERANCE_SECONDS = 60
 
 DEFAULT_API_BASE_URL = 'https://api.cloudreactor.io'
-DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS = 600
-DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS = 300
-DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS = 120
-DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS = 30
-DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS = 1800
-DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_RETRY_DELAY_SECONDS = 60
-DEFAULT_API_TIMEOUT_SECONDS = 30
-DEFAULT_API_RETRIES = 2
-DEFAULT_API_RETRIES_FOR_FINAL_UPDATE = None
+DEFAULT_API_REQUEST_TIMEOUT_SECONDS = 30
+DEFAULT_API_ERROR_TIMEOUT_SECONDS = 250
 DEFAULT_API_RETRY_DELAY_SECONDS = 120
 DEFAULT_API_RESUME_DELAY_SECONDS = 600
+DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS = 300
+DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS = 120
+DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS = 1800
+DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_RETRY_DELAY_SECONDS = 60
+DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS = 300
+DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS = 30
+DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS = 1800
 
 DEFAULT_STATUS_UPDATE_SOCKET_PORT = 2373
 
@@ -238,20 +238,22 @@ environment.
         parser.add_argument('--api-key', help='API key')
         parser.add_argument('--api-heartbeat-interval',
                 help=f"Number of seconds to wait between sending heartbeats to the API server. -1 means to not send heartbeats. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS} for concurrency limited services, {DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS} otherwise.")
-        parser.add_argument('--api-retries',
-                help=f"Number of retries per API request. Defaults to {DEFAULT_API_RETRIES}.")
-        parser.add_argument('--api-retries-for-final-update',
-                help='Number of retries for final process status update. -1 (the default) means to keep trying indefinitely.')
-        parser.add_argument('--api-task-execution-creation-conflict-timeout',
-                help=f"Number of seconds to keep retrying Task Execution creation after conflict is detected. -1 means to keep trying indefinitely. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS} for concurrency limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS} otherwise.")
-        parser.add_argument('--api-task-execution-creation-conflict-retry-delay',
-                help=f"Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_RETRY_DELAY_SECONDS} for concurrency-limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS} otherwise.")
+        parser.add_argument('--api-error-timeout',
+                help=f"Number of seconds to wait while receiving recoverable errors from the API server. Defaults to {DEFAULT_API_ERROR_TIMEOUT_SECONDS}.")
+        parser.add_argument('--api-final-update-timeout',
+                help=f"Number of seconds to wait while receiving recoverable errors from the API server when sending the final update before exiting. Defaults to {DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS}.")
         parser.add_argument('--api-retry-delay',
                 help=f"Number of seconds to wait before retrying an API request. Defaults to {DEFAULT_API_RETRY_DELAY_SECONDS}.")
         parser.add_argument('--api-resume-delay',
                 help=f"Number of seconds to wait before resuming API requests, after retries are exhausted. Defaults to {DEFAULT_API_RESUME_DELAY_SECONDS}. -1 means no resumption.")
-        parser.add_argument('--api-timeout',
-                help=f"Timeout for contacting API server, in seconds. Defaults to {DEFAULT_API_TIMEOUT_SECONDS}.")
+        parser.add_argument('--api-task-execution-creation-error-timeout',
+                help=f"Number of seconds to keep retrying Task Execution creation while receiving error responses from the API server. -1 means to keep trying indefinitely. Defaults to {DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS}.")
+        parser.add_argument('--api-task-execution-creation-conflict-timeout',
+                help=f"Number of seconds to keep retrying Task Execution creation while conflict is detected by the API server. -1 means to keep trying indefinitely. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS} for concurrency limited services, 0 otherwise.")
+        parser.add_argument('--api-task-execution-creation-conflict-retry-delay',
+                help=f"Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_RETRY_DELAY_SECONDS} for concurrency-limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS} otherwise.")
+        parser.add_argument('--api-request-timeout',
+                help=f"Timeout for contacting API server, in seconds. Defaults to {DEFAULT_API_REQUEST_TIMEOUT_SECONDS}.")
         parser.add_argument('--offline-mode', action='store_true',
                 help='Do not communicate with or rely on an API server')
         parser.add_argument('--service', action='store_true',
@@ -345,16 +347,18 @@ environment.
         self.working_dir: str = '.'
         self.timed_out = False
         self.api_key: Optional[str] = None
-        self.api_retries: Optional[int] = DEFAULT_API_RETRIES
         self.api_retry_delay = DEFAULT_API_RETRY_DELAY_SECONDS
         self.api_resume_delay = DEFAULT_API_RESUME_DELAY_SECONDS
-        self.api_timeout: Optional[int] = DEFAULT_API_TIMEOUT_SECONDS
-        self.api_retries_for_final_update: Optional[int] = \
-                DEFAULT_API_RETRIES_FOR_FINAL_UPDATE
-        self.api_task_execution_creation_conflict_timeout: Optional[int] = \
+        self.api_request_timeout: Optional[int] = DEFAULT_API_REQUEST_TIMEOUT_SECONDS
+        self.api_error_timeout: Optional[int] = \
+                DEFAULT_API_ERROR_TIMEOUT_SECONDS
+        self.api_task_execution_creation_error_timeout: Optional[int] = \
                 DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS
+        self.api_task_execution_creation_conflict_timeout: Optional[int] = 0
         self.api_task_execution_creation_conflict_retry_delay = \
                 DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS
+        self.api_final_update_timeout: Optional[int] = \
+                DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS
         self.api_heartbeat_interval: Optional[int] = None
         self.api_server_retries_exhausted = False
         self.last_api_request_failed_at: Optional[float] = None
@@ -411,7 +415,7 @@ environment.
 
             self.rollbar_timeout = _string_to_int(
                     resolved_env.get('PROC_WRAPPER_ROLLBAR_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(args.api_timeout,
+                    default_value=_coalesce(args.api_request_timeout,
                             DEFAULT_ROLLBAR_TIMEOUT_SECONDS))
         else:
             self.rollbar_retries = None
@@ -467,32 +471,18 @@ environment.
                 _logger.critical('No API key specified, exiting.')
                 return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
-            self.api_retries = cast(int, _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_API_RETRIES'),
-                    default_value=_coalesce(args.api_retries, DEFAULT_API_RETRIES)))
+            self.api_error_timeout = cast(int, _string_to_int(
+                    resolved_env.get('PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS'),
+                    default_value=_coalesce(args.api_error_timeout,
+                    DEFAULT_API_ERROR_TIMEOUT_SECONDS)))
 
-            self.api_retry_delay = cast(int, _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_API_RETRY_DELAY_SECONDS'),
-                    default_value=_coalesce(args.api_retry_delay,
-                            DEFAULT_API_RETRY_DELAY_SECONDS),
-                    negative_value=0))
+            self.api_task_execution_creation_error_timeout = _string_to_int(
+                    resolved_env.get('PROC_WRAPPER_API_TASK_CREATION_ERROR_TIMEOUT_SECONDS'),
+                    default_value=_coalesce(
+                            args.api_task_execution_creation_error_timeout,
+                            DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS))
 
-            self.api_resume_delay = cast(int, _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_API_RESUME_DELAY_SECONDS'),
-                    default_value=_coalesce(args.api_resume_delay,
-                            DEFAULT_API_RESUME_DELAY_SECONDS)))
-
-            self.api_timeout = _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_API_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(args.api_timeout,
-                            DEFAULT_API_TIMEOUT_SECONDS))
-
-            self.api_retries_for_final_update = _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_API_RETRIES_FOR_FINAL_UPDATE'),
-                    default_value=_coalesce(args.api_retries_for_final_update,
-                            DEFAULT_API_RETRIES_FOR_FINAL_UPDATE))
-
-            default_task_execution_creation_conflict_timeout = DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS
+            default_task_execution_creation_conflict_timeout = 0
             default_task_execution_creation_conflict_retry_delay = DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS
             if self.is_concurrency_limited_service:
                 default_task_execution_creation_conflict_timeout = \
@@ -506,10 +496,31 @@ environment.
                             args.api_task_execution_creation_conflict_timeout,
                             default_task_execution_creation_conflict_timeout))
 
+            self.api_final_update_timeout = _string_to_int(
+                    resolved_env.get('PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS'),
+                    default_value=_coalesce(args.api_final_update_timeout,
+                            DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS))
+
+            self.api_retry_delay = cast(int, _string_to_int(
+                    resolved_env.get('PROC_WRAPPER_API_RETRY_DELAY_SECONDS'),
+                    default_value=_coalesce(args.api_retry_delay,
+                            DEFAULT_API_RETRY_DELAY_SECONDS),
+                    negative_value=0))
+
+            self.api_resume_delay = cast(int, _string_to_int(
+                    resolved_env.get('PROC_WRAPPER_API_RESUME_DELAY_SECONDS'),
+                    default_value=_coalesce(args.api_resume_delay,
+                            DEFAULT_API_RESUME_DELAY_SECONDS)))
+
             self.api_task_execution_creation_conflict_retry_delay = _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_api_task_execution_creation_conflict_retry_delay_SECONDS'),
+                    resolved_env.get('PROC_WRAPPER_API_TASK_CREATION_CONFLICT_RETRY_DELAY_SECONDS'),
                     default_value=args.api_task_execution_creation_conflict_retry_delay) \
                     or default_task_execution_creation_conflict_retry_delay
+
+            self.api_request_timeout = _string_to_int(
+                    resolved_env.get('PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS'),
+                    default_value=_coalesce(args.api_request_timeout,
+                            DEFAULT_API_REQUEST_TIMEOUT_SECONDS))
 
         self.deployment = _coalesce(resolved_env.get('PROC_WRAPPER_DEPLOYMENT'),
                 args.deployment)
@@ -679,7 +690,7 @@ environment.
         _logger.debug(f"Process retry delay = {self.process_retry_delay}")
         _logger.debug(f"Process check interval = {self.process_check_interval}")
 
-        _logger.debug(f"Maximum age of conflicting processes in seconds = {self.max_conflicting_age_seconds}")
+        _logger.debug(f"Maximum age of conflicting processes = {self.max_conflicting_age_seconds}")
 
         if not self.offline_mode:
             _logger.debug(f"API base URL = '{self.api_base_url}'")
@@ -687,21 +698,23 @@ environment.
             if self.log_secrets:
                 _logger.debug(f"API key = '{self.api_key}'")
 
-            _logger.debug(f"API heartbeat interval in seconds = {self.api_heartbeat_interval}")
-            _logger.debug(f"API timeout = {self.api_timeout}")
-            _logger.debug(f"API retries = {self.api_retries}")
-            _logger.debug(f"API retries for final update = {self.api_retries_for_final_update}")
-            _logger.debug(f"API retry delay in seconds = {self.api_retry_delay}")
-            _logger.debug(f"API Task Execution creation conflict timeout in seconds = {self.api_task_execution_creation_conflict_timeout}")
-            _logger.debug(f"API Task Execution creation conflict retry delay in seconds = {self.api_task_execution_creation_conflict_retry_delay}")
-
-        if self.log_secrets:
-            _logger.debug(f"Rollbar API key = '{self.rollbar_access_token}'")
+            _logger.debug(f"API error timeout = {self.api_error_timeout}")
+            _logger.debug(f"API retry delay = {self.api_retry_delay}")
+            _logger.debug(f"API resume delay = {self.api_resume_delay}")
+            _logger.debug(f"API Task Execution creation error timeout = {self.api_task_execution_creation_error_timeout}")
+            _logger.debug(f"API Task Execution creation conflict timeout = {self.api_task_execution_creation_conflict_timeout}")
+            _logger.debug(f"API Task Execution creation conflict retry delay = {self.api_task_execution_creation_conflict_retry_delay}")
+            _logger.debug(f"API timeout for final update = {self.api_final_update_timeout}")
+            _logger.debug(f"API request timeout = {self.api_request_timeout}")
+            _logger.debug(f"API heartbeat interval = {self.api_heartbeat_interval}")
 
         if self.rollbar_access_token:
-            _logger.debug(f"Rollbar timeout in seconds = {self.rollbar_timeout}")
+            if self.log_secrets:
+                _logger.debug(f"Rollbar API key = '{self.rollbar_access_token}'")
+
+            _logger.debug(f"Rollbar timeout = {self.rollbar_timeout}")
             _logger.debug(f"Rollbar retries = {self.rollbar_retries}")
-            _logger.debug(f"Rollbar retry delay in seconds = {self.rollbar_retry_delay}")
+            _logger.debug(f"Rollbar retry delay = {self.rollbar_retry_delay}")
         else:
             _logger.debug('Rollbar is disabled')
 
@@ -1016,7 +1029,7 @@ environment.
         else:
             return self.process_max_retries + 1
 
-    def request_process_start_if_max_concurrency_ok(self) -> None:
+    def request_task_execution_start(self) -> None:
         """
         Make a request to the API server to create a Task Execution
         for this Task. Retry and wait between requests if so configured
@@ -1060,17 +1073,20 @@ environment.
                 'wrapper_log_level': logging.getLevelName(_logger.getEffectiveLevel()),
                 'wrapper_version': ProcWrapper.VERSION,
                 'schedule': self.schedule,
-                'api_timeout_seconds': _encode_int(self.api_timeout, empty_value=-1),
-                'api_max_retries': _encode_int(self.api_retries, empty_value=-1),
-                'api_max_retries_for_final_update': _encode_int(
-                        self.api_retries_for_final_update, empty_value=-1),
+                'api_error_timeout': _encode_int(self.api_error_timeout, empty_value=-1),
+                'api_retry_delay': _encode_int(self.api_retry_delay),
+                'api_resume_delay': _encode_int(self.api_resume_delay),
+                'api_task_creation_error_timeout': _encode_int(
+                        self.api_task_execution_creation_error_timeout,
+                        empty_value=-1),
                 'api_task_creation_conflict_timeout': _encode_int(
                         self.api_task_execution_creation_conflict_timeout,
                         empty_value=-1),
                 'api_task_execution_creation_conflict_retry_delay': _encode_int(
                         self.api_task_execution_creation_conflict_retry_delay),
-                'api_retry_delay': _encode_int(self.api_retry_delay),
-                'api_resume_delay': _encode_int(self.api_resume_delay),
+                'api_final_update_timeout_seconds': _encode_int(
+                        self.api_final_update_timeout, empty_value=-1),
+                'api_request_timeout_seconds': _encode_int(self.api_request_timeout, empty_value=-1),
                 'status_update_interval_seconds': _encode_int(self.status_update_interval,
                         empty_value=-1),
                 'status_update_port': _encode_int(self.status_update_socket_port,
@@ -1216,7 +1232,7 @@ environment.
             _logger.critical(f'Failed to resolve one or more environment variables: {self.failed_env_names}')
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
-        self.request_process_start_if_max_concurrency_ok()
+        self.request_task_execution_start()
 
         config = self.make_process_env()
 
@@ -1285,7 +1301,7 @@ environment.
         if self.offline_mode:
             _logger.info('Starting in offline mode ...')
         else:
-            self.request_process_start_if_max_concurrency_ok()
+            self.request_task_execution_start()
             _logger.info(f"Created Task Execution {self.task_execution_uuid}, starting now.")
 
         process_env = self.make_process_env()
@@ -1476,17 +1492,14 @@ environment.
                 self._close_status_socket()
 
         if notification_required:
-            if self.rollbar_access_token and not self.rollbar_retries_exhausted:
-                error_message = 'API Server not configured'
+            error_message = 'API Server not configured'
 
-                if self.api_server_retries_exhausted:
-                    error_message = 'API Server not responding properly'
-                elif not self.task_execution_uuid:
-                    error_message = 'Task Execution ID not assigned'
+            if self.api_server_retries_exhausted:
+                error_message = 'API Server not responding properly'
+            elif not self.task_execution_uuid:
+                error_message = 'Task Execution ID not assigned'
 
-                self._send_rollbar_error(error_message, self.last_api_request_data)
-            else:
-                _logger.info("Can't notify any valid sink!")
+            self._report_error(error_message, self.last_api_request_data)
 
     def _terminate_or_kill_process(self):
         self._ensure_non_embedded_mode()
@@ -1628,18 +1641,18 @@ environment.
         if not self.offline_mode:
             process_env['PROC_WRAPPER_API_BASE_URL'] = self.api_base_url
             process_env['PROC_WRAPPER_API_KEY'] = str(self.api_key)
-            process_env['PROC_WRAPPER_API_TIMEOUT'] = str(_encode_int(self.api_timeout,
-                    empty_value=-1))
-            process_env['PROC_WRAPPER_API_RETRIES'] = str(_encode_int(self.api_retries,
-                    empty_value=-1))
+            process_env['PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS'] = \
+                    str(_encode_int(self.api_error_timeout, empty_value=-1))
             process_env['PROC_WRAPPER_API_RETRY_DELAY_SECONDS'] = \
-                str(self.api_retry_delay)
+                    str(self.api_retry_delay)
             process_env['PROC_WRAPPER_API_RESUME_DELAY_SECONDS'] = \
-                str(_encode_int(self.api_resume_delay))
+                    str(_encode_int(self.api_resume_delay))
+            process_env['PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS'] = \
+                    str(_encode_int(self.api_request_timeout, empty_value=-1))
 
             enable_status_update_listener = (self.status_update_socket_port is not None)
             process_env['PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER'] = \
-                str(enable_status_update_listener).upper()
+                    str(enable_status_update_listener).upper()
             if enable_status_update_listener:
                 process_env['PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT'] = \
                     str(self.status_update_socket_port)
@@ -1723,19 +1736,14 @@ environment.
 
         url = f"{self.api_base_url}/api/v1/task_executions/{quote_plus(str(self.task_execution_uuid))}/"
         headers = self._make_headers()
-
-        if status == self.STATUS_RUNNING:
-            api_retries = self.api_retries
-        else:
-            api_retries = self.api_retries_for_final_update
-
         text_data = json.dumps(body)
         data = text_data.encode('utf-8')
+        is_final_update = (status != self.STATUS_RUNNING)
 
         _logger.debug(f"Sending update '{text_data}' ...")
 
         req = Request(url, data=data, headers=headers, method='PATCH')
-        f = self._send_api_request(req, api_retries=api_retries)
+        f = self._send_api_request(req, is_final_update=is_final_update)
         if f is None:
             _logger.debug('Update request failed non-fatally')
         else:
@@ -1744,8 +1752,29 @@ environment.
                 self.last_update_sent_at = time.time()
                 self.status_dict = {}
 
-    def _send_api_request(self, req: Request, api_retries: Optional[int] = -1,
-            is_task_execution_creation_request: bool = False) -> \
+    def _compute_successful_request_deadline(self,
+            first_attempt_at: float,
+            is_task_execution_creation_request: bool = False,
+            for_task_execution_creation_conflict: bool = False,
+            is_final_update: bool = False) -> Optional[float]:
+        timeout: Optional[int] = self.api_error_timeout
+
+        if is_task_execution_creation_request:
+            if for_task_execution_creation_conflict:
+                timeout = self.api_task_execution_creation_conflict_timeout
+            else:
+                timeout = self.api_task_execution_creation_error_timeout
+        elif is_final_update:
+            timeout = self.api_final_update_timeout
+
+        if timeout is not None:
+            return first_attempt_at + timeout
+
+        return None
+
+    def _send_api_request(self, req: Request,
+            is_task_execution_creation_request: bool = False,
+            is_final_update: bool = False) -> \
             Optional[RawIOBase]:
         _logger.debug(f"Sending {req.method} request to {req.full_url} ....")
 
@@ -1755,18 +1784,13 @@ environment.
             _logger.debug('Not sending API request because all retries are exhausted')
             return None
 
-        if api_retries == -1:
-            if is_task_execution_creation_request:
-                api_retries = None
-            else:
-                api_retries = self.api_retries
+        first_attempt_at = time.time()
+        deadline = self._compute_successful_request_deadline(
+                first_attempt_at=first_attempt_at,
+                is_task_execution_creation_request=is_task_execution_creation_request,
+                is_final_update=is_final_update)
 
         attempt_count = 0
-
-        if api_retries is None:
-            max_attempts = -1
-        else:
-            max_attempts = api_retries + 1
 
         api_request_data: Dict[str, Any] = {
             'request': {
@@ -1776,17 +1800,16 @@ environment.
             }
         }
 
-        first_attempt_at = time.time()
         status_code: Optional[int] = None
 
-        while (api_retries is None) or (attempt_count < max_attempts):
+        while (deadline is None) or (time.time() < deadline):
             attempt_count += 1
             retry_delay = self.api_retry_delay
 
-            _logger.info(f"Sending API request (attempt {attempt_count}/{max_attempts}) ...")
+            _logger.info(f"Sending API request (attempt {attempt_count}) ...")
 
             try:
-                resp = urlopen(req, timeout=self.api_timeout)
+                resp = urlopen(req, timeout=self.api_request_timeout)
                 self.last_api_request_failed_at = None
                 self.last_api_request_data = None
 
@@ -1804,32 +1827,41 @@ environment.
                 except Exception:
                     _logger.warning("Can't read error response body")
 
-                if self.rollbar_access_token:
-                    api_request_data.pop('error', None)
-                    api_request_data['response'] = {
-                        'status_code': status_code,
-                        'body': response_body
-                    }
+                api_request_data.pop('error', None)
+                api_request_data['response'] = {
+                    'status_code': status_code,
+                    'body': response_body
+                }
 
                 if status_code in self._RETRYABLE_HTTP_STATUS_CODES:
+                    if not self.last_api_request_failed_at:
+                        deadline = self._compute_successful_request_deadline(
+                                first_attempt_at=first_attempt_at,
+                                is_task_execution_creation_request=is_task_execution_creation_request,
+                                for_task_execution_creation_conflict=False,
+                                is_final_update=is_final_update)
+
                     self.last_api_request_failed_at = time.time()
 
                     error_message = f"Endpoint temporarily not available, status code = {status_code}"
                     _logger.warning(error_message)
 
-                    if self.rollbar_access_token:
-                        self._send_rollbar_error(error_message, api_request_data)
+                    self._report_error(error_message, api_request_data)
                 elif status_code == 409:
-                    self.was_conflict = True
-
-                    if is_task_execution_creation_request \
-                            and ((self.api_task_execution_creation_conflict_timeout is None)
-                            or (time.time() - first_attempt_at > self.api_task_execution_creation_conflict_timeout)):
+                    if is_task_execution_creation_request:
+                        if not self.was_conflict:
+                            self.was_conflict = True
+                            deadline = self._compute_successful_request_deadline(first_attempt_at,
+                                    is_task_execution_creation_request=True,
+                                    for_task_execution_creation_conflict=True)
                         retry_delay = self.api_task_execution_creation_conflict_retry_delay
-                        _logger.info('Response code = 409, will retry Task Execution creation')
+
+                        _logger.info('Got response code = 409 during Task Execution creation')
                     else:
+                        self.last_api_request_failed_at = time.time()
+
                         _logger.error(
-                                'Got response code 409 during execution and Task Execution creation timeout expired, exiting.')
+                                'Got response code 409 during Task Execution creation, exiting.')
                         exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code,
                                 self._EXIT_CODE_GENERIC_ERROR)
                         self._exit_or_raise(exit_code)
@@ -1840,8 +1872,7 @@ environment.
                     error_message = f"Got error response code = {status_code}"
                     _logger.error(error_message)
 
-                    if self.rollbar_access_token:
-                        self._send_rollbar_error(error_message, api_request_data)
+                    self._report_error(error_message, api_request_data)
 
                     if self.prevent_offline_execution:
                         _logger.critical(f"Response code = {status_code}, exiting since we are preventing offline execution.")
@@ -1849,11 +1880,17 @@ environment.
                         exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code, self._EXIT_CODE_GENERIC_ERROR)
                         self._exit_or_raise(exit_code)
                         return None
-                    else:
-                        _logger.warning(f"Response code = {status_code}, but continuing since we are allowing offline execution.")
 
+                    _logger.warning(f"Response code = {status_code}, but continuing since we are allowing offline execution.")
                     return None
             except Exception as ex:
+                if not self.last_api_request_failed_at:
+                    deadline = self._compute_successful_request_deadline(
+                            first_attempt_at=first_attempt_at,
+                            is_task_execution_creation_request=is_task_execution_creation_request,
+                            for_task_execution_creation_conflict=False,
+                            is_final_update=is_final_update)
+
                 self.last_api_request_failed_at = time.time()
 
                 api_request_data.pop('response', None)
@@ -1868,25 +1905,20 @@ environment.
                     error_message = f"Unhandled exception: {ex}"
                     _logger.exception(error_message)
 
-                if self.rollbar_access_token:
-                    self._send_rollbar_error(error_message, api_request_data)
+                self._report_error(error_message, api_request_data)
 
-                if attempt_count >= max_attempts:
-                    self.api_server_retries_exhausted = True
-                    _logger.error('Exhausted all retries, not sending any more API requests.')
-
-            if api_retries and (attempt_count < max_attempts):
+            if (deadline is None) or (time.time() < deadline):
                 _logger.debug(f"Sleeping {retry_delay} seconds after request error ...")
                 time.sleep(retry_delay)
                 _logger.debug('Done sleeping after request error.')
 
         if is_task_execution_creation_request and self.prevent_offline_execution:
-            _logger.critical('Exiting because process creation retries exhausted and offline execution is prevented')
-
+            _logger.critical('Exiting because Task Execution creation timed out and offline execution is prevented')
             exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code or 0,
                     self._EXIT_CODE_GENERIC_ERROR)
             self._exit_or_raise(exit_code)
 
+        _logger.error('Exhausted retry timeout, not sending any more API requests.')
         return None
 
     def _refresh_api_server_retries_exhausted(self) -> bool:
@@ -1921,7 +1953,18 @@ environment.
 
             return None
 
-    def _send_rollbar_error(self, message, data=None, level='error') -> bool:
+    def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> int:
+        num_sinks_successful = 0
+        if self.rollbar_access_token:
+            if self._send_rollbar_error(message, data):
+                num_sinks_successful += 1
+
+        if num_sinks_successful == 0:
+            _logger.info("Can't notify any valid error sink!")
+
+        return num_sinks_successful
+
+    def _send_rollbar_error(self, message: str, data=None, level='error') -> bool:
         if not self.rollbar_access_token:
             _logger.warning(f"Not sending '{message}' to Rollbar since no access token found")
             return False
