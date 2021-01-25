@@ -326,7 +326,7 @@ environment.
         self.task_name: Optional[str] = None
         self.task_execution_uuid: Optional[str] = None
         self.schedule = ''
-        self.max_conflicting_age_seconds: Optional[int] = None
+        self.max_conflicting_age: Optional[int] = None
         self.was_conflict = False
         self.called_exit = False
         self.attempt_count = 0
@@ -616,7 +616,7 @@ environment.
         if self.task_is_service and self.api_heartbeat_interval:
             default_max_conflicting_age_seconds = self.api_heartbeat_interval + HEARTBEAT_DELAY_TOLERANCE_SECONDS
 
-        self.max_conflicting_age_seconds = _string_to_int(
+        self.max_conflicting_age = _string_to_int(
                 resolved_env.get('PROC_WRAPPER_MAX_CONFLICTING_AGE_SECONDS'),
                 default_value=_coalesce(args.max_conflicting_age,
                         default_max_conflicting_age_seconds))
@@ -690,7 +690,7 @@ environment.
         _logger.debug(f"Process retry delay = {self.process_retry_delay}")
         _logger.debug(f"Process check interval = {self.process_check_interval}")
 
-        _logger.debug(f"Maximum age of conflicting processes = {self.max_conflicting_age_seconds}")
+        _logger.debug(f"Maximum age of conflicting processes = {self.max_conflicting_age}")
 
         if not self.offline_mode:
             _logger.debug(f"API base URL = '{self.api_base_url}'")
@@ -1067,7 +1067,7 @@ environment.
                 'process_retry_delay_seconds': self.process_retry_delay,
                 'heartbeat_interval_seconds': _encode_int(self.api_heartbeat_interval, empty_value=-1),
                 'max_concurrency': _encode_int(self.max_concurrency, empty_value=-1),
-                'max_conflicting_age_seconds': self.max_conflicting_age_seconds,
+                'max_conflicting_age_seconds': self.max_conflicting_age,
                 'prevent_offline_execution': str(self.prevent_offline_execution).upper(),
                 'process_termination_grace_period_seconds': self.process_termination_grace_period_seconds,
                 'wrapper_log_level': logging.getLevelName(_logger.getEffectiveLevel()),
@@ -1111,7 +1111,7 @@ environment.
                     raise RuntimeError('Neither Task UUID or Task name were set.')
 
                 body['task'] = task_dict
-                body['max_conflicting_age_seconds'] = self.max_conflicting_age_seconds
+                body['max_conflicting_age_seconds'] = self.max_conflicting_age
 
             if self.command:
                 body['process_command'] = ' '.join(self.command)
@@ -1398,9 +1398,7 @@ environment.
                             try:
                                 self.process.wait(sleep_duration)
                             except TimeoutExpired:
-                                _logger.debug('Process wait time expired')
-
-                            _logger.debug('Done waiting while process is running.')
+                                _logger.debug('Done waiting while process is running.')
 
                 else:
                     _logger.info(f"Process exited with exit code {exit_code}")
@@ -1462,12 +1460,7 @@ environment.
 
         try:
             if self.process:
-                pid = self.process.pid
-                if pid is not None:
-                    self._terminate_or_kill_process()
-
-                exit_code = self.process.poll()
-
+                exit_code = self._terminate_or_kill_process()
                 if exit_code == 0:
                     status = self.STATUS_SUCCEEDED
         except Exception:
