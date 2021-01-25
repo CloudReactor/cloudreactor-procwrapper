@@ -42,7 +42,9 @@ class StatusUpdater:
 
         self.socket: Optional[socket.socket] = None
         self.port = None
-        self.enabled = os.environ.get('PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER', 'FALSE').upper() == 'TRUE'
+        self.enabled = os.environ.get(
+                'PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER', 'FALSE') \
+                .upper() == 'TRUE'
 
         if self.enabled:
             self._logger.info('StatusUpdater is enabled')
@@ -59,6 +61,14 @@ class StatusUpdater:
         self.expected_count = 0
 
         atexit.register(_exit_handler, self)
+
+    def __enter__(self):
+        """Implement entrypoint for python with statement."""
+        return self
+
+    def __exit__(self, _type, _value, _traceback):
+        """Implement exit point for python with statement."""
+        self.shutdown()
 
     def send_update(self, success_count: Optional[int] = None,
             error_count: Optional[int] = None,
