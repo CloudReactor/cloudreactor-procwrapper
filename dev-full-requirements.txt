@@ -17,12 +17,9 @@ aws-xray-sdk==2.6.0 \
     --hash=sha256:076f7c610cd3564bbba3507d43e328fb6ff4a2e841d3590f39b2c3ce99d41e1d \
     --hash=sha256:abf5b90f740e1f402e23414c9670e59cb9772e235e271fef2bce62b9100cbc77
     # via moto
-boto3==1.16.47 \
-    --hash=sha256:05796ba6c65f79214ea61becae5126d5c924eed8a11874bc5536d611deabbe47 \
-    --hash=sha256:50c2475cc6c38f7ff24c3e0ca8f7eaf787ce740499198043e05e6f13ac2e919f
-    # via
-    #   aws-sam-translator
-    #   moto
+boto3==1.16.59 \
+    --hash=sha256:550a513315194292651bb6cc96e94185bfc4dc6b299c3cf1594882bdd16b3905 \
+    --hash=sha256:f8a2f0bf929af92c4d254d1e495f6642dd335818cc7172e1bdc3dfe28655fb94
 boto==2.49.0 \
     --hash=sha256:147758d41ae7240dc989f0039f27da8ca0d53734be0eb869ef16e3adcfa462e8 \
     --hash=sha256:ea0d3b40a2d852767be77ca343b58a9e3a4b00d9db440efb8da74b4e58025e5a
