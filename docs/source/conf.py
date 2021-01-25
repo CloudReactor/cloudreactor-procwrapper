@@ -18,7 +18,7 @@
 # -- Project information -----------------------------------------------------
 
 project = "cloudreactor-procwrapper"
-copyright = "2020, Jeff Tsay"
+copyright = "2021-present, Machine Intelligence Services, Inc."
 author = "Jeff Tsay"
 
 
