@@ -2,5 +2,5 @@
 
 <!--next-version-placeholder-->
 
-## v2.0.0 (2021-01-15)
+## v2.0.0rc1 (2021-01-26)
 * Initial version

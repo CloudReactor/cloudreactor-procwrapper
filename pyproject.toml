@@ -1,17 +1,16 @@
 [tool.poetry]
 name = "cloudreactor-procwrapper"
-version = "2.0.0"
+version = "2.0.0-rc1"
 description = "Wraps the execution of processes so that a service API endpoint (CloudReactor) can monitor and manage them. Also implements retries, timeouts, and secret injection from AWS into the environment."
 authors = [
-  "Jeff Tsay <jeff@cloudreactor.io>",
-  "Mike Waldner <mwaldner@gmail.com>",
+  "Jeff Tsay <jeff@cloudreactor.io>"
 ]
 license = "Dual license, MPL 2.0 or commercial"
 readme = "README.md"
 repository = "https://github.com/CloudReactor/cloudreactor-procwrapper"
 documentation = "https://cloudreactor-procwrapper.readthedocs.io"
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 2 - Beta",
     "Intended Audience :: Developers",
     "Natural Language :: English",
     "Operating System :: OS Independent",

@@ -183,7 +183,7 @@ class RuntimeMetadata(NamedTuple):
 
 
 class ProcWrapper:
-    VERSION = '2.0.0-alpha1'
+    VERSION = '2.0.0-rc1'
 
     STATUS_RUNNING = 'RUNNING'
     STATUS_SUCCEEDED = 'SUCCEEDED'

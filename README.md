@@ -52,6 +52,14 @@ In wrapped mode, you run the module with a command line which it
 executes in a child process. The command can be implemented in whatever
 programming language the running machine supports.
 
+Instead of running
+
+  somecommand --somearg x
+
+you would run
+
+  python -m proc_wrapper somecommand --somearg x
+
     usage: python -m proc_wrapper [-h] [--task-name TASK_NAME]
                                   [--task-uuid TASK_UUID]
                                   [--task-execution-uuid TASK_EXECUTION_UUID]
@@ -307,6 +315,9 @@ except that these properties are copied/overridden:
 * PROC_WRAPPER_STATUS_UPDATE_INTERVAL_SECONDS
 * PROC_WRAPPER_STATUS_UPDATE_MESSAGE_MAX_BYTES
 
+Wrapped mode is suitable for running in a shell on your own (virtual) machine or
+in a Docker container.
+
 ### Embedded mode
 
 In embedded mode, you include this package in your python project's
@@ -321,6 +332,10 @@ dependencies. To run a task you want to be monitored:
     args.task_name = 'embedded_test'
     proc_wrapper = ProcWrapper(args=args)
     proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
+
+This is suitable for running in single-threaded environments like
+AWS Lambda. We do not yet support monitoring your task in embedded mode
+with CloudReactor, but will do so in the near future.
 
 ### Secret Fetching
 
@@ -338,7 +353,7 @@ to
 TRUE
 
 Then to resolve the target environment variable MY_SECRET
-by fetching from AWS Secrets Manager, run define the environment variable
+by fetching from AWS Secrets Manager, define the environment variable
 
     AWS_SM_MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE
 
