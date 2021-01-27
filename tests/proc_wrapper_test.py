@@ -11,6 +11,7 @@ TEST_API_PORT = 6777
 TEST_API_KEY = 'SOMEAPIKEY'
 DEFAULT_TASK_UUID = '13b4cfbc-6ed5-4fd5-85e8-73e84e2f1b82'
 DEFAULT_TASK_EXECUTION_UUID = 'd9554f00-eaeb-4a16-96e4-9adda91a2750'
+DEFAULT_TASK_VERSION_SIGNATURE = '43cfd2b905d5cb4f2e8fc941c7a1289002be9f7f'
 
 CLIENT_HEADERS = {
     'Authorization': f'Token {TEST_API_KEY}',
@@ -30,6 +31,7 @@ def make_online_base_env(port: int) -> Dict[str, str]:
     return {
         'PROC_WRAPPER_LOG_LEVEL': 'DEBUG',
         'PROC_WRAPPER_TASK_UUID': DEFAULT_TASK_UUID,
+        'PROC_WRAPPER_TASK_VERSION_SIGNATURE': DEFAULT_TASK_VERSION_SIGNATURE,
         'PROC_WRAPPER_API_BASE_URL': f'http://localhost:{port}',
         'PROC_WRAPPER_API_KEY': TEST_API_KEY,
         'PROC_WRAPPER_API_TASK_CREATION_ERROR_TIMEOUT_SECONDS': '1',
@@ -62,9 +64,9 @@ def test_wrapped_offline_mode():
         'PROC_WRAPPER_LOG_LEVEL': 'DEBUG',
         'PROC_WRAPPER_OFFLINE_MODE': 'TRUE',
     }
-    proc_wrapper = ProcWrapper(args=args, env_override=env_override,
+    wrapper = ProcWrapper(args=args, env_override=env_override,
             embedded_mode=False)
-    proc_wrapper.run()
+    wrapper.run()
 
 
 def test_wrapped_mode_with_server(httpserver: HTTPServer):
@@ -88,14 +90,17 @@ def test_wrapped_mode_with_server(httpserver: HTTPServer):
             .respond_with_handler(update_handler)
 
     args = ProcWrapper.make_arg_parser().parse_args(['echo'])
-    proc_wrapper = ProcWrapper(args=args, env_override=env_override,
+    wrapper = ProcWrapper(args=args, env_override=env_override,
             embedded_mode=False)
-    proc_wrapper.run()
+    wrapper.run()
 
     httpserver.check_assertions()
 
     crd = fetch_creation_request_data()
     assert crd['status'] == ProcWrapper.STATUS_RUNNING
+    assert crd['is_service'] is False
+    assert crd['wrapper_version'] == ProcWrapper.VERSION
+    assert crd['embedded_mode'] is False
     task = crd['task']
     assert task['uuid'] == DEFAULT_TASK_UUID
 
@@ -115,8 +120,8 @@ def test_embedded_offline_mode_success():
     env_override = {
         'PROC_WRAPPER_OFFLINE_MODE': 'TRUE',
     }
-    proc_wrapper = ProcWrapper(env_override=env_override)
-    assert proc_wrapper.managed_call(callback, 'duper') == 'superduper'
+    wrapper = ProcWrapper(env_override=env_override)
+    assert wrapper.managed_call(callback, 'duper') == 'superduper'
 
 
 def bad_callback(wrapper: ProcWrapper, cbdata: str,
@@ -128,10 +133,10 @@ def test_embedded_offline_mode_failure():
     env_override = {
         'PROC_WRAPPER_OFFLINE_MODE': 'TRUE',
     }
-    proc_wrapper = ProcWrapper(env_override=env_override)
+    wrapper = ProcWrapper(env_override=env_override)
 
     try:
-        proc_wrapper.managed_call(bad_callback, 'duper')
+        wrapper.managed_call(bad_callback, 'duper')
     except RuntimeError as err:
         assert str(err).find('Nope!') >= 0
     else:
@@ -141,8 +146,8 @@ def test_embedded_offline_mode_failure():
 def test_resolve_env_with_json_path():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override['SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = '{"a": "bug"}|JP:$.a'
-    proc_wrapper = ProcWrapper(env_override=env_override)
-    assert proc_wrapper.make_process_env()['SOME_ENV'] == 'bug'
+    wrapper = ProcWrapper(env_override=env_override)
+    assert wrapper.make_process_env()['SOME_ENV'] == 'bug'
 
 
 def put_aws_sm_secret(sm_client, name: str, value: str) -> str:
@@ -168,8 +173,8 @@ def test_resolve_env_with_aws_secrets_manager():
 
         env_override['AWS_SM_ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = secret_arn
 
-        proc_wrapper = ProcWrapper(env_override=env_override)
-        process_env = proc_wrapper.make_process_env()
+        wrapper = ProcWrapper(env_override=env_override)
+        process_env = wrapper.make_process_env()
         assert process_env['SOME_ENV'] == 'Secret PW'
         assert process_env['ANOTHER_ENV'] == 'Secret PW 2'
 
@@ -199,12 +204,12 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
         env_override['AWS_SM_YET_ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = \
                 secret_arn + '|JP:$.b.c'
 
-        proc_wrapper = ProcWrapper(env_override=env_override)
-        process_env = proc_wrapper.make_process_env()
+        wrapper = ProcWrapper(env_override=env_override)
+        process_env = wrapper.make_process_env()
 
         assert process_env['SOME_ENV'] == 'food'
         assert process_env['ANOTHER_ENV'] == '250'
         assert process_env['YET_ANOTHER_ENV'] == 'FALSE'
 
-        assert proc_wrapper.managed_call(callback_with_config,
+        assert wrapper.managed_call(callback_with_config,
                 'duper') == 'superduper250'

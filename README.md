@@ -328,9 +328,16 @@ Both usage modes can fetch secrets from
 embedded data, then inject them into the environment (in the case of wrapped mode)
 or a configuration dictionary (in the case of embedded mode).
 
-To enable secret resolution from AWS Secrets Manager
-with target environment variable MY_SECRET, run the code with an
-environment variable
+To enable secret resolution, set environment variable
+
+PROC_WRAPPER_RESOLVE_SECRETS
+
+to
+
+TRUE
+
+Then to resolve the target environment variable MY_SECRET
+by fetching from AWS Secrets Manager, run define the environment variable
 
     AWS_SM_MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE
 
@@ -393,6 +400,14 @@ be simply left/converted to a string. Otherwise, the value is serialized to a JS
 and set to the environment variable value.
 2. Otherwise, the list of results is serialized to a JSON string and set to the environment variable value.
 
+### Secrets Refreshing
+
+You can set a Time to Live (TTL) on the duration that secrets are cached,
+using the --resolved-env-ttl command argument or PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS environment variable.
+
+If your process ends, you have configured the script to retry, and the TTL has expired since the last fetch, proc_wrapper will re-fetch the secrets
+and resolve them again, for the environment passed to the next invocation of
+your process.
 
 ## Contributors ✨
 

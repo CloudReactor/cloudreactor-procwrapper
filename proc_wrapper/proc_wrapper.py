@@ -288,7 +288,7 @@ environment.
                 help='Minimum of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.')
         parser.add_argument('--send-pid', action='store_true', help='Send the process ID to the API server')
         parser.add_argument('--send-hostname', action='store_true', help='Send the hostname to the API server')
-        parser.add_argument('--send-aws-metadata', action='store_true', help='Send metadata from AWS about the runtime environment')
+        parser.add_argument('--send-runtime-metadata', action='store_true', help='Send metadata about the runtime environment')
         parser.add_argument('--deployment', help='Deployment name (production, staging, etc.)')
         parser.add_argument('--schedule', help='Run schedule reported to the API server')
         parser.add_argument('--resolved-env-ttl', help='Number of seconds to cache resolved environment variables instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.')
@@ -559,6 +559,10 @@ environment.
             self.send_hostname = _string_to_bool(
                     resolved_env.get('PROC_WRAPPER_SEND_HOSTNAME'),
                     default_value=args.send_hostname) or False
+
+            self.send_runtime_metadata = _coalesce(_string_to_bool(
+                    resolved_env.get('PROC_WRAPPER_SEND_RUNTIME_METADATA'),
+                    default_value=args.send_runtime_metadata), True)
 
         env_process_timeout_seconds = resolved_env.get('PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS')
 
@@ -943,12 +947,11 @@ environment.
         if self.runtime_metadata or self.fetched_runtime_metadata_at:
             return self.runtime_metadata
 
-        self.fetched_runtime_metadata_at = time.time()
-
         if self.env.get('ECS_CONTAINER_METADATA_URI_V4') \
                 or self.env.get('ECS_CONTAINER_METADATA_URI'):
             self.runtime_metadata = self.fetch_ecs_container_metadata()
 
+        self.fetched_runtime_metadata_at = time.time()
         return self.runtime_metadata
 
     def fetch_ecs_container_metadata(self) -> Optional[RuntimeMetadata]:
@@ -957,6 +960,9 @@ environment.
 
         if task_metadata_url:
             url = f'{task_metadata_url}/task'
+
+            _logger.debug(f"Fetching ECS task metadata from '{task_metadata_url}' ...")
+
             headers = {
                 'Accept': 'application/json'
             }
@@ -965,16 +971,18 @@ environment.
                 resp = urlopen(req, timeout=AWS_ECS_METADATA_TIMEOUT_SECONDS)
                 response_body = resp.read().decode('utf-8')
                 parsed_metadata = json.loads(response_body)
-                return self.convert_ecs_metadata(parsed_metadata)
+                return self.convert_ecs_task_metadata(parsed_metadata)
             except HTTPError as http_error:
                 status_code = http_error.code
                 _logger.warning(f'Unable to fetch ECS task metadata endpoint. Response code = {status_code}.')
             except Exception:
                 _logger.exception('Unable to fetch ECS task metadata endpoint or convert metadata.')
+        else:
+            _logger.debug('No ECS metadata URL found')
 
         return None
 
-    def convert_ecs_metadata(self, metadata: Dict[str, Any]) -> RuntimeMetadata:
+    def convert_ecs_task_metadata(self, metadata: Dict[str, Any]) -> RuntimeMetadata:
         cluster_arn = metadata.get('Cluster')
         execution_method = {
             'type': 'AWS ECS',
@@ -985,7 +993,12 @@ environment.
 
         limits = metadata.get('Limits')
         if isinstance(limits, dict):
-            execution_method['allocated_cpu_units'] = limits.get('CPU')
+            cpu_fraction = limits.get('CPU')
+
+            if (cpu_fraction is not None) \
+                    and (isinstance(float, cpu_fraction) or isinstance(int, cpu_fraction)):
+                execution_method['allocated_cpu_units'] = round(cpu_fraction * 1024)
+
             execution_method['allocated_memory_mb'] = limits.get('Memory')
 
         # Only available for Fargate platform 1.4+
@@ -1199,9 +1212,11 @@ environment.
                               timed_out_attempts=timed_out_attempts,
                               pid=pid)
 
-    def send_completion(self, status,
-                        failed_attempts=None, timed_out_attempts=None,
-                        exit_code=None, pid=None) -> None:
+    def send_completion(self, status: str,
+                        failed_attempts: Optional[int] = None,
+                        timed_out_attempts: Optional[int] = None,
+                        exit_code: Optional[int] = None,
+                        pid: Optional[int] = None) -> None:
         """Send the final result to the API Server."""
 
         if self.offline_mode:
@@ -1217,8 +1232,8 @@ environment.
                 exit_code = self._EXIT_CODE_GENERIC_ERROR
 
         self.send_update(status=status, failed_attempts=failed_attempts,
-                          timed_out_attempts=timed_out_attempts,
-                          exit_code=exit_code, pid=pid)
+                timed_out_attempts=timed_out_attempts,
+                exit_code=exit_code, pid=pid)
 
     def managed_call(self, fun, data=None):
         """
@@ -1443,6 +1458,7 @@ environment.
         _logger.debug(f"Exit handler, Task Execution UUID = {self.task_execution_uuid}")
 
         if self.called_exit:
+            _logger.debug('Called exit already, returning early')
             return
 
         self.called_exit = True
@@ -1469,11 +1485,11 @@ environment.
             try:
                 if self.task_execution_uuid:
                     if self.was_conflict:
-                        _logger.debug('Process update conflict detected, not notifying because server-side should have notified already.')
+                        _logger.debug('Task execution update conflict detected, not notifying because server-side should have notified already.')
                         notification_required = False
                         status = self.STATUS_ABORTED
 
-                    if self.api_base_url and self.api_key and not self.api_server_retries_exhausted:
+                    if not self.offline_mode and not self.api_server_retries_exhausted:
                         self.send_completion(status=status,
                                              failed_attempts=self.failed_count,
                                              timed_out_attempts=self.timeout_count,
@@ -1494,7 +1510,7 @@ environment.
 
             self._report_error(error_message, self.last_api_request_data)
 
-    def _terminate_or_kill_process(self):
+    def _terminate_or_kill_process(self) -> Optional[int]:
         self._ensure_non_embedded_mode()
 
         if (not self.process) or (not self.process.pid):
@@ -1939,12 +1955,8 @@ environment.
                 if self.called_exit:
                     raise RuntimeError(
                         f"exit() called already; raising exception instead of exiting with exit code {exit_code}")
-                else:
-                    self.called_exit = True
 
                 exit(exit_code)
-
-            return None
 
     def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> int:
         num_sinks_successful = 0
