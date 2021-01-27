@@ -86,8 +86,8 @@ programming language the running machine supports.
                                   [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
                                   [--status-update-interval STATUS_UPDATE_INTERVAL]
                                   [--send-pid] [--send-hostname]
-                                  [--send-aws-metadata] [--deployment DEPLOYMENT]
-                                  [--schedule SCHEDULE]
+                                  [--send-runtime-metadata]
+                                  [--deployment DEPLOYMENT] [--schedule SCHEDULE]
                                   [--resolved-env-ttl RESOLVED_ENV_TTL]
                                   [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
                                   [--rollbar-retries ROLLBAR_RETRIES]
@@ -214,7 +214,8 @@ programming language the running machine supports.
                             updates except with heartbeats. Defaults to -1.
       --send-pid            Send the process ID to the API server
       --send-hostname       Send the hostname to the API server
-      --send-aws-metadata   Send metadata from AWS about the runtime environment
+      --send-runtime-metadata
+                            Send metadata about the runtime environment
       --deployment DEPLOYMENT
                             Deployment name (production, staging, etc.)
       --schedule SCHEDULE   Run schedule reported to the API server
@@ -405,7 +406,7 @@ and set to the environment variable value.
 You can set a Time to Live (TTL) on the duration that secrets are cached,
 using the --resolved-env-ttl command argument or PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS environment variable.
 
-If your process ends, you have configured the script to retry, and the TTL has expired since the last fetch, proc_wrapper will re-fetch the secrets
+If your process exits, you have configured the script to retry, and the TTL has expired since the last fetch, proc_wrapper will re-fetch the secrets
 and resolve them again, for the environment passed to the next invocation of
 your process.
 
