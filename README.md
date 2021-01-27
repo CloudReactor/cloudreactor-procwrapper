@@ -54,11 +54,13 @@ programming language the running machine supports.
 
 Instead of running
 
-  somecommand --somearg x
+    somecommand --somearg x
 
 you would run
 
-  python -m proc_wrapper somecommand --somearg x
+    python -m proc_wrapper somecommand --somearg x
+
+Here are all the options:
 
     usage: python -m proc_wrapper [-h] [--task-name TASK_NAME]
                                   [--task-uuid TASK_UUID]
@@ -346,11 +348,11 @@ or a configuration dictionary (in the case of embedded mode).
 
 To enable secret resolution, set environment variable
 
-PROC_WRAPPER_RESOLVE_SECRETS
+    PROC_WRAPPER_RESOLVE_SECRETS
 
 to
 
-TRUE
+    TRUE
 
 Then to resolve the target environment variable MY_SECRET
 by fetching from AWS Secrets Manager, define the environment variable
@@ -394,7 +396,7 @@ and the value is
       "password": "badpassword"
     }
 
-Then you can populate the environment variable DB_USERNAME by setting the
+Then you can populate the environment variable `DB_USERNAME` by setting the
 environment variable
 
     AWS_SM_DB_USERNAME_FOR_PROC_WRAPPER_TO_RESOLVE
@@ -424,6 +426,10 @@ using the --resolved-env-ttl command argument or PROC_WRAPPER_RESOLVED_ENV_TTL_S
 If your process exits, you have configured the script to retry, and the TTL has expired since the last fetch, proc_wrapper will re-fetch the secrets
 and resolve them again, for the environment passed to the next invocation of
 your process.
+
+## License
+
+This software is dual-licensed under open source (MPL 2.0) and commercial licenses. See `LICENSE` for details.
 
 ## Contributors ✨
 
