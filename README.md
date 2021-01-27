@@ -354,7 +354,7 @@ to
 
     TRUE
 
-Then to resolve the target environment variable MY_SECRET
+Then to resolve the target environment variable `MY_SECRET`
 by fetching from AWS Secrets Manager, define the environment variable
 
     AWS_SM_MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE
@@ -375,6 +375,13 @@ boto3 is used to fetch secrets. It will try to access to AWS Secrets Manager
 using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY if they
 are set, or use the EC2 instance role, ECS task role, or Lambda execution role
 if available.
+
+You can also use "partial ARNs" (without the hyphened suffix) as keys.
+In the example above
+
+    arn:aws:secretsmanager:us-east-2:1234567890:secret:config
+
+could be used to fetch the same secret, provided there are no conflicting secret ARNs.
 
 ### Secret Tranformation
 
