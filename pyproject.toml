@@ -10,7 +10,7 @@ readme = "README.md"
 repository = "https://github.com/CloudReactor/cloudreactor-procwrapper"
 documentation = "https://cloudreactor-procwrapper.readthedocs.io"
 classifiers = [
-    "Development Status :: 2 - Beta",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Natural Language :: English",
     "Operating System :: OS Independent",
