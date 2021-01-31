@@ -245,7 +245,7 @@ Here are all the options:
                             Timeout for contacting Rollbar server, in seconds.
                             Defaults to 30.
 
-Environment variables read, take precedence over command-line arguments:
+These environment variables take precedence over command-line arguments:
 
 * PROC_WRAPPER_TASK_NAME
 * PROC_WRAPPER_TASK_UUID

@@ -183,7 +183,7 @@ class RuntimeMetadata(NamedTuple):
 
 
 class ProcWrapper:
-    VERSION = '2.0.0-rc1'
+    VERSION = '2.0.0-rc2'
 
     STATUS_RUNNING = 'RUNNING'
     STATUS_SUCCEEDED = 'SUCCEEDED'
@@ -1086,16 +1086,16 @@ environment.
                 'wrapper_log_level': logging.getLevelName(_logger.getEffectiveLevel()),
                 'wrapper_version': ProcWrapper.VERSION,
                 'schedule': self.schedule,
-                'api_error_timeout': _encode_int(self.api_error_timeout, empty_value=-1),
-                'api_retry_delay': _encode_int(self.api_retry_delay),
-                'api_resume_delay': _encode_int(self.api_resume_delay),
-                'api_task_creation_error_timeout': _encode_int(
+                'api_error_timeout_seconds': _encode_int(self.api_error_timeout, empty_value=-1),
+                'api_retry_delay_seconds': _encode_int(self.api_retry_delay),
+                'api_resume_delay_seconds': _encode_int(self.api_resume_delay),
+                'api_task_execution_creation_error_timeout_seconds': _encode_int(
                         self.api_task_execution_creation_error_timeout,
                         empty_value=-1),
-                'api_task_creation_conflict_timeout': _encode_int(
+                'api_task_execution_creation_conflict_timeout_seconds': _encode_int(
                         self.api_task_execution_creation_conflict_timeout,
                         empty_value=-1),
-                'api_task_execution_creation_conflict_retry_delay': _encode_int(
+                'api_task_execution_creation_conflict_retry_delay_seconds': _encode_int(
                         self.api_task_execution_creation_conflict_retry_delay),
                 'api_final_update_timeout_seconds': _encode_int(
                         self.api_final_update_timeout, empty_value=-1),
