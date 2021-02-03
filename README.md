@@ -265,8 +265,9 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_RESUME_DELAY_SECONDS
-* PROC_WRAPPER_API_TASK_CREATION_ERROR_TIMEOUT_SECONDS
-* PROC_WRAPPER_API_TASK_CREATION_CONFLICT_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_TIMEOUT_SECONDS
 * PROC_WRAPPER_SEND_PID
@@ -433,6 +434,12 @@ using the --resolved-env-ttl command argument or PROC_WRAPPER_RESOLVED_ENV_TTL_S
 If your process exits, you have configured the script to retry, and the TTL has expired since the last fetch, proc_wrapper will re-fetch the secrets
 and resolve them again, for the environment passed to the next invocation of
 your process.
+
+## Example Project
+
+The [cloudreactor-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-ecs-quickstart)
+project uses this library to deploy some sample tasks, written in python, to CloudReactor,
+running using AWS ECS Fargate.
 
 ## License
 

@@ -44,13 +44,13 @@ HEARTBEAT_DELAY_TOLERANCE_SECONDS = 60
 
 DEFAULT_API_BASE_URL = 'https://api.cloudreactor.io'
 DEFAULT_API_REQUEST_TIMEOUT_SECONDS = 30
-DEFAULT_API_ERROR_TIMEOUT_SECONDS = 250
+DEFAULT_API_ERROR_TIMEOUT_SECONDS = 300
 DEFAULT_API_RETRY_DELAY_SECONDS = 120
 DEFAULT_API_RESUME_DELAY_SECONDS = 600
 DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS = 300
-DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS = 120
+DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS = 120
 DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS = 1800
-DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_RETRY_DELAY_SECONDS = 60
+DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS = 60
 DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS = 300
 DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS = 30
 DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS = 1800
@@ -251,7 +251,7 @@ environment.
         parser.add_argument('--api-task-execution-creation-conflict-timeout',
                 help=f"Number of seconds to keep retrying Task Execution creation while conflict is detected by the API server. -1 means to keep trying indefinitely. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS} for concurrency limited services, 0 otherwise.")
         parser.add_argument('--api-task-execution-creation-conflict-retry-delay',
-                help=f"Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_RETRY_DELAY_SECONDS} for concurrency-limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS} otherwise.")
+                help=f"Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS} for concurrency-limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS} otherwise.")
         parser.add_argument('--api-request-timeout',
                 help=f"Timeout for contacting API server, in seconds. Defaults to {DEFAULT_API_REQUEST_TIMEOUT_SECONDS}.")
         parser.add_argument('--offline-mode', action='store_true',
@@ -349,14 +349,15 @@ environment.
         self.api_key: Optional[str] = None
         self.api_retry_delay = DEFAULT_API_RETRY_DELAY_SECONDS
         self.api_resume_delay = DEFAULT_API_RESUME_DELAY_SECONDS
-        self.api_request_timeout: Optional[int] = DEFAULT_API_REQUEST_TIMEOUT_SECONDS
+        self.api_request_timeout: Optional[int] = \
+                DEFAULT_API_REQUEST_TIMEOUT_SECONDS
         self.api_error_timeout: Optional[int] = \
                 DEFAULT_API_ERROR_TIMEOUT_SECONDS
         self.api_task_execution_creation_error_timeout: Optional[int] = \
                 DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS
         self.api_task_execution_creation_conflict_timeout: Optional[int] = 0
         self.api_task_execution_creation_conflict_retry_delay = \
-                DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS
+                DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
         self.api_final_update_timeout: Optional[int] = \
                 DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS
         self.api_heartbeat_interval: Optional[int] = None
@@ -483,15 +484,15 @@ environment.
                             DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS))
 
             default_task_execution_creation_conflict_timeout = 0
-            default_task_execution_creation_conflict_retry_delay = DEFAULT_API_TASK_EXECUTION_CREATION_RETRY_DELAY_SECONDS
+            default_task_execution_creation_conflict_retry_delay = DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
             if self.is_concurrency_limited_service:
                 default_task_execution_creation_conflict_timeout = \
                         DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS
                 default_task_execution_creation_conflict_retry_delay = \
-                        DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_RETRY_DELAY_SECONDS
+                        DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 
             self.api_task_execution_creation_conflict_timeout = _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_API_TASK_CREATION_CONFLICT_TIMEOUT_SECONDS'),
+                    resolved_env.get('PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT_SECONDS'),
                     default_value=_coalesce(
                             args.api_task_execution_creation_conflict_timeout,
                             default_task_execution_creation_conflict_timeout))
@@ -513,7 +514,7 @@ environment.
                             DEFAULT_API_RESUME_DELAY_SECONDS)))
 
             self.api_task_execution_creation_conflict_retry_delay = _string_to_int(
-                    resolved_env.get('PROC_WRAPPER_API_TASK_CREATION_CONFLICT_RETRY_DELAY_SECONDS'),
+                    resolved_env.get('PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS'),
                     default_value=args.api_task_execution_creation_conflict_retry_delay) \
                     or default_task_execution_creation_conflict_retry_delay
 
