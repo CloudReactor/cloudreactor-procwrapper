@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cloudreactor-procwrapper"
-version = "2.0.0-rc2"
+version = "2.0.0-rc3"
 description = "Wraps the execution of processes so that a service API endpoint (CloudReactor) can monitor and manage them. Also implements retries, timeouts, and secret injection from AWS into the environment."
 authors = [
   "Jeff Tsay <jeff@cloudreactor.io>"

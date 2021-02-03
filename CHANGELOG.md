@@ -2,8 +2,10 @@
 
 <!--next-version-placeholder-->
 
-## v2.0.0rc1 (2021-01-26)
+## v2.0.0-rc1 (2021-01-26)
 * Initial version
-## v2.0.0rc2 (2021-01-31)
+## v2.0.0-rc2 (2021-01-31)
 * Fix some property names for Task Execution creation
-
+## v2.0.0-rc3 (2021-01-31)
+* Fix more property names for Task Execution creation
+* Document some environment variables
