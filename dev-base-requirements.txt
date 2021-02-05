@@ -12,9 +12,9 @@ attrs==20.3.0 \
     --hash=sha256:31b2eced602aa8423c2aea9c76a724617ed67cf9513173fd3a4f03e3a929c7e6 \
     --hash=sha256:832aa3cde19744e49938b91fea06d69ecb9e649c93ba974535d08ad92164f700
     # via pytest
-boto3-stubs==1.17.1.0 \
-    --hash=sha256:54a243ffec856572e75d47e2db1020f389c608ce9e62ef64eb40f39e658109bd \
-    --hash=sha256:d19e62d24923277eea3d431b06c15fa0af6a74d0a8c49b67f3a788fffac8d7eb
+boto3-stubs==1.17.2.1 \
+    --hash=sha256:0ddf96154a7ae3d8127ac6ddc7a1eca02d4d6d04ed91d25d253ba4fb77ad181a \
+    --hash=sha256:d14e01601411c032bb6941c49ca0d50f6719845b8080d56b207b2c57b7b0ee08
 click==7.1.2 \
     --hash=sha256:d2b5255c7c6349bc1bd1e59e08cd12acbbd63ce649f2588755783aa94dfb6b1a \
     --hash=sha256:dacca89f4bfadd5de3d7489b7c8a566eee0d3676333fbb50030263894c38c0dc
