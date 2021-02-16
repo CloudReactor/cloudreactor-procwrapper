@@ -14,7 +14,7 @@ DEFAULT_TASK_EXECUTION_UUID = 'd9554f00-eaeb-4a16-96e4-9adda91a2750'
 DEFAULT_TASK_VERSION_SIGNATURE = '43cfd2b905d5cb4f2e8fc941c7a1289002be9f7f'
 
 ACCEPT_JSON_HEADERS = {
-  'Accept': 'application/json',
+    'Accept': 'application/json',
 }
 
 CLIENT_HEADERS = {**ACCEPT_JSON_HEADERS, **{
@@ -219,6 +219,7 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
         assert wrapper.managed_call(callback_with_config,
                 'duper') == 'superduper250'
 
+
 def test_ecs_runtime_metadata(httpserver: HTTPServer):
     env_override = make_online_base_env(httpserver.port)
     env_override['ECS_CONTAINER_METADATA_URI'] = f'http://localhost:{httpserver.port}/aws/ecs'
@@ -247,7 +248,7 @@ def test_ecs_runtime_metadata(httpserver: HTTPServer):
                     "com.amazonaws.ecs.task-arn": "arn:aws:ecs:us-east-2:012345678910:task/9781c248-0edd-4cdb-9a93-f63cb662a5d3",
                     "com.amazonaws.ecs.task-definition-family": "nginx",
                     "com.amazonaws.ecs.task-definition-version": "5"
-                  },
+                },
                 "DesiredStatus": "RESOURCES_PROVISIONED",
                 "KnownStatus": "RESOURCES_PROVISIONED",
                 "Limits": {
@@ -258,12 +259,12 @@ def test_ecs_runtime_metadata(httpserver: HTTPServer):
                 "StartedAt": "2018-02-01T20:55:09.058354915Z",
                 "Type": "CNI_PAUSE",
                 "Networks": [
-                  {
-                      "NetworkMode": "awsvpc",
-                      "IPv4Addresses": [
-                          "10.0.2.106"
-                      ]
-                  }
+                    {
+                        "NetworkMode": "awsvpc",
+                        "IPv4Addresses": [
+                            "10.0.2.106"
+                        ]
+                    }
                 ]
             },
             {
@@ -289,14 +290,14 @@ def test_ecs_runtime_metadata(httpserver: HTTPServer):
                 "StartedAt": "2018-02-01T20:55:11.064236631Z",
                 "Type": "NORMAL",
                 "Networks": [
-                  {
-                    "NetworkMode": "awsvpc",
-                    "IPv4Addresses": [
-                      "10.0.2.106"
-                    ]
-                  }
+                    {
+                        "NetworkMode": "awsvpc",
+                        "IPv4Addresses": [
+                            "10.0.2.106"
+                        ]
+                    }
                 ]
-              }
+            }
         ],
         "PullStartedAt": "2018-02-01T20:55:09.372495529Z",
         "PullStoppedAt": "2018-02-01T20:55:10.552018345Z",
@@ -338,7 +339,7 @@ def test_ecs_runtime_metadata(httpserver: HTTPServer):
     em = crd['execution_method']
     assert em['type'] == 'AWS ECS'
     assert em['task_arn'] == ecs_task_metadata['TaskARN']
-    assert em['launch_type'] == None
+    assert em['launch_type'] is None
     assert em['cluster_arn'] == ecs_task_metadata['Cluster']
     assert em['allocated_cpu_units'] == 256
     assert em['allocated_memory_mb'] == 512
