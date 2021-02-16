@@ -566,7 +566,8 @@ environment.
 
             self.send_runtime_metadata = _string_to_bool(
                     resolved_env.get('PROC_WRAPPER_SEND_RUNTIME_METADATA'),
-                    default_value=not args.no_send_runtime_metadata)
+                    default_value=not _coalesce(args.no_send_runtime_metadata, False)) \
+                    or False
 
         env_process_timeout_seconds = resolved_env.get('PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS')
 
