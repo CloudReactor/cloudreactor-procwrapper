@@ -339,7 +339,6 @@ def test_ecs_runtime_metadata(httpserver: HTTPServer):
     em = crd['execution_method']
     assert em['type'] == 'AWS ECS'
     assert em['task_arn'] == ecs_task_metadata['TaskARN']
-    assert em['launch_type'] is None
     assert em['cluster_arn'] == ecs_task_metadata['Cluster']
     assert em['allocated_cpu_units'] == 256
     assert em['allocated_memory_mb'] == 512

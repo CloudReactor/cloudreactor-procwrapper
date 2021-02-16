@@ -995,9 +995,12 @@ environment.
         execution_method = {
             'type': 'AWS ECS',
             'task_arn': metadata.get('TaskARN'),
-            'launch_type': metadata.get('LaunchType'),
             'cluster_arn': cluster_arn,
         }
+
+        launch_type = metadata.get('LaunchType')
+        if launch_type:
+            metadata['launch_type'] = launch_type
 
         limits = metadata.get('Limits')
         if isinstance(limits, dict):
