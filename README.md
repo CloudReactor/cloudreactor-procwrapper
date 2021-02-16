@@ -44,6 +44,12 @@ Fetching secrets from AWS Secrets Manager requires that
 JSON Path transformation requires that [jsonpath-ng](https://github.com/h2non/jsonpath-ng)
 be available to import in your python environment.
 
+You can get the tested versions of both dependencies in
+[proc_wrapper-requirements.in](https://github.com/CloudReactor/cloudreactor-procwrapper/blob/main/proc_wrapper-requirements.in)
+(suitable for use by [https://github.com/jazzband/pip-tools/](pip-tools)) or the resolved requirements in
+[proc_wrapper-requirements.txt](https://github.com/CloudReactor/cloudreactor-procwrapper/blob/main/proc_wrapper-requirements.txt).
+
+
 ## Usage
 
 ### Wrapped mode
@@ -96,7 +102,7 @@ Here are all the options:
                                   [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
                                   [--status-update-interval STATUS_UPDATE_INTERVAL]
                                   [--send-pid] [--send-hostname]
-                                  [--send-runtime-metadata]
+                                  [--no-send-runtime-metadata]
                                   [--deployment DEPLOYMENT] [--schedule SCHEDULE]
                                   [--resolved-env-ttl RESOLVED_ENV_TTL]
                                   [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
@@ -142,7 +148,7 @@ Here are all the options:
                             otherwise.
       --api-error-timeout API_ERROR_TIMEOUT
                             Number of seconds to wait while receiving recoverable
-                            errors from the API server. Defaults to 250.
+                            errors from the API server. Defaults to 300.
       --api-final-update-timeout API_FINAL_UPDATE_TIMEOUT
                             Number of seconds to wait while receiving recoverable
                             errors from the API server when sending the final
@@ -200,7 +206,7 @@ Here are all the options:
                             means to retry forever. Defaults to 0.
       --process-retry-delay PROCESS_RETRY_DELAY
                             Number of seconds to wait before retrying a process.
-                            Defaults to 600.
+                            Defaults to 60.
       --process-check-interval PROCESS_CHECK_INTERVAL
                             Number of seconds to wait between checking the status
                             of processes. Defaults to 10.
@@ -224,8 +230,8 @@ Here are all the options:
                             updates except with heartbeats. Defaults to -1.
       --send-pid            Send the process ID to the API server
       --send-hostname       Send the hostname to the API server
-      --send-runtime-metadata
-                            Send metadata about the runtime environment
+      --no-send-runtime-metadata
+                            Do not send metadata about the runtime environment
       --deployment DEPLOYMENT
                             Deployment name (production, staging, etc.)
       --schedule SCHEDULE   Run schedule reported to the API server
@@ -240,7 +246,7 @@ Here are all the options:
                             Number of retries per Rollbar request. Defaults to 2.
       --rollbar-retry-delay ROLLBAR_RETRY_DELAY
                             Number of seconds to wait before retrying a Rollbar
-                            request. Defaults to 600.
+                            request. Defaults to 120.
       --rollbar-timeout ROLLBAR_TIMEOUT
                             Timeout for contacting Rollbar server, in seconds.
                             Defaults to 30.
@@ -269,9 +275,10 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS
-* PROC_WRAPPER_API_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
 * PROC_WRAPPER_SEND_PID
 * PROC_WRAPPER_SEND_HOSTNAME
+* PROC_WRAPPER_SEND_RUNTIME_METADATA
 * PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN
 * PROC_WRAPPER_ROLLBAR_TIMEOUT_SECONDS
 * PROC_WRAPPER_ROLLBAR_RETRIES
@@ -325,6 +332,8 @@ in a Docker container.
 
 In embedded mode, you include this package in your python project's
 dependencies. To run a task you want to be monitored:
+
+    from proc_wrapper import ProcWrapper
 
     def fun(data, config):
         print(data)
@@ -434,6 +443,36 @@ using the --resolved-env-ttl command argument or PROC_WRAPPER_RESOLVED_ENV_TTL_S
 If your process exits, you have configured the script to retry, and the TTL has expired since the last fetch, proc_wrapper will re-fetch the secrets
 and resolve them again, for the environment passed to the next invocation of
 your process.
+
+### Status Updates
+
+As your process or function runs, you can send status updates to CloudReactor by using
+the StatusUpdater class. Status updates are shown in the CloudReactor dashboard and
+allow you to track the current progress of a Task and also how many items are being
+processed in multiple executions over time.
+
+In wrapped mode, your application code would send updates to the proc_wrapper
+prorgram via UDP port 2373 (configurable with the PROC_WRAPPER_STATUS_UPDATE_PORT
+environment variable). If your application code is in python, you can use the
+provided StatusUpdater class to do this:
+
+    from proc_wrapper import StatusUpdater
+
+    with StatusUpdater() as updater:
+        updater.send_update(last_status_message='Starting ...')
+        success_count = 0
+
+        for i in range(100):
+            try:
+                do_work()
+                success_count += 1
+                updater.send_update(success_count=success_count)
+            except Exception:
+                failed_count += 1
+                updater.send_update(failed_count=failed_count)
+
+        updater.send_update(last_status_message='Finished!')
+
 
 ## Example Project
 

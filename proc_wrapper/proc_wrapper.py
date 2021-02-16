@@ -59,12 +59,12 @@ DEFAULT_STATUS_UPDATE_SOCKET_PORT = 2373
 
 DEFAULT_ROLLBAR_TIMEOUT_SECONDS = 30
 DEFAULT_ROLLBAR_RETRIES = 2
-DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS = 600
+DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS = 120
 
 DEFAULT_TASK_NAME = '[Unnamed Task]'
 DEFAULT_PROCESS_TIMEOUT_SECONDS = None
 DEFAULT_PROCESS_CHECK_INTERVAL_SECONDS = 10
-DEFAULT_PROCESS_RETRY_DELAY_SECONDS = 600
+DEFAULT_PROCESS_RETRY_DELAY_SECONDS = 60
 DEFAULT_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS = 30
 
 DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES = 64 * 1024
@@ -288,7 +288,8 @@ environment.
                 help='Minimum of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.')
         parser.add_argument('--send-pid', action='store_true', help='Send the process ID to the API server')
         parser.add_argument('--send-hostname', action='store_true', help='Send the hostname to the API server')
-        parser.add_argument('--send-runtime-metadata', action='store_true', help='Send metadata about the runtime environment')
+        parser.add_argument('--no-send-runtime-metadata', action='store_true',
+                help='Do not send metadata about the runtime environment')
         parser.add_argument('--deployment', help='Deployment name (production, staging, etc.)')
         parser.add_argument('--schedule', help='Run schedule reported to the API server')
         parser.add_argument('--resolved-env-ttl', help='Number of seconds to cache resolved environment variables instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.')
@@ -308,6 +309,8 @@ environment.
 
     def __init__(self, args=None, embedded_mode=True,
             env_override: Optional[Dict[str, Any]] = None) -> None:
+        _logger.info('Creating ProcWrapper instance ...')
+
         if env_override:
             self.env = env_override
         else:
@@ -561,9 +564,9 @@ environment.
                     resolved_env.get('PROC_WRAPPER_SEND_HOSTNAME'),
                     default_value=args.send_hostname) or False
 
-            self.send_runtime_metadata = _coalesce(_string_to_bool(
+            self.send_runtime_metadata = _string_to_bool(
                     resolved_env.get('PROC_WRAPPER_SEND_RUNTIME_METADATA'),
-                    default_value=args.send_runtime_metadata), True)
+                    default_value=not args.no_send_runtime_metadata)
 
         env_process_timeout_seconds = resolved_env.get('PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS')
 
@@ -944,15 +947,18 @@ environment.
         return response.get('SecretString') or response['SecretBinary']
 
     def fetch_runtime_metadata(self) -> Optional[RuntimeMetadata]:
+        _logger.debug('Entering fetch_runtime_metadata() ...')
+
         # Don't refetch if we have already attempted previously
         if self.runtime_metadata or self.fetched_runtime_metadata_at:
+            _logger.debug('Runtime metadata already fetched, returning existing metadata.')
             return self.runtime_metadata
 
-        if self.env.get('ECS_CONTAINER_METADATA_URI_V4') \
-                or self.env.get('ECS_CONTAINER_METADATA_URI'):
-            self.runtime_metadata = self.fetch_ecs_container_metadata()
+        self.runtime_metadata = self.fetch_ecs_container_metadata()
 
         self.fetched_runtime_metadata_at = time.time()
+
+        _logger.debug(f'Done fetching runtime metadata, got {self.runtime_metadata}')
         return self.runtime_metadata
 
     def fetch_ecs_container_metadata(self) -> Optional[RuntimeMetadata]:
@@ -997,7 +1003,7 @@ environment.
             cpu_fraction = limits.get('CPU')
 
             if (cpu_fraction is not None) \
-                    and (isinstance(float, cpu_fraction) or isinstance(int, cpu_fraction)):
+                    and isinstance(cpu_fraction, (float, int)):
                 execution_method['allocated_cpu_units'] = round(cpu_fraction * 1024)
 
             execution_method['allocated_memory_mb'] = limits.get('Memory')

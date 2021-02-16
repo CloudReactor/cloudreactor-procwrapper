@@ -13,11 +13,14 @@ DEFAULT_TASK_UUID = '13b4cfbc-6ed5-4fd5-85e8-73e84e2f1b82'
 DEFAULT_TASK_EXECUTION_UUID = 'd9554f00-eaeb-4a16-96e4-9adda91a2750'
 DEFAULT_TASK_VERSION_SIGNATURE = '43cfd2b905d5cb4f2e8fc941c7a1289002be9f7f'
 
-CLIENT_HEADERS = {
+ACCEPT_JSON_HEADERS = {
+  'Accept': 'application/json',
+}
+
+CLIENT_HEADERS = {**ACCEPT_JSON_HEADERS, **{
     'Authorization': f'Token {TEST_API_KEY}',
     'Content-Type': 'application/json',
-    'Accept': 'application/json',
-}
+}}
 
 RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_TASK_NAME': 'Foo',
@@ -48,7 +51,9 @@ def make_capturing_handler(response_data: Dict[str, Any],
     captured_request_data: List[Optional[Dict[str, Any]]] = [None]
 
     def handler(request: Request) -> Response:
-        captured_request_data[0] = json.loads(request.data)
+        if request.data:
+            captured_request_data[0] = json.loads(request.data)
+
         return Response(json.dumps(response_data), status, None, content_type='application/json')
 
     def fetch_captured_request_data() -> Optional[Dict[str, Any]]:
@@ -213,3 +218,127 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
 
         assert wrapper.managed_call(callback_with_config,
                 'duper') == 'superduper250'
+
+def test_ecs_runtime_metadata(httpserver: HTTPServer):
+    env_override = make_online_base_env(httpserver.port)
+    env_override['ECS_CONTAINER_METADATA_URI'] = f'http://localhost:{httpserver.port}/aws/ecs'
+
+    ecs_task_metadata = {
+        "Cluster": "default",
+        "TaskARN": "arn:aws:ecs:us-east-2:012345678910:task/9781c248-0edd-4cdb-9a93-f63cb662a5d3",
+        "Family": "nginx",
+        "Revision": "5",
+        "DesiredStatus": "RUNNING",
+        "KnownStatus": "RUNNING",
+        "Limits": {
+            "CPU": 0.25,
+            "Memory": 512
+        },
+        "Containers": [
+            {
+                "DockerId": "731a0d6a3b4210e2448339bc7015aaa79bfe4fa256384f4102db86ef94cbbc4c",
+                "Name": "~internal~ecs~pause",
+                "DockerName": "ecs-nginx-5-internalecspause-acc699c0cbf2d6d11700",
+                "Image": "amazon/amazon-ecs-pause:0.1.0",
+                "ImageID": "",
+                "Labels": {
+                    "com.amazonaws.ecs.cluster": "default",
+                    "com.amazonaws.ecs.container-name": "~internal~ecs~pause",
+                    "com.amazonaws.ecs.task-arn": "arn:aws:ecs:us-east-2:012345678910:task/9781c248-0edd-4cdb-9a93-f63cb662a5d3",
+                    "com.amazonaws.ecs.task-definition-family": "nginx",
+                    "com.amazonaws.ecs.task-definition-version": "5"
+                  },
+                "DesiredStatus": "RESOURCES_PROVISIONED",
+                "KnownStatus": "RESOURCES_PROVISIONED",
+                "Limits": {
+                    "CPU": 0,
+                    "Memory": 0
+                },
+                "CreatedAt": "2018-02-01T20:55:08.366329616Z",
+                "StartedAt": "2018-02-01T20:55:09.058354915Z",
+                "Type": "CNI_PAUSE",
+                "Networks": [
+                  {
+                      "NetworkMode": "awsvpc",
+                      "IPv4Addresses": [
+                          "10.0.2.106"
+                      ]
+                  }
+                ]
+            },
+            {
+                "DockerId": "43481a6ce4842eec8fe72fc28500c6b52edcc0917f105b83379f88cac1ff3946",
+                "Name": "nginx-curl",
+                "DockerName": "ecs-nginx-5-nginx-curl-ccccb9f49db0dfe0d901",
+                "Image": "nrdlngr/nginx-curl",
+                "ImageID": "sha256:2e00ae64383cfc865ba0a2ba37f61b50a120d2d9378559dcd458dc0de47bc165",
+                "Labels": {
+                    "com.amazonaws.ecs.cluster": "default",
+                    "com.amazonaws.ecs.container-name": "nginx-curl",
+                    "com.amazonaws.ecs.task-arn": "arn:aws:ecs:us-east-2:012345678910:task/9781c248-0edd-4cdb-9a93-f63cb662a5d3",
+                    "com.amazonaws.ecs.task-definition-family": "nginx",
+                    "com.amazonaws.ecs.task-definition-version": "5"
+                },
+                "DesiredStatus": "RUNNING",
+                "KnownStatus": "RUNNING",
+                "Limits": {
+                    "CPU": 512,
+                    "Memory": 512
+                },
+                "CreatedAt": "2018-02-01T20:55:10.554941919Z",
+                "StartedAt": "2018-02-01T20:55:11.064236631Z",
+                "Type": "NORMAL",
+                "Networks": [
+                  {
+                    "NetworkMode": "awsvpc",
+                    "IPv4Addresses": [
+                      "10.0.2.106"
+                    ]
+                  }
+                ]
+              }
+        ],
+        "PullStartedAt": "2018-02-01T20:55:09.372495529Z",
+        "PullStoppedAt": "2018-02-01T20:55:10.552018345Z",
+        "AvailabilityZone": "us-east-2b"
+    }
+
+    ecs_metadata_handler, fetch_ecs_metadata_request_data = make_capturing_handler(
+            response_data=ecs_task_metadata, status=200)
+
+    httpserver.expect_ordered_request('/aws/ecs/task',
+            method='GET', headers=ACCEPT_JSON_HEADERS) \
+            .respond_with_handler(ecs_metadata_handler)
+
+    creation_handler, fetch_creation_request_data = make_capturing_handler(
+            response_data={
+                'uuid': DEFAULT_TASK_EXECUTION_UUID
+            }, status=201)
+
+    httpserver.expect_ordered_request('/api/v1/task_executions/',
+            method='POST', headers=CLIENT_HEADERS) \
+            .respond_with_handler(creation_handler)
+
+    update_handler, fetch_update_request_data = make_capturing_handler(
+            response_data={}, status=200)
+
+    httpserver.expect_ordered_request(
+            '/api/v1/task_executions/' + quote_plus(DEFAULT_TASK_EXECUTION_UUID) + '/',
+            method='PATCH', headers=CLIENT_HEADERS) \
+            .respond_with_handler(update_handler)
+
+    args = ProcWrapper.make_arg_parser().parse_args(['echo'])
+    wrapper = ProcWrapper(args=args, env_override=env_override,
+            embedded_mode=False)
+    wrapper.run()
+
+    httpserver.check_assertions()
+
+    crd = fetch_creation_request_data()
+    em = crd['execution_method']
+    assert em['type'] == 'AWS ECS'
+    assert em['task_arn'] == ecs_task_metadata['TaskARN']
+    assert em['launch_type'] == None
+    assert em['cluster_arn'] == ecs_task_metadata['Cluster']
+    assert em['allocated_cpu_units'] == 256
+    assert em['allocated_memory_mb'] == 512
