@@ -5,7 +5,7 @@ import random
 import signal
 import time
 
-from status_updater import StatusUpdater
+from proc_wrapper import StatusUpdater
 
 
 def signal_handler(signum, frame):
@@ -21,7 +21,7 @@ row_to_fail_at = int(os.environ.get('ROW_TO_FAIL_AT', '-1'))
 
 updater = StatusUpdater()
 
-try:
+with StatusUpdater() as updater:
     updater.send_update(last_status_message='sleeping', expected_count=random.randrange(5, 15))
     success_count = 0
     for i in range(5):
@@ -42,8 +42,3 @@ try:
             print("done sleeping")
 
     updater.send_update(last_status_message='woken up')
-finally:
-    try:
-        updater.shutdown()
-    except Exception:
-        logging.exception("Can't shutdown updater")
