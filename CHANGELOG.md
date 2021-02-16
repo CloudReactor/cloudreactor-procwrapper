@@ -12,3 +12,5 @@
 ## v2.0.0-rc4 (2021-02-16)
 * Enable runtime metadata fetching by default
 * Fix issue parsing ECS metadata
+## v2.0.0-rc5 (2021-02-16)
+* Fix empty ECS launch type sent to API server
