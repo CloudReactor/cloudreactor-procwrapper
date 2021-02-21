@@ -333,11 +333,14 @@ in a Docker container.
 In embedded mode, you include this package in your python project's
 dependencies. To run a task you want to be monitored:
 
+    from typing import Any, Dict, Mapping
+
     from proc_wrapper import ProcWrapper
 
-    def fun(data, config):
-        print(data)
-        return data['a']
+    def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
+            config: Mapping[str, str]) -> int:
+        print(cbdata)
+        return cbdata['a']
 
     args = ProcWrapper.make_default_args()
     args.offline_mode = True
