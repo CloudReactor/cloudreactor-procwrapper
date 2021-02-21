@@ -1092,7 +1092,7 @@ environment.
                 'heartbeat_interval_seconds': _encode_int(self.api_heartbeat_interval, empty_value=-1),
                 'max_concurrency': _encode_int(self.max_concurrency, empty_value=-1),
                 'max_conflicting_age_seconds': self.max_conflicting_age,
-                'prevent_offline_execution': str(self.prevent_offline_execution).upper(),
+                'prevent_offline_execution': self.prevent_offline_execution,
                 'process_termination_grace_period_seconds': self.process_termination_grace_period_seconds,
                 'wrapper_log_level': logging.getLevelName(_logger.getEffectiveLevel()),
                 'wrapper_version': ProcWrapper.VERSION,
@@ -1879,9 +1879,9 @@ environment.
                         _logger.info('Got response code = 409 during Task Execution creation')
                     else:
                         self.last_api_request_failed_at = time.time()
-
                         _logger.error(
-                                'Got response code 409 during Task Execution creation, exiting.')
+                                'Got response code 409 after Task Execution started, exiting.')
+                        self.was_conflict = True
                         exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code,
                                 self._EXIT_CODE_GENERIC_ERROR)
                         self._exit_or_raise(exit_code)
@@ -1932,8 +1932,10 @@ environment.
                 time.sleep(retry_delay)
                 _logger.debug('Done sleeping after request error.')
 
-        if is_task_execution_creation_request and self.prevent_offline_execution:
-            _logger.critical('Exiting because Task Execution creation timed out and offline execution is prevented')
+        if is_task_execution_creation_request \
+                and (self.prevent_offline_execution or self.was_conflict):
+            _logger.critical(
+                    'Exiting because Task Execution creation timed out and offline execution is prevented or there was a conflict.')
             exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(status_code or 0,
                     self._EXIT_CODE_GENERIC_ERROR)
             self._exit_or_raise(exit_code)
