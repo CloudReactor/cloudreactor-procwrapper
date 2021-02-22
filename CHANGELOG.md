@@ -16,3 +16,5 @@
 * Fix empty ECS launch type sent to API server
 ## v2.0.0-rc6 (2021-02-21)
 * Don't start the process and exit immediately if we get a 409 Conflict from the API server, even if prevent_offline_execution is false
+## v2.0.0 (2021-02-22)
+* First official release
