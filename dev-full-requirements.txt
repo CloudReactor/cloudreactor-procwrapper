@@ -102,9 +102,9 @@ idna==2.10 \
     # via
     #   moto
     #   requests
-importlib-metadata==3.6.0 \
-    --hash=sha256:080d666daa2faedcc2e96c0c87d3cdb76325261c51650016784834733faa7897 \
-    --hash=sha256:144acbe6ec34f170c4a362f52c2d03e82db7d012668ba57ff8f1e668905889b0
+importlib-metadata==3.7.0 \
+    --hash=sha256:24499ffde1b80be08284100393955842be4a59c7c16bbf2738aad0e464a8e0aa \
+    --hash=sha256:c6af5dbf1126cd959c4a8d8efd61d4d3c83bddb0459a17e554284a077574b614
 Jinja2==2.11.3 \
     --hash=sha256:03e47ad063331dd6a3f04a43eddca8a966a26ba0c5b7207a9a9e4e08f1b29419 \
     --hash=sha256:a6d58433de0ae800347cab1fa3043cebbabe8baa9d29e668f1c768cb87a333c6
