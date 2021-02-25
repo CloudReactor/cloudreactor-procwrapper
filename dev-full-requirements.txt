@@ -305,6 +305,6 @@ zipp==3.4.0 \
     #   moto
 
 # The following packages are considered to be unsafe in a requirements file:
-setuptools==51.3.3 \
-    --hash=sha256:127ec775c4772bfaf2050557b00c4be6e019e52dc2e171a3fb1cd474783a2497 \
-    --hash=sha256:9f341a0ce18d9fac647177e19cbaef87a49ad3192231290342db2da6ab570d25
+setuptools==53.1.0 \
+    --hash=sha256:487f7a3e5040445b687f1eadcebcbbd11e83da95cad5e755304e38a3b7a93207 \
+    --hash=sha256:8181c4625cd58fa7817761e0fa60f6fa3adc4c437f5c25377b1aefa861ca15a2
