@@ -117,9 +117,9 @@ jmespath==0.10.0 \
 jsondiff==1.2.0 \
     --hash=sha256:34941bc431d10aa15828afe1cbb644977a114e75eef6cc74fb58951312326303
     # via moto
-jsonpatch==1.30 \
-    --hash=sha256:608c33104a51c96aa3e60b7512eae99e5b960b1c3efd67a798573d172d31f266 \
-    --hash=sha256:70f875ced7eb1fc1289860218b085403d075465c915ec45f368aa2da36f37c29
+jsonpatch==1.31 \
+    --hash=sha256:586f40a162e341eb766f4358a1644e289621b5e65f9b3b6d4955a4c15e9ac8bd \
+    --hash=sha256:ae6f3686fc71b53a278a9fdeb91afdc0e523e2f8f8a82cb2f04af90413a8eacb
 jsonpickle==1.5.2 \
     --hash=sha256:7ace67f85a5cfd148e0d2b7defb63d97e856dd5151c092cc6c48dcc91f39f471 \
     --hash=sha256:9e899bcf94bb1ce6e17beccf880d096fd6221681faede55aa7a8349556822359
