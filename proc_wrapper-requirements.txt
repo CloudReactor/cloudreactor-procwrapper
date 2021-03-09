@@ -4,9 +4,9 @@
 #
 #    pip-compile --allow-unsafe --generate-hashes --output-file=proc_wrapper-requirements.txt proc_wrapper-requirements.in
 #
-boto3==1.17.23 \
-    --hash=sha256:1ca39de26205439832fa740fcc200de85f107b615dae445f869a16b76672e663 \
-    --hash=sha256:d6716f6701aae771f6ff2386a1d641855a99a9fedd64bd25476b83bacdd50c94
+boto3==1.17.24 \
+    --hash=sha256:7d1f30022f7e28e0907ea521dc84b04506f83cc6afc7c63225153bf3a35cf1b6 \
+    --hash=sha256:bf4a321da7dbe0c5a20380ff9f6a8a4e2e135e72a40348890122a197368b4421
 botocore==1.20.23 \
     --hash=sha256:d5ea913331e93cecde25773841397c5d2abbc04f38b1c96c636444e8bb3478f8 \
     --hash=sha256:f3ae5cae250c3fb200d33abacbee3f0c6513fc6f1d17a851b04a3998de68c829
