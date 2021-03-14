@@ -120,9 +120,9 @@ jsondiff==1.2.0 \
 jsonpatch==1.32 \
     --hash=sha256:26ac385719ac9f54df8a2f0827bb8253aa3ea8ab7b3368457bcdb8c14595a397 \
     --hash=sha256:b6ddfe6c3db30d81a96aaeceb6baf916094ffa23d7dd5fa2c13e13f8b6e600c2
-jsonpickle==1.5.2 \
-    --hash=sha256:7ace67f85a5cfd148e0d2b7defb63d97e856dd5151c092cc6c48dcc91f39f471 \
-    --hash=sha256:9e899bcf94bb1ce6e17beccf880d096fd6221681faede55aa7a8349556822359
+jsonpickle==2.0.0 \
+    --hash=sha256:0be49cba80ea6f87a168aa8168d717d00c6ca07ba83df3cec32d3b30bfe6fb9a \
+    --hash=sha256:c1010994c1fbda87a48f8a56698605b598cb0fc6bb7e7927559fc1100e69aeac
 jsonpointer==2.1 \
     --hash=sha256:150f80c5badd02c757da6644852f612f88e8b4bc2f9852dcbf557c8738919686 \
     --hash=sha256:5a34b698db1eb79ceac454159d3f7c12a451a91f6334a4f638454327b7a89962
