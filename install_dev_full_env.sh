@@ -4,7 +4,7 @@ set -e
 eval "$(pyenv init -)"
 eval "$(pyenv virtualenv-init -)"
 
-pyenv deactivate
+pyenv deactivate || true
 pyenv activate process_wrapper_python_dev_full
 
 pip-compile --allow-unsafe --generate-hashes dev-base-requirements.in --output-file dev-base-requirements.txt

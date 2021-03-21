@@ -16,15 +16,10 @@ boto3-stubs==1.17.33.0 \
     --hash=sha256:b973c9962d197e8b0731a396c2e3173f055863b8157c7c36ab4246d0f03eb7b8 \
     --hash=sha256:bbd8396b6c1a0efcd843cc25fb3b0a0b1a6197e086d9e850c90c6cc46ac51960
     # via -r dev-base-requirements.in
-click==7.1.2 \
-    --hash=sha256:d2b5255c7c6349bc1bd1e59e08cd12acbbd63ce649f2588755783aa94dfb6b1a \
-    --hash=sha256:dacca89f4bfadd5de3d7489b7c8a566eee0d3676333fbb50030263894c38c0dc
-    # via pip-tools
 importlib-metadata==3.7.3 \
     --hash=sha256:742add720a20d0467df2f444ae41704000f50e1234f46174b51f9c6031a1bd71 \
     --hash=sha256:b74159469b464a99cb8cc3e21973e4d96e05d3024d337313fedb618a6e86e6f4
     # via
-    #   pep517
     #   pluggy
     #   pytest
 iniconfig==1.1.1 \
@@ -97,14 +92,6 @@ packaging==20.9 \
     --hash=sha256:5b327ac1320dc863dca72f4514ecc086f31186744b84a230374cc1fd776feae5 \
     --hash=sha256:67714da7f7bc052e064859c05c595155bd1ee9f69f76557e21f051443c20947a
     # via pytest
-pep517==0.10.0 \
-    --hash=sha256:ac59f3f6b9726a49e15a649474539442cf76e0697e39df4869d25e68e880931b \
-    --hash=sha256:eba39d201ef937584ad3343df3581069085bacc95454c80188291d5b3ac7a249
-    # via pip-tools
-pip-tools==6.0.1 \
-    --hash=sha256:3b0c7b95e8d3dfb011bb42cb38f356fcf5d0630480462b59c4d0a112b8d90281 \
-    --hash=sha256:50ec26df7710557ab574f19f7511830294999e6121b42b87473b48cb9984d788
-    # via -r dev-base-requirements.in
 pluggy==0.13.1 \
     --hash=sha256:15b2acde666561e1298d71b523007ed7364de07029219b604cf808bfa1c765b0 \
     --hash=sha256:966c145cd83c96502c3c3868f50408687b38434af77734af1e9ca461a4081d2d
@@ -124,6 +111,10 @@ pyparsing==2.4.7 \
 pytest-env==0.6.2 \
     --hash=sha256:7e94956aef7f2764f3c147d216ce066bf6c42948bb9e293169b1b1c880a580c2
     # via -r dev-base-requirements.in
+pytest-httpserver==1.0.0 \
+    --hash=sha256:32cb2befbc519eb2b5907b772809600b470ef83a20e6d78613210debec4b0ba0 \
+    --hash=sha256:ae3095d134d40602e95721140e222139da4a579956123990af85825324d0746d
+    # via -r dev-base-requirements.in
 pytest==6.2.2 \
     --hash=sha256:9d1edf9e7d0b84d72ea3dbcdfd22b35fb543a5e8f2a60092dd578936bf63d7f9 \
     --hash=sha256:b574b57423e818210672e07ca1fa90aaf194a4f63f3ab909a2c67ebb22913839
@@ -134,7 +125,6 @@ toml==0.10.2 \
     --hash=sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b \
     --hash=sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f
     # via
-    #   pep517
     #   pylint
     #   pytest
 typed-ast==1.4.2 \
@@ -179,18 +169,14 @@ typing-extensions==3.7.4.3 \
     #   boto3-stubs
     #   importlib-metadata
     #   mypy
+werkzeug==1.0.1 \
+    --hash=sha256:2de2a5db0baeae7b2d2664949077c2ac63fbd16d98da0ff71837f7d1dea3fd43 \
+    --hash=sha256:6c80b1e5ad3665290ea39320b91e1be1e0d5f60652b964a3070216de83d2e47c
+    # via pytest-httpserver
 wrapt==1.12.1 \
     --hash=sha256:b62ffa81fb85f4332a4f609cab4ac40709470da05643a082ec1eb88e6d9b97d7
     # via astroid
 zipp==3.4.1 \
     --hash=sha256:3607921face881ba3e026887d8150cca609d517579abe052ac81fc5aeffdbd76 \
     --hash=sha256:51cb66cc54621609dd593d1787f286ee42a5c0adbb4b29abea5a63edc3e03098
-    # via
-    #   importlib-metadata
-    #   pep517
-
-# The following packages are considered to be unsafe in a requirements file:
-pip==21.0.1 \
-    --hash=sha256:37fd50e056e2aed635dec96594606f0286640489b0db0ce7607f7e51890372d5 \
-    --hash=sha256:99bbde183ec5ec037318e774b0d8ae0a64352fe53b2c7fd630be1d07e94f41e5
-    # via pip-tools
+    # via importlib-metadata
