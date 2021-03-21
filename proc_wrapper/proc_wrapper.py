@@ -29,6 +29,7 @@ import math
 import os
 import signal
 import socket
+from sys import exit
 import time
 from http import HTTPStatus
 from io import RawIOBase
