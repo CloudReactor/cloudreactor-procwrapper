@@ -2,6 +2,8 @@ import json
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote_plus
 
+import pytest
+
 from pytest_httpserver import HTTPServer
 from werkzeug.wrappers import Request, Response
 
@@ -54,7 +56,8 @@ def make_capturing_handler(response_data: Dict[str, Any],
         if request.data:
             captured_request_data[0] = json.loads(request.data)
 
-        return Response(json.dumps(response_data), status, None, content_type='application/json')
+        return Response(json.dumps(response_data), status, None,
+                content_type='application/json')
 
     def fetch_captured_request_data() -> Optional[Dict[str, Any]]:
         return captured_request_data[0]
@@ -183,6 +186,24 @@ def test_resolve_env_with_aws_secrets_manager():
         assert process_env['SOME_ENV'] == 'Secret PW'
         assert process_env['ANOTHER_ENV'] == 'Secret PW 2'
 
+def test_resolve_env_with_env_reference():
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+    env_override['ENV_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = 'ANOTHER_VAR'
+    env_override['ANOTHER_VAR'] = 'env resolution works'
+
+    wrapper = ProcWrapper(env_override=env_override)
+    process_env = wrapper.make_process_env()
+    assert process_env['SOME_ENV'] == 'env resolution works'
+
+def test_resolve_env_with_env_reference_and_json_path():
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+    env_override['ENV_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = 'ANOTHER_VAR|JP:$.password'
+    env_override['ANOTHER_VAR'] = '{"password": "foobar"}'
+
+    wrapper = ProcWrapper(env_override=env_override)
+    process_env = wrapper.make_process_env()
+    assert process_env['SOME_ENV'] == 'foobar'
+
 
 def callback_with_config(wrapper: ProcWrapper, cbdata: str,
         config: Dict[str, str]) -> str:
@@ -219,9 +240,19 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
         assert wrapper.managed_call(callback_with_config,
                 'duper') == 'superduper250'
 
-
-def test_ecs_runtime_metadata(httpserver: HTTPServer):
+@pytest.mark.parametrize("""
+  auto_create
+""", [
+  (True),
+  (False)
+])
+def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
     env_override = make_online_base_env(httpserver.port)
+
+    if auto_create:
+        env_override['PROC_WRAPPER_AUTO_CREATE_TASK'] = 'TRUE'
+        env_override['PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME'] = 'myenv'
+
     env_override['ECS_CONTAINER_METADATA_URI'] = f'http://localhost:{httpserver.port}/aws/ecs'
 
     ecs_task_metadata = {
@@ -339,6 +370,71 @@ def test_ecs_runtime_metadata(httpserver: HTTPServer):
     em = crd['execution_method']
     assert em['type'] == 'AWS ECS'
     assert em['task_arn'] == ecs_task_metadata['TaskARN']
+    assert em['task_definition_arn'] == \
+            'arn:aws:ecs:us-east-2:012345678910:task-definition/nginx:5'
     assert em['cluster_arn'] == ecs_task_metadata['Cluster']
     assert em['allocated_cpu_units'] == 256
     assert em['allocated_memory_mb'] == 512
+
+    task_dict = crd['task']
+
+    if auto_create:
+        assert task_dict['was_auto_created'] == True
+
+        # Defaults to the value of auto-created
+        assert task_dict['passive'] == True
+
+        assert task_dict['run_environment']['name'] == 'myenv'
+        emc = task_dict['execution_method_capability']
+        assert emc['type'] == 'AWS ECS'
+        assert emc['task_definition_arn'] == em['task_definition_arn']
+        assert emc['default_cluster_arn'] == ecs_task_metadata['Cluster']
+        assert emc['allocated_cpu_units'] == 256
+        assert emc['allocated_memory_mb'] == 512
+    else:
+        assert task_dict['was_auto_created'] != True
+        assert task_dict['passive'] != True
+
+
+def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
+    env_override = make_online_base_env(httpserver.port)
+    env_override['PROC_WRAPPER_AUTO_CREATE_TASK'] = 'TRUE'
+    env_override['PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME'] = 'myenv'
+
+    creation_handler, fetch_creation_request_data = make_capturing_handler(
+            response_data={
+                'uuid': DEFAULT_TASK_EXECUTION_UUID
+            }, status=201)
+
+    httpserver.expect_ordered_request('/api/v1/task_executions/',
+            method='POST', headers=CLIENT_HEADERS) \
+            .respond_with_handler(creation_handler)
+
+    update_handler, fetch_update_request_data = make_capturing_handler(
+            response_data={}, status=200)
+
+    httpserver.expect_ordered_request(
+            '/api/v1/task_executions/' + quote_plus(DEFAULT_TASK_EXECUTION_UUID) + '/',
+            method='PATCH', headers=CLIENT_HEADERS) \
+            .respond_with_handler(update_handler)
+
+    args = ProcWrapper.make_arg_parser().parse_args(['echo'])
+    wrapper = ProcWrapper(args=args, env_override=env_override,
+            embedded_mode=False)
+    wrapper.run()
+
+    httpserver.check_assertions()
+
+    crd = fetch_creation_request_data()
+    em = crd.get('execution_method')
+    assert em is None
+
+    task_dict = crd['task']
+
+    assert task_dict['was_auto_created'] == True
+
+    # Defaults to the value of auto-created
+    assert task_dict['passive'] == True
+
+    emc = task_dict.get('execution_method_capability')
+    assert emc['type'] == 'Unknown'

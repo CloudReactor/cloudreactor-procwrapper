@@ -34,7 +34,7 @@ import time
 from http import HTTPStatus
 from io import RawIOBase
 from subprocess import Popen, TimeoutExpired
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, cast
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -82,10 +82,12 @@ JSON_PATH_TRANSFORM_PREFIX = 'JP:'
 SPLAT_AFTER_JSON_PATH_SUFFIX = '[*]'
 
 SECRET_PROVIDER_PLAIN = 'PLAIN'
+SECRET_PROVIDER_ENV = 'ENV'
 SECRET_PROVIDER_AWS_SECRETS_MANAGER = 'AWS_SM'
 
 SECRET_PROVIDER_INFO: Dict[str, Dict[str, Any]] = {
     SECRET_PROVIDER_PLAIN: {},
+    SECRET_PROVIDER_ENV: {},
     SECRET_PROVIDER_AWS_SECRETS_MANAGER: {},
 }
 
@@ -179,6 +181,7 @@ class CachedEnvValueEntry(NamedTuple):
 
 class RuntimeMetadata(NamedTuple):
     execution_method: Dict[str, Any]
+    execution_method_capability: Dict[str, Any]
     raw: Dict[str, Any]
     derived: Dict[str, Any]
 
@@ -230,10 +233,22 @@ environment.
 
         parser.add_argument('--task-name', help='Name of Task (either the Task Name or the Task UUID must be specified')
         parser.add_argument('--task-uuid', help='UUID of Task (either the Task Name or the Task UUID must be specified)')
+        parser.add_argument('--auto-create-task', action='store_true',
+                help='Create the Task even if not known by the API server')
+        parser.add_argument('--auto-create-task-run-environment-name',
+                help='Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run Environment UUID is not specified.')
+        parser.add_argument('--auto-create-task-run-environment-uuid',
+                help='UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task)')
+        parser.add_argument('--auto-create-task-props',
+                help='Additional properties of the auto-created Task, in JSON format')
+        parser.add_argument('--force-task-active', action='store_const', const=True,
+                help='Indicates that the auto-created Task should be scheduled and made a service by the API server, if applicable. Otherwise, auto-created Tasks are marked passive.')
         parser.add_argument('--task-execution-uuid', help='UUID of Task Execution to attach to')
         parser.add_argument('--task-version-number', help="Numeric version of the Task's source code (optional)")
         parser.add_argument('--task-version-text', help="Human readable version of the Task's source code (optional)")
         parser.add_argument('--task-version-signature', help="Version signature of the Task's source code (optional)")
+        parser.add_argument('--execution-method-props',
+                help='Additional properties of the execution method, in JSON format')
         parser.add_argument('--task-instance-metadata', help="Additional metadata about the Task instance, in JSON format (optional)")
         parser.add_argument('--api-base-url', help='Base URL of API server')
         parser.add_argument('--api-key', help='API key')
@@ -309,11 +324,11 @@ environment.
         return ProcWrapper.make_arg_parser(require_command=False).parse_args([])
 
     def __init__(self, args=None, embedded_mode=True,
-            env_override: Optional[Dict[str, Any]] = None) -> None:
+            env_override: Optional[Mapping[str, Any]] = None) -> None:
         _logger.info('Creating ProcWrapper instance ...')
 
         if env_override:
-            self.env = env_override
+            self.env = dict(env_override)
         else:
             self.env = os.environ.copy()
 
@@ -328,7 +343,13 @@ environment.
 
         self.task_uuid: Optional[str] = None
         self.task_name: Optional[str] = None
+        self.auto_create_task = False
+        self.auto_create_task_run_environment_name: Optional[str] = None
+        self.auto_create_task_run_environment_uuid: Optional[str] = None
+        self.auto_create_task_overrides: Dict[str, Any] = {}
+        self.task_is_passive = False
         self.task_execution_uuid: Optional[str] = None
+        self.execution_method_overrides: Optional[Dict[str, Any]] = None
         self.schedule = ''
         self.max_conflicting_age: Optional[int] = None
         self.was_conflict = False
@@ -405,6 +426,13 @@ environment.
         resolved_env = self.resolved_env
         args = self.args
 
+        self.offline_mode = _string_to_bool(
+            resolved_env.get('PROC_WRAPPER_OFFLINE_MODE'),
+            default_value=_coalesce(args.offline_mode, False))
+
+        self.deployment = _coalesce(resolved_env.get('PROC_WRAPPER_DEPLOYMENT'),
+                args.deployment)
+
         self.rollbar_access_token = resolved_env.get('PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN')
 
         if self.rollbar_access_token:
@@ -429,49 +457,124 @@ environment.
         self.rollbar_retries_exhausted = False
 
         if not mutable_only:
-            self.task_is_service = _string_to_bool(
-                resolved_env.get('PROC_WRAPPER_TASK_IS_SERVICE'),
-                default_value=_coalesce(args.service, False))
+            self.task_version_number = resolved_env.get(
+                    'PROC_WRAPPER_TASK_VERSION_NUMBER',
+                    args.task_version_number)
+            self.task_version_text = resolved_env.get(
+                    'PROC_WRAPPER_TASK_VERSION_TEXT',
+                    args.task_version_text)
+            self.task_version_signature = resolved_env.get(
+                    'PROC_WRAPPER_TASK_VERSION_SIGNATURE',
+                    args.task_version_signature)
 
-            self.max_concurrency = _string_to_int(
-                    _coalesce(resolved_env.get('PROC_WRAPPER_MAX_CONCURRENCY'),
-                    args.max_concurrency), default_value=1, negative_value=None)
+        override_is_service: Optional[bool] = None
+        if not mutable_only and not self.offline_mode:
+            task_overrides_str = resolved_env.get('PROC_WRAPPER_AUTO_CREATE_TASK_PROPS',
+                args.auto_create_task_props)
 
-            self.is_concurrency_limited_service = self.task_is_service \
-                    and (self.max_concurrency is not None)
+            task_overrides_loaded = False
+            if task_overrides_str:
+                try:
+                    self.auto_create_task_overrides = \
+                            json.loads(task_overrides_str)
+                    task_overrides_loaded = True
+                except json.JSONDecodeError:
+                    _logger.warning(f"Failed to parse Task props: '{task_overrides_str}', ensure it is valid JSON.")
 
-            self.offline_mode = _string_to_bool(
-                resolved_env.get('PROC_WRAPPER_OFFLINE_MODE'),
-                default_value=_coalesce(args.offline_mode, False))
+            self.auto_create_task = _string_to_bool(
+                    resolved_env.get('PROC_WRAPPER_AUTO_CREATE_TASK'),
+                    default_value=_coalesce(args.auto_create_task,
+                    self.auto_create_task_overrides.get('was_auto_created',
+                    task_overrides_loaded)))
 
-            if not self.offline_mode:
-                self.task_execution_uuid = resolved_env.get('PROC_WRAPPER_TASK_EXECUTION_UUID') \
-                        or args.task_execution_uuid
-                self.task_uuid = resolved_env.get('PROC_WRAPPER_TASK_UUID') \
-                        or args.task_uuid
-                self.task_name = resolved_env.get('PROC_WRAPPER_TASK_NAME') \
-                        or args.task_name
+            if self.auto_create_task:
+                override_run_env = self.auto_create_task_overrides.get('run_environment', {})
 
-                if (not self.task_uuid) and (not self.task_name):
-                    _logger.critical("No Task UUID or name specified, exiting.")
-                    return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                self.auto_create_task_run_environment_uuid = resolved_env.get(
+                        'PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID',
+                        override_run_env.get('uuid',
+                        args.auto_create_task_run_environment_uuid))
 
-            self.task_version_number = resolved_env.get('PROC_WRAPPER_TASK_VERSION_NUMBER') \
-                    or args.task_version_number
+                self.auto_create_task_run_environment_name = _coalesce(
+                        resolved_env.get('PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME'),
+                        override_run_env.get('name'),
+                        args.auto_create_task_run_environment_name)
 
-            self.task_version_text = resolved_env.get('PROC_WRAPPER_TASK_VERSION_TEXT') \
-                    or args.task_version_text
+                if (not self.auto_create_task_run_environment_name) \
+                        and (not self.auto_create_task_run_environment_uuid):
+                    if self.deployment:
+                        self.auto_create_task_run_environment_name = self.deployment
+                    else:
+                        _logger.critical('No Run Environment UUID or name for auto-created Task specified, exiting.')
+                        return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
-            self.task_version_signature = resolved_env.get('PROC_WRAPPER_TASK_VERSION_SIGNATURE') \
-                    or args.task_version_signature
+                args_forced_passive = None if (args.force_task_active is None) \
+                        else (not args.force_task_active)
+
+                self.task_is_passive = _string_to_bool(
+                        resolved_env.get('PROC_WRAPPER_TASK_IS_PASSIVE'),
+                        default_value=_coalesce(
+                        self.auto_create_task_overrides.get('passive'),
+                        args_forced_passive, self.auto_create_task))
+
+                if not self.task_is_passive:
+                    runtime_metadata = self.fetch_runtime_metadata()
+
+                    if (runtime_metadata is None) or \
+                            (runtime_metadata.execution_method_capability is None):
+                        _logger.critical('Task may not be active unless execution method capability can be determined.')
+                        return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+
+                em_overrides_str = resolved_env.get(
+                        'PROC_WRAPPER_EXECUTION_METHOD_PROPS',
+                        args.execution_method_props)
+
+                if em_overrides_str:
+                    try:
+                        self.execution_method_overrides = \
+                                json.loads(em_overrides_str)
+                    except json.JSONDecodeError:
+                        _logger.warning(f"Failed to parse auto-create task execution props: '{em_overrides_str}', ensure it is valid JSON.")
+
+            self.task_execution_uuid = resolved_env.get(
+                    'PROC_WRAPPER_TASK_EXECUTION_UUID',
+                    args.task_execution_uuid)
+
+            self.task_uuid = resolved_env.get('PROC_WRAPPER_TASK_UUID',
+                    self.auto_create_task_overrides.get('uuid',
+                    args.task_uuid))
+            self.task_name = resolved_env.get('PROC_WRAPPER_TASK_NAME',
+                    self.auto_create_task_overrides.get('name',
+                    args.task_name))
+
+            if (not self.task_uuid) and (not self.task_name):
+                _logger.critical('No Task UUID or name specified, exiting.')
+                return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+
+            count = self.auto_create_task_overrides.get('min_service_instance_count')
+            override_is_service = None if count is None else (count > 0)
 
             api_base_url = resolved_env.get('PROC_WRAPPER_API_BASE_URL') \
                     or args.api_base_url or DEFAULT_API_BASE_URL
             self.api_base_url = api_base_url.rstrip('/')
 
-        self.api_key = resolved_env.get('PROC_WRAPPER_API_KEY') or args.api_key
+        if not mutable_only:
+            self.task_is_service = _string_to_bool(
+                resolved_env.get('PROC_WRAPPER_TASK_IS_SERVICE'),
+                default_value=_coalesce(override_is_service, args.service))
 
+            self.max_concurrency = _string_to_int(
+                    _coalesce(resolved_env.get('PROC_WRAPPER_MAX_CONCURRENCY'),
+                    self.auto_create_task_overrides.get('max_concurrency'),
+                    args.max_concurrency), default_value=1, negative_value=None)
+
+            self.is_concurrency_limited_service = self.task_is_service \
+                    and (self.max_concurrency is not None)
+
+        # API key and timeouts can be refreshed, so no mutable check
         if not self.offline_mode:
+            self.api_key = resolved_env.get('PROC_WRAPPER_API_KEY', args.api_key)
+
             if not self.api_key:
                 _logger.critical('No API key specified, exiting.')
                 return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
@@ -526,9 +629,6 @@ environment.
                     resolved_env.get('PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS'),
                     default_value=_coalesce(args.api_request_timeout,
                             DEFAULT_API_REQUEST_TIMEOUT_SECONDS))
-
-        self.deployment = _coalesce(resolved_env.get('PROC_WRAPPER_DEPLOYMENT'),
-                args.deployment)
 
         other_instance_metadata_str = _coalesce(
                 resolved_env.get('PROC_WRAPPER_TASK_INSTANCE_METADATA'),
@@ -690,6 +790,18 @@ environment.
         _logger.info(f"Task version number = {self.task_version_number}")
         _logger.info(f"Task version text = {self.task_version_text}")
         _logger.info(f"Task version signature = {self.task_version_signature}")
+
+        _logger.info(f"Execution method props = {self.execution_method_overrides}")
+
+        _logger.info(f"Auto create task = {self.auto_create_task}")
+
+        if self.auto_create_task:
+            _logger.info(f"Auto create task Run Environment name = {self.auto_create_task_run_environment_name}")
+            _logger.info(f"Auto create task Run Environment UUID = {self.auto_create_task_run_environment_uuid}")
+            _logger.info(f"Auto create task props = {self.auto_create_task_overrides}")
+
+        _logger.info(f"Passive task = {self.task_is_passive}")
+
         _logger.info(f"Task instance metadata = {self.other_instance_metadata}")
         _logger.debug(f"Wrapper version = {ProcWrapper.VERSION}")
         _logger.debug(f"Task is a service = {self.task_is_service}")
@@ -748,8 +860,11 @@ environment.
           Resolve environment variables, returning a dictionary of the environment,
           and a list of variable names that failed to be resolved.
         """
+        _logger.debug('Starting secrets resolution ...')
+
         if not _string_to_bool(
                 self.env.get('PROC_WRAPPER_RESOLVE_SECRETS'), False):
+            _logger.debug('Secrets resolution is disabled.')
             return (self.env, [])
 
         prefix = _coalesce(self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_PREFIX'),
@@ -766,6 +881,8 @@ environment.
             if name.startswith(prefix) and name.endswith(suffix):
                 key = name[prefix_length:len(name) - suffix_length]
                 env_name = key
+
+                _logger.debug(f"Resolving key '{key}' with value '{value}' ...")
                 try:
                     env_name, env_value = self.resolve_env_var(key, value)
 
@@ -801,6 +918,9 @@ environment.
 
         secret_provider = secret_provider or SECRET_PROVIDER_PLAIN
 
+        if self.log_secrets:
+            _logger.debug(f"Secret provider = '{secret_provider}', name = '{name}', value = '{value}'")
+
         value_to_lookup = value
         jsonpath_expr_str = None
         jsonpath_expr = None
@@ -820,6 +940,8 @@ environment.
                     raise import_error
 
                 jsonpath_expr_str = transform_expr_str[len(JSON_PATH_TRANSFORM_PREFIX):]
+
+                _logger.debug(f"jsonpath_expr_str = '{jsonpath_expr_str}'")
 
                 if jsonpath_expr_str.endswith(SPLAT_AFTER_JSON_PATH_SUFFIX):
                     should_splat = True
@@ -852,6 +974,8 @@ environment.
                 secret_value = self.fetch_aws_secrets_manager_secret(value_to_lookup)
             elif secret_provider == SECRET_PROVIDER_PLAIN:
                 secret_value = value_to_lookup
+            elif secret_provider == SECRET_PROVIDER_ENV:
+                secret_value = self.env.get(value_to_lookup)
             else:
                 raise RuntimeError(f'Unknown secret provider: {secret_provider}')
 
@@ -859,6 +983,9 @@ environment.
                     parsed_value=None, fetched_at=time.time())
 
             cache[value_to_lookup] = cached_env_value_entry
+
+        if self.log_secrets:
+            _logger.debug(f"value_to_lookup = '{value_to_lookup}', cache entry = '{cached_env_value_entry}'")
 
         if jsonpath_expr is None:
             return (env_name, cached_env_value_entry.string_value)
@@ -874,9 +1001,15 @@ environment.
 
         results = jsonpath_expr.find(parsed_entry.parsed_value)
 
+        if self.log_secrets:
+            _logger.debug(f"json path results = {results}")
+
         env_value = self._json_path_results_to_env_value(results,
                 should_splat=should_splat,
                 env_name=env_name, path_expr=jsonpath_expr_str)
+
+        if self.log_secrets:
+            _logger.debug(f"resolved env_name = '{env_name}', resolved env_value = '{env_value}'")
 
         return env_name, env_value
 
@@ -992,29 +1125,46 @@ environment.
         return None
 
     def convert_ecs_task_metadata(self, metadata: Dict[str, Any]) -> RuntimeMetadata:
-        cluster_arn = metadata.get('Cluster')
-        execution_method = {
+        cluster_arn = metadata.get('Cluster') or ''
+        task_arn = metadata.get('TaskARN') or ''
+        task_definition_arn = self.compute_ecs_task_definition_arn(metadata) or ''
+
+        common_props = {
             'type': 'AWS ECS',
-            'task_arn': metadata.get('TaskARN'),
+            'task_definition_arn': task_definition_arn,
+        }
+
+        execution_method = {
+            'task_arn': task_arn,
             'cluster_arn': cluster_arn,
+        }
+
+        execution_method_capability = {
+            'default_cluster_arn': cluster_arn
         }
 
         launch_type = metadata.get('LaunchType')
         if launch_type:
-            metadata['launch_type'] = launch_type
+            execution_method['launch_type'] = launch_type
+            execution_method_capability['default_launch_type'] = launch_type
+            execution_method_capability['supported_launch_types'] = [launch_type]
 
         limits = metadata.get('Limits')
         if isinstance(limits, dict):
             cpu_fraction = limits.get('CPU')
-
             if (cpu_fraction is not None) \
                     and isinstance(cpu_fraction, (float, int)):
-                execution_method['allocated_cpu_units'] = round(cpu_fraction * 1024)
+                common_props['allocated_cpu_units'] = round(cpu_fraction * 1024)
 
-            execution_method['allocated_memory_mb'] = limits.get('Memory')
+            memory_mb = limits.get('Memory')
+            if memory_mb is not None:
+                common_props['allocated_memory_mb'] = memory_mb
+
+        execution_method.update(common_props)
+        execution_method_capability.update(common_props)
 
         # Only available for Fargate platform 1.4+
-        az = metadata.get('AvailibilityZone')
+        az = metadata.get('AvailabilityZone')
 
         if az:
             # Remove the last character, e.g. "a" from "us-west-1a"
@@ -1034,7 +1184,25 @@ environment.
         }
 
         return RuntimeMetadata(execution_method=execution_method,
+                execution_method_capability=execution_method_capability,
                 raw=metadata, derived=derived)
+
+    def compute_ecs_task_definition_arn(self, metadata: Dict[str, Any]) -> Optional[str]:
+        task_arn = metadata.get('TaskARN')
+        family = metadata.get('Family')
+        revision = metadata.get('Revision')
+
+        if not (task_arn and family and revision):
+            _logger.warning("Can't compute ECS task definition ARN: task_arn = {task_arn}, family = {family}, revision = {revision}")
+            return None
+
+        prefix_end_index = task_arn.find(':task/')
+
+        if prefix_end_index < 0:
+            _logger.warning("Can't compute ECS task definition ARN: task_arn = {task_arn} has an unexpected format")
+            return None
+
+        return task_arn[0:prefix_end_index] + ':task-definition/' + family + ':' + revision
 
     def compute_region_from_ecs_cluster_arn(self, cluster_arn: Optional[str]) -> Optional[str]:
         if not cluster_arn:
@@ -1077,27 +1245,31 @@ environment.
         try:
             url = f"{self.api_base_url}/api/v1/task_executions/"
             http_method = 'POST'
-
             headers = self._make_headers()
+
+            max_concurrency = _encode_int(self.max_concurrency, empty_value=-1)
+
+            common_body = {
+                'is_service': self.task_is_service,
+                'schedule': self.schedule,
+                'heartbeat_interval_seconds': _encode_int(self.api_heartbeat_interval, empty_value=-1),
+            }
 
             body = {
                 'status': ProcWrapper.STATUS_RUNNING,
                 'task_version_number': self.task_version_number,
                 'task_version_text': self.task_version_text,
                 'task_version_signature': self.task_version_signature,
-                'is_service': self.task_is_service,
                 'process_timeout_seconds': self.process_timeout,
                 'process_max_retries': _encode_int(self.process_max_retries,
                         empty_value=-1),
                 'process_retry_delay_seconds': self.process_retry_delay,
-                'heartbeat_interval_seconds': _encode_int(self.api_heartbeat_interval, empty_value=-1),
-                'max_concurrency': _encode_int(self.max_concurrency, empty_value=-1),
+                'task_max_concurrency': max_concurrency,
                 'max_conflicting_age_seconds': self.max_conflicting_age,
                 'prevent_offline_execution': self.prevent_offline_execution,
                 'process_termination_grace_period_seconds': self.process_termination_grace_period_seconds,
                 'wrapper_log_level': logging.getLevelName(_logger.getEffectiveLevel()),
                 'wrapper_version': ProcWrapper.VERSION,
-                'schedule': self.schedule,
                 'api_error_timeout_seconds': _encode_int(self.api_error_timeout, empty_value=-1),
                 'api_retry_delay_seconds': _encode_int(self.api_retry_delay),
                 'api_resume_delay_seconds': _encode_int(self.api_resume_delay),
@@ -1120,13 +1292,16 @@ environment.
                         empty_value=-1),
                 'embedded_mode': self._embedded_mode
             }
+            body.update(common_body)
 
             if self.task_execution_uuid:
                 # Manually started
                 url += self.task_execution_uuid + '/'
                 http_method = 'PATCH'
             else:
-                task_dict = {}
+                task_dict = self.auto_create_task_overrides.copy()
+                task_dict.update(common_body)
+
                 if self.task_uuid:
                     task_dict['uuid'] = self.task_uuid
                 elif self.task_name:
@@ -1134,6 +1309,37 @@ environment.
                 else:
                     # This method should not have been called at all.
                     raise RuntimeError('Neither Task UUID or Task name were set.')
+
+                task_dict.update({
+                  'max_concurrency': max_concurrency,
+                  'was_auto_created': self.auto_create_task,
+                  'passive': self.task_is_passive,
+                })
+
+                run_env_dict = {}
+
+                if self.auto_create_task_run_environment_name:
+                    run_env_dict['name'] = self.auto_create_task_run_environment_name
+
+                if self.auto_create_task_run_environment_uuid:
+                    run_env_dict['uuid'] = self.auto_create_task_run_environment_uuid
+
+                task_dict['run_environment'] = run_env_dict
+
+                task_emc: Optional[Dict[str, Any]] = None
+                if self.send_runtime_metadata and self.runtime_metadata:
+                    task_emc = self.runtime_metadata.execution_method_capability
+
+                if self.auto_create_task_overrides:
+                    override_emc = self.auto_create_task_execution_method_overrides.get(
+                           'execution_method_capability')
+                    if override_emc:
+                        task_emc = task_emc or {}
+                        task_emc.update(override_emc)
+
+                task_dict['execution_method_capability'] = task_emc or {
+                  'type': 'Unknown'
+                }
 
                 body['task'] = task_dict
                 body['max_conflicting_age_seconds'] = self.max_conflicting_age
@@ -1147,9 +1353,16 @@ environment.
             if self.other_instance_metadata:
                 body['other_instance_metadata'] = self.other_instance_metadata
 
-            if self.send_runtime_metadata and self.runtime_metadata \
-                    and self.runtime_metadata.execution_method:
-                body['execution_method'] = self.runtime_metadata.execution_method
+            execution_method: Optional[Dict[str, Any]] = None
+            if self.send_runtime_metadata and self.runtime_metadata:
+                execution_method = self.runtime_metadata.execution_method
+
+            if self.execution_method_overrides:
+                execution_method = execution_method or {}
+                execution_method.update(self.runtime_metadata.execution_method)
+
+            if execution_method:
+                body['execution_method'] = execution_method
 
             data = json.dumps(body).encode('utf-8')
 
@@ -1221,8 +1434,8 @@ environment.
 
         if should_send:
             self.send_update(failed_attempts=failed_attempts,
-                              timed_out_attempts=timed_out_attempts,
-                              pid=pid)
+                    timed_out_attempts=timed_out_attempts,
+                    pid=pid)
 
     def send_completion(self, status: str,
                         failed_attempts: Optional[int] = None,
@@ -1726,7 +1939,19 @@ environment.
             failed_attempts: Optional[int] = None,
             timed_out_attempts: Optional[int] = None,
             exit_code: Optional[int] = None,
-            pid: Optional[int] = None) -> None:
+            pid: Optional[int] = None,
+            extra_props: Optional[Mapping[str, Any]] = None) -> None:
+        """
+        Send an update to the API server. If status is omitted, it will
+        default to STATUS_RUNNING.
+
+        The caller may want to coalesce multiple updates together in order to
+        save bandwidth / API usage.
+
+        This method is meant to be called directly in the callback function
+        when running in embedded mode.
+        """
+
         if self.offline_mode:
             return
 
@@ -1754,6 +1979,9 @@ environment.
 
         if pid is not None:
             body['pid'] = pid
+
+        if extra_props:
+            body['other_runtime_metadata'] = extra_props
 
         url = f"{self.api_base_url}/api/v1/task_executions/{quote_plus(str(self.task_execution_uuid))}/"
         headers = self._make_headers()

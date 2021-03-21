@@ -27,10 +27,100 @@
   <img src="https://img.shields.io/pypi/l/cloudreactor-procwrapper.svg?style=flat-square" alt="License">
 </p>
 
-Wraps the execution of processes so that a service API endpoint (
-[CloudReactor](https://cloudreactor.io/))
+Wraps the execution of processes so that an API server
+([CloudReactor](https://cloudreactor.io/))
 can monitor and manage them. Also implements retries, timeouts, and
 secret injection from AWS into the environment.
+
+## How it works
+
+During deployment of your code, your deployment process informs the
+API server of details of your Task, so that API server can start, schedule,
+and monitor your Task.
+See [AWS ECS CloudReactor Deployer](https://github.com/CloudReactor/aws-ecs-cloudreactor-deployer)
+for instructions on how to this, and
+[CloudReactor python ECS QuickStart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
+for an example. (This step isn't necessary for auto-created Tasks, discussed later.) The API server ensures the Task is run continuously if it is a
+service, and on a schedule if the Task is configured with one.
+
+Before your code runs, the module requests the API server to create a
+Task Execution associated with the Task name or UUID which you pass to the
+module.
+The API server may reject the request if too many instances of the Task are
+currently running, but otherwise records that a Task Execution has started.
+The module then passes control to your code.
+
+While your code is running, you may report progress to the API server,
+and the API server may signal that your Task stop execution (due to
+user manually stopping the Task Execution), in which
+case the module terminates your code and exits.
+
+When your code is finished running, the module informs the API server of
+the exit code or result.
+CloudReactor monitors Tasks to ensure they
+are still responsive, and keeps a history of the Executions of Tasks,
+allowing you to view failures and run durations in the past.
+
+### Auto-created Tasks
+
+The AWS ECS CloudReactor Deployer can be used to deploy your Tasks,
+but it may not be possible or desired to change your deployment process.
+Instead, you may configure the Task to be *auto-created*.
+
+Auto-created Tasks are created the first time your Task runs.
+This means there is no need to inform the API server of the Task details
+(during deployment) before it runs.
+Instead, whenever the module runs, it informs the API server of the
+Task details at the same time as it requests the creation of a Task Execution.
+The disadvantage of auto-created Tasks is that they are not available
+in the CloudReactor dashboard until the first time they run.
+
+When configuring a Task to be auto-created, you must specify the name
+or UUID of the Run Environment in CloudReactor that the Task is
+associated with. The Run Environment must be created ahead of time,
+either by the
+[Cloudreactor AWS Setup Wizard](https://github.com/CloudReactor/cloudreactor-aws-setup-wizard),
+or manually in the CloudReactor dashboard.
+
+### Execution Methods
+
+CloudReactor currently supports two Execution Methods:
+
+1) [AWS ECS (in Fargate)](https://aws.amazon.com/fargate/)
+2) Unknown
+
+If a Task is running in AWS ECS, CloudReactor is able to run additional
+Task Executions, provided the details of running the Task is provided
+during deployment with the AWS ECS CloudReactor Deployer, or if the
+Task is configured to be auto-created, and this module is run. In the
+second case, this module uses the ECS Metadata endpoint to detect
+the ECS Task settings, and sends them to the API server. CloudReactor
+can also schedule Tasks or setup long-running services using Tasks,
+provided they are run in AWS ECS.
+
+However, a Task may use the Unknown execution method if it is not running
+in AWS ECS. If that is the case, CloudReactor won't be able to
+start the Task in the dashboard or as part of a Workflow,
+schedule the Task, or setup a service with the Task. But the advantage is
+that the Task code can be executed by any method available to you,
+such as bare metal servers, VM's, Docker, AWS Lambda, or Kubernetes.
+All Tasks in CloudReactor, regardless of execution method, have their
+history kept and are monitored.
+
+This module detects which of the two Execution Methods your Task is
+running with and sends that information to the API server, provided
+you configure your Task to be auto-created.
+
+### Passive Tasks
+
+Passive Tasks are Tasks that CloudReactor does not manage. This means
+scheduling and service setup must be handled by other means
+(cron jobs, [supervisord](http://supervisord.org/), etc). The module reports
+to the API server that auto-created Tasks are passive, unless you
+specify the `--force-task-passive` commmand-line option or
+set the `PROC_WRAPPER_TASK_IS_PASSIVE` environment variable to `FALSE`.
+If a Task uses the Unknown Execution Method, it must be marked as passive,
+because CloudReactor does not know how to manage it.
 
 ## Installation
 
@@ -49,12 +139,13 @@ You can get the tested versions of both dependencies in
 (suitable for use by [https://github.com/jazzband/pip-tools/](pip-tools)) or the resolved requirements in
 [proc_wrapper-requirements.txt](https://github.com/CloudReactor/cloudreactor-procwrapper/blob/main/proc_wrapper-requirements.txt).
 
-
 ## Usage
+
+There are two ways of using the module: wrapped mode and embedded mode.
 
 ### Wrapped mode
 
-In wrapped mode, you run the module with a command line which it
+In wrapped mode, you pass a command line to the module which it
 executes in a child process. The command can be implemented in whatever
 programming language the running machine supports.
 
@@ -66,14 +157,21 @@ you would run
 
     python -m proc_wrapper somecommand --somearg x
 
+assuming that you configure the module using environment variables.
+
 Here are all the options:
 
     usage: python -m proc_wrapper [-h] [--task-name TASK_NAME]
-                                  [--task-uuid TASK_UUID]
+                                  [--task-uuid TASK_UUID] [--auto-create-task]
+                                  [--auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME]
+                                  [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID]
+                                  [--auto-create-task-props AUTO_CREATE_TASK_PROPS]
+                                  [--force-task-active]
                                   [--task-execution-uuid TASK_EXECUTION_UUID]
                                   [--task-version-number TASK_VERSION_NUMBER]
                                   [--task-version-text TASK_VERSION_TEXT]
                                   [--task-version-signature TASK_VERSION_SIGNATURE]
+                                  [--execution-method-props EXECUTION_METHOD_PROPS]
                                   [--task-instance-metadata TASK_INSTANCE_METADATA]
                                   [--api-base-url API_BASE_URL]
                                   [--api-key API_KEY]
@@ -126,6 +224,25 @@ Here are all the options:
       --task-uuid TASK_UUID
                             UUID of Task (either the Task Name or the Task UUID
                             must be specified)
+      --auto-create-task    Create the Task even if not known by the API server
+      --auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
+                            Name of the Run Environment to use if auto-creating
+                            the Task (either the name or UUID of the Run
+                            Environment must be specified if auto-creating the
+                            Task). Defaults to the deployment name if the
+                            Run Environment UUID is not specified.
+      --auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID
+                            UUID of the Run Environment to use if auto-creating
+                            the Task (either the name or UUID of the Run
+                            Environment must be specified if auto-creating the
+                            Task)
+      --auto-create-task-props AUTO_CREATE_TASK_PROPS
+                            Additional properties of the auto-created Task,
+                            in JSON format
+      --force-task-active   Indicates that the auto-created Task should be
+                            scheduled and made a service by the API server, if
+                            applicable. Otherwise, auto-created Tasks are marked
+                            passive.
       --task-execution-uuid TASK_EXECUTION_UUID
                             UUID of Task Execution to attach to
       --task-version-number TASK_VERSION_NUMBER
@@ -135,6 +252,9 @@ Here are all the options:
                             (optional)
       --task-version-signature TASK_VERSION_SIGNATURE
                             Version signature of the Task's source code (optional)
+      --execution-method-props EXECUTION_METHOD_PROPS
+                            Additional properties of the execution method, in JSON
+                            format
       --task-instance-metadata TASK_INSTANCE_METADATA
                             Additional metadata about the Task instance, in JSON
                             format (optional)
@@ -256,9 +376,15 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_TASK_NAME
 * PROC_WRAPPER_TASK_UUID
 * PROC_WRAPPER_TASK_EXECUTION_UUID
-* PROC_WRAPPER_TASK_IS_SERVICE
+* PROC_WRAPPER_AUTO_CREATE_TASK (TRUE or FALSE)
+* PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
+* PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID
+* PROC_WRAPPER_AUTO_CREATE_TASK_PROPS (JSON encoded property map)
+* PROC_WRAPPER_TASK_IS_PASSIVE (TRUE OR FALSE)
+* PROC_WRAPPER_TASK_IS_SERVICE (TRUE or FALSE)
+* PROC_WRAPPER_EXECUTION_METHOD_PROPS (JSON encoded property map)
 * PROC_WRAPPER_MAX_CONCURRENCY
-* PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION
+* PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION (TRUE or FALSE)
 * PROC_WRAPPER_TASK_VERSION_NUMBER
 * PROC_WRAPPER_TASK_VERSION_TEXT
 * PROC_WRAPPER_TASK_VERSION_SIGNATURE
@@ -276,9 +402,9 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
-* PROC_WRAPPER_SEND_PID
-* PROC_WRAPPER_SEND_HOSTNAME
-* PROC_WRAPPER_SEND_RUNTIME_METADATA
+* PROC_WRAPPER_SEND_PID (TRUE or FALSE)
+* PROC_WRAPPER_SEND_HOSTNAME (TRUE or FALSE)
+* PROC_WRAPPER_SEND_RUNTIME_METADATA (TRUE or FALSE)
 * PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN
 * PROC_WRAPPER_ROLLBAR_TIMEOUT_SECONDS
 * PROC_WRAPPER_ROLLBAR_RETRIES
@@ -325,12 +451,14 @@ except that these properties are copied/overridden:
 * PROC_WRAPPER_STATUS_UPDATE_INTERVAL_SECONDS
 * PROC_WRAPPER_STATUS_UPDATE_MESSAGE_MAX_BYTES
 
-Wrapped mode is suitable for running in a shell on your own (virtual) machine or
-in a Docker container.
+Wrapped mode is suitable for running in a shell on your own (virtual) machine
+or in a Docker container. It requires multi-process support, as the module
+runs at the same time as the command it wraps.
 
 ### Embedded mode
 
-In embedded mode, you include this package in your python project's
+Embedded mode works for executing python code in the same process.
+You include this package in your python project's
 dependencies. To run a task you want to be monitored:
 
     from typing import Any, Dict, Mapping
@@ -343,20 +471,33 @@ dependencies. To run a task you want to be monitored:
         return cbdata['a']
 
     args = ProcWrapper.make_default_args()
-    args.offline_mode = True
+    args.auto_create_task = True
+    args.auto_create_run_environment_name = 'production'
     args.task_name = 'embedded_test'
+    args.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
     proc_wrapper = ProcWrapper(args=args)
-    proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
+    x = proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
+    # Should print 1
+    print(x)
+
 
 This is suitable for running in single-threaded environments like
-AWS Lambda. We do not yet support monitoring your task in embedded mode
-with CloudReactor, but will do so in the near future.
+AWS Lambda, or as part of a larger process that executes
+sub-routines that should be monitored.
 
-### Secret Fetching
+Currently, Tasks running as Lambdas must be marked as
+passive Tasks, as the execution method is Unknown. In the near future,
+CloudReactor will support running and managing Tasks that run as
+Lambdas.
+
+## Secrets Resolution
+
+### Fetching from AWS Secrets Manager
 
 Both usage modes can fetch secrets from
-[AWS Secrets Manager](https://aws.amazon.com/secrets-manager/), optionally extract
-embedded data, then inject them into the environment (in the case of wrapped mode)
+[AWS Secrets Manager](https://aws.amazon.com/secrets-manager/),
+optionally extract embedded data, then inject them into the environment
+(in the case of wrapped mode)
 or a configuration dictionary (in the case of embedded mode).
 
 To enable secret resolution, set environment variable
@@ -433,10 +574,33 @@ transform the list to the environment variable value:
 
 1. If the list of results has a single value, that value is used as the environment variable value,
 unless `[*]` is appended to the JSON path expression. If the value is boolean, the value
-will be converted to either "TRUE" or "FALSE". If the value is a string or number, it will
-be simply left/converted to a string. Otherwise, the value is serialized to a JSON string
-and set to the environment variable value.
-2. Otherwise, the list of results is serialized to a JSON string and set to the environment variable value.
+will be converted to either "TRUE" or "FALSE". If the value is a string or
+number, it will be simply left/converted to a string. Otherwise, the value is
+serialized to a JSON string and set to the environment variable value.
+2. Otherwise, the list of results is serialized to a JSON string and set to the
+environment variable value.
+
+### Fetching from another environment variable
+
+In some deployment scenarios, multiple secrets can be injected into a
+single environment variable as a JSON encoded object. In that case,
+the module can extract secrets using the *ENV* secret source. For example,
+you may have arranged to have the environment variable DB_CONFIG injected
+with the JSON encoded value:
+
+    { "username": "postgres", "password": "nohackme" }
+
+Then to extract the username to the environment variable DB_USERNAME you
+you would add the environment variable ENV_DB_USER_FOR_PROC_WRAPPER_TO_RESOLVE
+set to
+
+
+    DB_CONFIG|JP:$.username
+
+Similarly, you would set ENV_DB_PASSWORD_FOR_PROC_WRAPPER_TO_RESOLVE to
+
+    DB_CONFIG|JP:$.password
+
 
 ### Secrets Refreshing
 
@@ -449,15 +613,18 @@ your process.
 
 ### Status Updates
 
-As your process or function runs, you can send status updates to CloudReactor by using
-the StatusUpdater class. Status updates are shown in the CloudReactor dashboard and
-allow you to track the current progress of a Task and also how many items are being
-processed in multiple executions over time.
+#### Status Updates in Wrapped Mode
 
-In wrapped mode, your application code would send updates to the proc_wrapper
-prorgram via UDP port 2373 (configurable with the PROC_WRAPPER_STATUS_UPDATE_PORT
-environment variable). If your application code is in python, you can use the
-provided StatusUpdater class to do this:
+As your process or function runs, you can send status updates to
+CloudReactor by using the StatusUpdater class. Status updates are shown in
+the CloudReactor dashboard and allow you to track the current progress of a
+Task and also how many items are being processed in multiple executions
+over time.
+
+In wrapped mode, your application code would send updates to the
+proc_wrapper program via UDP port 2373 (configurable with the PROC_WRAPPER_STATUS_UPDATE_PORT environment variable).
+If your application code is in python, you can use the provided
+StatusUpdater class to do this:
 
     from proc_wrapper import StatusUpdater
 
@@ -476,12 +643,47 @@ provided StatusUpdater class to do this:
 
         updater.send_update(last_status_message='Finished!')
 
+#### Status Updates in Embedded Mode
+
+In embedded mode, your callback in python code can use the wrapper instance to send updates:
+
+    from typing import Any, Dict, Mapping
+
+    from proc_wrapper import ProcWrapper
+
+    def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
+            config: Mapping[str, str]) -> int:
+        wrapper.send_update(status_message='Starting the fun ...')
+
+        for i in range(100):
+            try:
+                do_work()
+                success_count += 1
+            except Exception:
+                failed_count += 1
+
+            # Coalesce updates to avoid using too much bandwidth / API credits
+            if (success_count + failed_count) % 10 == 0:
+                wrapper.send_update(success_count=success_count,
+                        failed_count=failed_count)
+
+        wrapper.send_update(status_message='The fun is over.')
+
+        return cbdata['a']
+
+    args = ProcWrapper.make_default_args()
+    args.auto_create_task = True
+    args.auto_create_run_environment_name = 'production'
+    args.task_name = 'embedded_test'
+    args.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+    proc_wrapper = ProcWrapper(args=args)
+    proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
 
 ## Example Project
 
-The [cloudreactor-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-ecs-quickstart)
-project uses this library to deploy some sample tasks, written in python, to CloudReactor,
-running using AWS ECS Fargate.
+The [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
+project uses this library to deploy some sample tasks, written in python,
+to CloudReactor, running using AWS ECS Fargate.
 
 ## License
 
