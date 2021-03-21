@@ -564,12 +564,19 @@ environment.
                 default_value=_coalesce(override_is_service, args.service))
 
             self.max_concurrency = _string_to_int(
-                    _coalesce(resolved_env.get('PROC_WRAPPER_MAX_CONCURRENCY'),
-                    self.auto_create_task_overrides.get('max_concurrency'),
-                    args.max_concurrency), default_value=1, negative_value=None)
+                    resolved_env.get('PROC_WRAPPER_TASK_MAX_CONCURRENCY'),
+                    negative_value=-1)
+
+            if self.max_concurrency is None:
+                if 'max_concurrency' in self.auto_create_task_overrides:
+                    # May be None, if so, keep it that way
+                    self.max_concurrency = self.auto_create_task_overrides['max_concurrency']
+                else:
+                    self.max_concurrency = args.max_concurrency
 
             self.is_concurrency_limited_service = self.task_is_service \
-                    and (self.max_concurrency is not None)
+                    and (self.max_concurrency is not None) \
+                    and (self.max_concurrency > 0)
 
         # API key and timeouts can be refreshed, so no mutable check
         if not self.offline_mode:
@@ -1247,8 +1254,6 @@ environment.
             http_method = 'POST'
             headers = self._make_headers()
 
-            max_concurrency = _encode_int(self.max_concurrency, empty_value=-1)
-
             common_body = {
                 'is_service': self.task_is_service,
                 'schedule': self.schedule,
@@ -1264,7 +1269,7 @@ environment.
                 'process_max_retries': _encode_int(self.process_max_retries,
                         empty_value=-1),
                 'process_retry_delay_seconds': self.process_retry_delay,
-                'task_max_concurrency': max_concurrency,
+                'task_max_concurrency': self.max_concurrency,
                 'max_conflicting_age_seconds': self.max_conflicting_age,
                 'prevent_offline_execution': self.prevent_offline_execution,
                 'process_termination_grace_period_seconds': self.process_termination_grace_period_seconds,
@@ -1311,7 +1316,7 @@ environment.
                     raise RuntimeError('Neither Task UUID or Task name were set.')
 
                 task_dict.update({
-                  'max_concurrency': max_concurrency,
+                  'max_concurrency': _encode_int(self.max_concurrency, empty_value=-1),
                   'was_auto_created': self.auto_create_task,
                   'passive': self.task_is_passive,
                 })
