@@ -1639,7 +1639,7 @@ environment.
                         sleep_duration = sleep_until - current_time
 
                         if sleep_duration > 0:
-                            _logger.debug(f'Waiting {sleep_duration} seconds while process is running ...')
+                            _logger.debug(f'Waiting {round(sleep_duration)} seconds while process is running ...')
                             try:
                                 self.process.wait(sleep_duration)
                             except TimeoutExpired:
