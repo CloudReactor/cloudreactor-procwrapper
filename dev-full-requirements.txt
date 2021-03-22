@@ -298,6 +298,6 @@ zipp==3.4.1 \
     --hash=sha256:51cb66cc54621609dd593d1787f286ee42a5c0adbb4b29abea5a63edc3e03098
 
 # The following packages are considered to be unsafe in a requirements file:
-setuptools==51.3.3 \
-    --hash=sha256:127ec775c4772bfaf2050557b00c4be6e019e52dc2e171a3fb1cd474783a2497 \
-    --hash=sha256:9f341a0ce18d9fac647177e19cbaef87a49ad3192231290342db2da6ab570d25
+setuptools==54.2.0 \
+    --hash=sha256:aa9c24fb83a9116b8d425e53bec24c7bfdbffc313c2159f9ed036d4a6dd32d7d \
+    --hash=sha256:b726461910b9ba30f077880c228bea22121aec50b172edf39eb7ff026c054a11
