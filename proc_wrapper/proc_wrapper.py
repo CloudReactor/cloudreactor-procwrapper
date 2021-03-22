@@ -29,7 +29,7 @@ import math
 import os
 import signal
 import socket
-from sys import exit
+import sys
 import time
 from http import HTTPStatus
 from io import RawIOBase
@@ -187,7 +187,7 @@ class RuntimeMetadata(NamedTuple):
 
 
 class ProcWrapper:
-    VERSION = '2.0.0'
+    VERSION = sys.modules[__package__].__version__
 
     STATUS_RUNNING = 'RUNNING'
     STATUS_SUCCEEDED = 'SUCCEEDED'
@@ -943,7 +943,7 @@ environment.
                 try:
                     import jsonpath_ng  # type: ignore
                 except ImportError as import_error:
-                    _logger.exception('jsonpath_ng is not available to import, please include your python environment')
+                    _logger.exception('jsonpath_ng is not available to import, please install it in your python environment')
                     raise import_error
 
                 jsonpath_expr_str = transform_expr_str[len(JSON_PATH_TRANSFORM_PREFIX):]
@@ -1057,7 +1057,7 @@ environment.
             try:
                 import boto3
             except ImportError as import_error:
-                _logger.exception('boto3 is not available to import, please include your python environment')
+                _logger.exception('boto3 is not available to import, please install it in your python environment')
                 raise import_error
 
             region_name = self.env.get('PROC_WRAPPER_SECRETS_AWS_REGION') or \
@@ -1709,6 +1709,7 @@ environment.
                 exit_code = self._terminate_or_kill_process()
                 if exit_code == 0:
                     status = self.STATUS_SUCCEEDED
+                    #notification_required = False
         except Exception:
             _logger.exception('Exception in process termination')
         finally:
@@ -2203,7 +2204,7 @@ environment.
                     raise RuntimeError(
                         f"exit() called already; raising exception instead of exiting with exit code {exit_code}")
 
-                exit(exit_code)
+                sys.exit(exit_code)
 
     def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> int:
         num_sinks_successful = 0
