@@ -1,14 +1,24 @@
 #!/bin/bash
 
-source test_env.sh;
+set -e
 
-CMD="python sleep.py"
+SCRIPT_DIR=`dirname "$0"`
+SCRIPT_ABS_DIR=`readlink -e $SCRIPT_DIR`
+BASE_DIR="$SCRIPT_DIR/../.."
+
+source $SCRIPT_DIR/common_env.sh;
+source $SCRIPT_DIR/secret_env.sh;
+
+echo "SCRIPT_ABS_DIR = $SCRIPT_ABS_DIR"
+
+CMD="python $SCRIPT_ABS_DIR/sleep.py"
 
 if [[ "$#" -gt 0 ]];
 then
     CMD=$1
 fi
 
-export PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER=TRUE
-export PROC_WRAPPER_STATUS_UPDATE_INTERVAL_SECONDS=5
+pushd .
+cd $BASE_DIR
 python3 -m proc_wrapper $CMD
+popd
