@@ -187,7 +187,7 @@ class RuntimeMetadata(NamedTuple):
 
 
 class ProcWrapper:
-    VERSION = sys.modules[__package__].__version__
+    VERSION = getattr(sys.modules[__package__], '__version__')
 
     STATUS_RUNNING = 'RUNNING'
     STATUS_SUCCEEDED = 'SUCCEEDED'
@@ -366,6 +366,7 @@ environment.
         self.timeout_count = 0
         self.send_pid = False
         self.send_hostname = False
+        self.hostname: Optional[str] = None
         self.send_runtime_metadata = True
         self.runtime_metadata: Optional[RuntimeMetadata] = None
         self.fetched_runtime_metadata_at: Optional[float] = None
@@ -407,6 +408,8 @@ environment.
         self._status_message_so_far: Optional[bytearray] = None
         self.status_update_message_max_bytes: Optional[int] = None
         self.last_update_sent_at: Optional[float] = None
+
+        self.rollbar_retries_exhausted = False
 
         self.resolved_env_ttl: Optional[int] = _string_to_int(
                 self.env.get('PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS'),
@@ -491,8 +494,8 @@ environment.
             self.auto_create_task = _string_to_bool(
                     resolved_env.get('PROC_WRAPPER_AUTO_CREATE_TASK'),
                     default_value=_coalesce(args.auto_create_task,
-                    self.auto_create_task_overrides.get('was_auto_created',
-                    task_overrides_loaded)))
+                    self.auto_create_task_overrides.get('was_auto_created'))) \
+                    or task_overrides_loaded
 
             if self.auto_create_task:
                 override_run_env = self.auto_create_task_overrides.get('run_environment', {})
@@ -518,11 +521,11 @@ environment.
                 args_forced_passive = None if (args.force_task_active is None) \
                         else (not args.force_task_active)
 
-                self.task_is_passive = _string_to_bool(
+                self.task_is_passive = cast(bool, _string_to_bool(
                         resolved_env.get('PROC_WRAPPER_TASK_IS_PASSIVE'),
                         default_value=_coalesce(
-                        self.auto_create_task_overrides.get('passive'),
-                        args_forced_passive, self.auto_create_task))
+                                self.auto_create_task_overrides.get('passive'),
+                                args_forced_passive, self.auto_create_task)))
 
                 if not self.task_is_passive:
                     runtime_metadata = self.fetch_runtime_metadata()
@@ -983,7 +986,7 @@ environment.
 
         if (cached_env_value_entry is None) \
                 or cached_env_value_entry.is_stale(self.resolved_env_ttl):
-            secret_value = None
+            secret_value: Optional[str] = None
             if secret_provider == SECRET_PROVIDER_AWS_SECRETS_MANAGER:
                 secret_value = self.fetch_aws_secrets_manager_secret(value_to_lookup)
             elif secret_provider == SECRET_PROVIDER_PLAIN:
@@ -992,6 +995,9 @@ environment.
                 secret_value = self.env.get(value_to_lookup)
             else:
                 raise RuntimeError(f'Unknown secret provider: {secret_provider}')
+
+            if secret_value is None:
+                raise RuntimeError(f"Missing secret value for lookup value '{value_to_lookup}'")
 
             cached_env_value_entry = CachedEnvValueEntry(string_value=secret_value,
                     parsed_value=None, fetched_at=time.time())
@@ -1143,17 +1149,17 @@ environment.
         task_arn = metadata.get('TaskARN') or ''
         task_definition_arn = self.compute_ecs_task_definition_arn(metadata) or ''
 
-        common_props = {
+        common_props: Dict[str, Any] = {
             'type': 'AWS ECS',
             'task_definition_arn': task_definition_arn,
         }
 
-        execution_method = {
+        execution_method: Dict[str, Any] = {
             'task_arn': task_arn,
             'cluster_arn': cluster_arn,
         }
 
-        execution_method_capability = {
+        execution_method_capability: Dict[str, Any] = {
             'default_cluster_arn': cluster_arn
         }
 
@@ -1246,7 +1252,7 @@ environment.
         if self.offline_mode:
             return
 
-        if self.send_hostname:
+        if self.send_hostname and (self.hostname is None):
             try:
                 self.hostname = socket.gethostname()
                 _logger.debug(f"Hostname = '{self.hostname}'")
@@ -1323,9 +1329,9 @@ environment.
                     raise RuntimeError('Neither Task UUID or Task name were set.')
 
                 task_dict.update({
-                  'max_concurrency': _encode_int(self.max_concurrency, empty_value=-1),
-                  'was_auto_created': self.auto_create_task,
-                  'passive': self.task_is_passive,
+                    'max_concurrency': _encode_int(self.max_concurrency, empty_value=-1),
+                    'was_auto_created': self.auto_create_task,
+                    'passive': self.task_is_passive,
                 })
 
                 run_env_dict = {}
@@ -1343,14 +1349,14 @@ environment.
                     task_emc = self.runtime_metadata.execution_method_capability
 
                 if self.auto_create_task_overrides:
-                    override_emc = self.auto_create_task_execution_method_overrides.get(
+                    override_emc = self.auto_create_task_overrides.get(
                            'execution_method_capability')
                     if override_emc:
                         task_emc = task_emc or {}
                         task_emc.update(override_emc)
 
                 task_dict['execution_method_capability'] = task_emc or {
-                  'type': 'Unknown'
+                    'type': 'Unknown'
                 }
 
                 body['task'] = task_dict
@@ -1371,7 +1377,7 @@ environment.
 
             if self.execution_method_overrides:
                 execution_method = execution_method or {}
-                execution_method.update(self.runtime_metadata.execution_method)
+                execution_method.update(self.execution_method_overrides)
 
             if execution_method:
                 body['execution_method'] = execution_method
@@ -1716,7 +1722,6 @@ environment.
                 exit_code = self._terminate_or_kill_process()
                 if exit_code == 0:
                     status = self.STATUS_SUCCEEDED
-                    #notification_required = False
         except Exception:
             _logger.exception('Exception in process termination')
         finally:
@@ -2203,15 +2208,15 @@ environment.
     def _exit_or_raise(self, exit_code) -> None:
         if self._embedded_mode:
             raise RuntimeError(f"Raising an error in embedded mode, exit code {exit_code}")
-        else:
-            if self.in_pytest:
-                self._handle_exit()
-            else:
-                if self.called_exit:
-                    raise RuntimeError(
-                        f"exit() called already; raising exception instead of exiting with exit code {exit_code}")
 
-                sys.exit(exit_code)
+        if self.in_pytest:
+            self._handle_exit()
+        else:
+            if self.called_exit:
+                raise RuntimeError(
+                    f"exit() called already; raising exception instead of exiting with exit code {exit_code}")
+
+            sys.exit(exit_code)
 
     def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> int:
         num_sinks_successful = 0

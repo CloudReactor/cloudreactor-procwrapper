@@ -186,6 +186,7 @@ def test_resolve_env_with_aws_secrets_manager():
         assert process_env['SOME_ENV'] == 'Secret PW'
         assert process_env['ANOTHER_ENV'] == 'Secret PW 2'
 
+
 def test_resolve_env_with_env_reference():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override['ENV_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = 'ANOTHER_VAR'
@@ -194,6 +195,7 @@ def test_resolve_env_with_env_reference():
     wrapper = ProcWrapper(env_override=env_override)
     process_env = wrapper.make_process_env()
     assert process_env['SOME_ENV'] == 'env resolution works'
+
 
 def test_resolve_env_with_env_reference_and_json_path():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
@@ -240,11 +242,12 @@ def test_resolve_env_with_aws_secrets_manager_and_json_path():
         assert wrapper.managed_call(callback_with_config,
                 'duper') == 'superduper250'
 
+
 @pytest.mark.parametrize("""
   auto_create
 """, [
-  (True),
-  (False)
+    (True),
+    (False)
 ])
 def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
     env_override = make_online_base_env(httpserver.port)
@@ -379,10 +382,10 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
     task_dict = crd['task']
 
     if auto_create:
-        assert task_dict['was_auto_created'] == True
+        assert task_dict['was_auto_created'] is True
 
         # Defaults to the value of auto-created
-        assert task_dict['passive'] == True
+        assert task_dict['passive'] is True
 
         assert task_dict['run_environment']['name'] == 'myenv'
         emc = task_dict['execution_method_capability']
@@ -392,8 +395,8 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         assert emc['allocated_cpu_units'] == 256
         assert emc['allocated_memory_mb'] == 512
     else:
-        assert task_dict['was_auto_created'] != True
-        assert task_dict['passive'] != True
+        assert task_dict['was_auto_created'] is not True
+        assert task_dict['passive'] is not True
 
 
 def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
@@ -431,10 +434,10 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
 
     task_dict = crd['task']
 
-    assert task_dict['was_auto_created'] == True
+    assert task_dict['was_auto_created'] is True
 
     # Defaults to the value of auto-created
-    assert task_dict['passive'] == True
+    assert task_dict['passive'] is True
 
     emc = task_dict.get('execution_method_capability')
     assert emc['type'] == 'Unknown'
