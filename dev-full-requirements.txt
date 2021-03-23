@@ -7,9 +7,7 @@
 attrs==20.3.0 \
     --hash=sha256:31b2eced602aa8423c2aea9c76a724617ed67cf9513173fd3a4f03e3a929c7e6 \
     --hash=sha256:832aa3cde19744e49938b91fea06d69ecb9e649c93ba974535d08ad92164f700
-    # via
-    #   -c dev-base-requirements.txt
-    #   jsonschema
+    # via jsonschema
 aws-sam-translator==1.35.0 \
     --hash=sha256:2f8904fd4a631752bc441a8fd928c444ed98ceb86b94d25ed7b84982e2eff1cd \
     --hash=sha256:5cf7faab3566843f3b44ef1a42a9c106ffb50809da4002faab818076dcc7bff8 \
@@ -19,24 +17,16 @@ aws-xray-sdk==2.6.0 \
     --hash=sha256:076f7c610cd3564bbba3507d43e328fb6ff4a2e841d3590f39b2c3ce99d41e1d \
     --hash=sha256:abf5b90f740e1f402e23414c9670e59cb9772e235e271fef2bce62b9100cbc77
     # via moto
-boto3==1.17.33 \
-    --hash=sha256:0cac2fffc1ba915f7bb5ecee539318532db51f218c928a228fafe3e501e9472e \
-    --hash=sha256:3306dad87f993703b102a0a70ca19c549b7f41e7f70fa7b4c579735c9f79351d
-    # via
-    #   aws-sam-translator
-    #   moto
+boto3==1.17.34 \
+    --hash=sha256:1ddd597e3d8b7553432f84b32b9519cc90aad91c4dc3873725375163c9f98353 \
+    --hash=sha256:8f33cb3d2fc42b0547a5560a6d7397aa93336f50899386762b2450682c0e992b
 boto==2.49.0 \
     --hash=sha256:147758d41ae7240dc989f0039f27da8ca0d53734be0eb869ef16e3adcfa462e8 \
     --hash=sha256:ea0d3b40a2d852767be77ca343b58a9e3a4b00d9db440efb8da74b4e58025e5a
     # via moto
-botocore==1.20.33 \
-    --hash=sha256:a33e862685259fe22d9790d9c9f3567feda8b824d44d3c62a3617af1133543a4 \
-    --hash=sha256:e355305309699d3aca1e0050fc21d48595b40db046cb0d2491cd57ff5b26920b
-    # via
-    #   aws-xray-sdk
-    #   boto3
-    #   moto
-    #   s3transfer
+botocore==1.20.34 \
+    --hash=sha256:749bdb151e340329f1b25600bfe9d223e930f8ba26bd74b71478ca5781f2feaf \
+    --hash=sha256:c4fe4fea1d6a3934dd8c670ee83b128f935a64078786fe8afb8a662446304926
 certifi==2020.12.5 \
     --hash=sha256:1a4995114262bffbc2413b159f2a1a480c969de6e6eb13ee966d470af86af59c \
     --hash=sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830
@@ -79,11 +69,9 @@ cffi==1.14.5 \
     --hash=sha256:d42b11d692e11b6634f7613ad8df5d6d5f8875f5d48939520d351007b3c13406 \
     --hash=sha256:f2d45f97ab6bb54753eab54fffe75aaf3de4ff2341c9daee1987ee1837636f1d \
     --hash=sha256:fd78e5fee591709f32ef6edb9a015b4aa1a5022598e36227500c8f4e02328d9c
-    # via cryptography
-cfn-lint==0.47.2 \
-    --hash=sha256:2f226f5d3c9aa4d6dd806d168618973dcb6c645c3aecbdaea596ae07068fbad4 \
-    --hash=sha256:91e323a87db35ec56e34fd627f0bb76eff80d089f2b947ae4785dce8873d34ac
-    # via moto
+cfn-lint==0.48.0 \
+    --hash=sha256:2ffda6da0fe57d11c89cc0b44a9aa58e117ef8cb0cc30a8e543b14cdeaedeb39 \
+    --hash=sha256:6b8fdc1994ee814630d353be1a0a00e3ba13bb776ebf9b0d28479a441c157aeb
 chardet==4.0.0 \
     --hash=sha256:0d6f53a15db4120f2b08c94f11e7d93d2c911ee118b6b30a04ec3ee8310179fa \
     --hash=sha256:f864054d66fd9118f2e67044ac8981a54775ec5b67aed0441892edb553d21da5
@@ -112,14 +100,9 @@ decorator==4.4.2 \
 docker==4.4.4 \
     --hash=sha256:d3393c878f575d3a9ca3b94471a3c89a6d960b35feb92f033c0de36cc9d934db \
     --hash=sha256:f3607d5695be025fa405a12aca2e5df702a57db63790c73b927eb6a94aac60af
-    # via moto
-ecdsa==0.14.1 \
-    --hash=sha256:64c613005f13efec6541bb0a33290d0d03c27abab5f15fbab20fb0ee162bdd8e \
-    --hash=sha256:e108a5fe92c67639abae3260e43561af914e7fd0d27bae6d2ec1312ae7934dfe
-    # via
-    #   moto
-    #   python-jose
-    #   sshpubkeys
+ecdsa==0.16.1 \
+    --hash=sha256:881fa5e12bb992972d3d1b3d4dfbe149ab76a89f13da02daa5ea1ec7dea6e747 \
+    --hash=sha256:cfc046a2ddd425adbd1a78b3c46f0d1325c657811c0f45ecc3a0a6236c1e50ff
 future==0.18.2 \
     --hash=sha256:b1bead90b70cf6ec3f0710ae53a525360fa360d306a86583adc6bf83a4db537d
     # via aws-xray-sdk
@@ -152,15 +135,12 @@ jsondiff==1.2.0 \
 jsonpatch==1.32 \
     --hash=sha256:26ac385719ac9f54df8a2f0827bb8253aa3ea8ab7b3368457bcdb8c14595a397 \
     --hash=sha256:b6ddfe6c3db30d81a96aaeceb6baf916094ffa23d7dd5fa2c13e13f8b6e600c2
-    # via cfn-lint
-jsonpickle==2.0.0 \
-    --hash=sha256:0be49cba80ea6f87a168aa8168d717d00c6ca07ba83df3cec32d3b30bfe6fb9a \
-    --hash=sha256:c1010994c1fbda87a48f8a56698605b598cb0fc6bb7e7927559fc1100e69aeac
-    # via aws-xray-sdk
+jsonpickle==1.5.2 \
+    --hash=sha256:7ace67f85a5cfd148e0d2b7defb63d97e856dd5151c092cc6c48dcc91f39f471 \
+    --hash=sha256:9e899bcf94bb1ce6e17beccf880d096fd6221681faede55aa7a8349556822359
 jsonpointer==2.1 \
     --hash=sha256:150f80c5badd02c757da6644852f612f88e8b4bc2f9852dcbf557c8738919686 \
     --hash=sha256:5a34b698db1eb79ceac454159d3f7c12a451a91f6334a4f638454327b7a89962
-    # via jsonpatch
 jsonschema==3.2.0 \
     --hash=sha256:4e5b3cf8216f577bee9ce139cbe72eca3ea4f292ec60928ff24758ce626cd163 \
     --hash=sha256:c8a85b28d377cc7737e46e2d9f2b4f44ee3c0e1deac6bf46ddefc7187d30797a
