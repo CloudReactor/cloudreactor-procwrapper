@@ -231,9 +231,13 @@ environment.
         if require_command:
             parser.add_argument('command', nargs=argparse.REMAINDER)
 
-        parser.add_argument('--task-name', help='Name of Task (either the Task Name or the Task UUID must be specified')
-        parser.add_argument('--task-uuid', help='UUID of Task (either the Task Name or the Task UUID must be specified)')
-        parser.add_argument('--auto-create-task', action='store_true',
+        parser.add_argument('-v', '--version', action='store_true',
+                help='Print the version and exit')
+        parser.add_argument('-n', '--task-name',
+                help='Name of Task (either the Task Name or the Task UUID must be specified')
+        parser.add_argument('--task-uuid',
+                help='UUID of Task (either the Task Name or the Task UUID must be specified)')
+        parser.add_argument('-a', '--auto-create-task', action='store_true',
                 help='Create the Task even if not known by the API server')
         parser.add_argument('--auto-create-task-run-environment-name',
                 help='Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run Environment UUID is not specified.')
@@ -244,14 +248,15 @@ environment.
         parser.add_argument('--force-task-active', action='store_const', const=True,
                 help='Indicates that the auto-created Task should be scheduled and made a service by the API server, if applicable. Otherwise, auto-created Tasks are marked passive.')
         parser.add_argument('--task-execution-uuid', help='UUID of Task Execution to attach to')
-        parser.add_argument('--task-version-number', help="Numeric version of the Task's source code (optional)")
-        parser.add_argument('--task-version-text', help="Human readable version of the Task's source code (optional)")
-        parser.add_argument('--task-version-signature', help="Version signature of the Task's source code (optional)")
+        parser.add_argument('--task-version-number', help="Numeric version of the Task's source code")
+        parser.add_argument('--task-version-text', help="Human readable version of the Task's source code")
+        parser.add_argument('--task-version-signature', help="Version signature of the Task's source code")
         parser.add_argument('--execution-method-props',
                 help='Additional properties of the execution method, in JSON format')
-        parser.add_argument('--task-instance-metadata', help="Additional metadata about the Task instance, in JSON format (optional)")
-        parser.add_argument('--api-base-url', help='Base URL of API server')
-        parser.add_argument('--api-key', help='API key')
+        parser.add_argument('--task-instance-metadata', help="Additional metadata about the Task instance, in JSON format")
+        parser.add_argument('--api-base-url',
+                help=f'Base URL of API server. Defaults to {DEFAULT_API_BASE_URL}')
+        parser.add_argument('-k', '--api-key', help='API key. Must have at least the Task access level, or Developer access level for auto-created Tasks.')
         parser.add_argument('--api-heartbeat-interval',
                 help=f"Number of seconds to wait between sending heartbeats to the API server. -1 means to not send heartbeats. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS} for concurrency limited services, {DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS} otherwise.")
         parser.add_argument('--api-error-timeout',
@@ -270,23 +275,23 @@ environment.
                 help=f"Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS} for concurrency-limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS} otherwise.")
         parser.add_argument('--api-request-timeout',
                 help=f"Timeout for contacting API server, in seconds. Defaults to {DEFAULT_API_REQUEST_TIMEOUT_SECONDS}.")
-        parser.add_argument('--offline-mode', action='store_true',
+        parser.add_argument('-o', '--offline-mode', action='store_true',
                 help='Do not communicate with or rely on an API server')
-        parser.add_argument('--service', action='store_true',
+        parser.add_argument('-s', '--service', action='store_true',
                 help='Indicate that this is a Task that should run indefinitely')
         parser.add_argument('--max-concurrency',
                 help='Maximum number of concurrent Task Executions allowed with the same Task UUID. Defaults to 1.')
         parser.add_argument('--max-conflicting-age',
-                help=f"Maximum age of conflicting processes to consider, in seconds. -1 means no limit. Defaults to the heartbeat interval, plus {HEARTBEAT_DELAY_TOLERANCE_SECONDS} seconds for services that send heartbeats. Otherwise, defaults to no limit.")
-        parser.add_argument('--prevent-offline-execution', action='store_true',
+                help=f"Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit. Defaults to the heartbeat interval, plus {HEARTBEAT_DELAY_TOLERANCE_SECONDS} seconds for services that send heartbeats. Otherwise, defaults to no limit.")
+        parser.add_argument('-p', '--prevent-offline-execution', action='store_true',
                 help='Do not start processes if the API server is unavailable.')
-        parser.add_argument('--log-level',
+        parser.add_argument('-l', '--log-level',
                 help=f"Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Defaults to {_DEFAULT_LOG_LEVEL}.")
         parser.add_argument('--log-secrets', action='store_true', help='Log sensitive information')
-        parser.add_argument('--work-dir', help='Working directory')
-        parser.add_argument('--process-timeout',
+        parser.add_argument('-w', '--work-dir', help='Working directory. Defaults to the current directory.')
+        parser.add_argument('-t', '--process-timeout',
                 help=f"Timeout for process, in seconds. Defaults to {DEFAULT_PROCESS_TIMEOUT_SECONDS} for non-services, infinite for services. -1 means no timeout.")
-        parser.add_argument('--process-max-retries',
+        parser.add_argument('-r', '--process-max-retries',
                 help='Maximum number of times to retry failed processes. -1 means to retry forever. Defaults to 0.')
         parser.add_argument('--process-retry-delay',
                 help=f"Number of seconds to wait before retrying a process. Defaults to {DEFAULT_PROCESS_RETRY_DELAY_SECONDS}.")
@@ -306,9 +311,11 @@ environment.
         parser.add_argument('--send-hostname', action='store_true', help='Send the hostname to the API server')
         parser.add_argument('--no-send-runtime-metadata', action='store_true',
                 help='Do not send metadata about the runtime environment')
-        parser.add_argument('--deployment', help='Deployment name (production, staging, etc.)')
+        parser.add_argument('-d', '--deployment',
+                help='Deployment name (production, staging, etc.)')
         parser.add_argument('--schedule', help='Run schedule reported to the API server')
-        parser.add_argument('--resolved-env-ttl', help='Number of seconds to cache resolved environment variables instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.')
+        parser.add_argument('--resolved-env-ttl',
+                help='Number of seconds to cache resolved environment variables instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.')
         parser.add_argument('--rollbar-access-token',
                 help='Access token for Rollbar (used to report error when communicating with API server)')
         parser.add_argument('--rollbar-retries',
