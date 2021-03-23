@@ -7,9 +7,13 @@
 boto3==1.17.34 \
     --hash=sha256:1ddd597e3d8b7553432f84b32b9519cc90aad91c4dc3873725375163c9f98353 \
     --hash=sha256:8f33cb3d2fc42b0547a5560a6d7397aa93336f50899386762b2450682c0e992b
+    # via -r proc_wrapper-requirements.in
 botocore==1.20.34 \
     --hash=sha256:749bdb151e340329f1b25600bfe9d223e930f8ba26bd74b71478ca5781f2feaf \
     --hash=sha256:c4fe4fea1d6a3934dd8c670ee83b128f935a64078786fe8afb8a662446304926
+    # via
+    #   boto3
+    #   s3transfer
 decorator==4.4.2 \
     --hash=sha256:41fa54c2a0cc4ba648be4fd43cff00aedf5b9465c9bf18d64325bc225f08f760 \
     --hash=sha256:e3a62f0520172440ca0dcc823749319382e377f37f140a0b99ef45fecb84bfe7
