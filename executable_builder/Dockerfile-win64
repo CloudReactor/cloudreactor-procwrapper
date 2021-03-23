@@ -1,0 +1,11 @@
+FROM cdrx/pyinstaller-windows
+
+COPY executable_builder/win64/build.sh /build.sh
+RUN chmod +x /build.sh
+
+COPY proc_wrapper-requirements.txt requirements.txt
+COPY proc_wrapper ./proc_wrapper
+
+RUN ["/build.sh"]
+
+ENTRYPOINT ["ls", "-la", "dist/windows/proc_wrapper.exe"]
