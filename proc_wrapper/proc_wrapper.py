@@ -23,6 +23,7 @@
 
 import argparse
 import atexit
+from datetime import datetime
 import json
 import logging
 import math
@@ -364,6 +365,7 @@ environment.
         self.attempt_count = 0
         self.failed_count = 0
         self.timeout_count = 0
+        self.timed_out = False
         self.send_pid = False
         self.send_hostname = False
         self.hostname: Optional[str] = None
@@ -378,7 +380,6 @@ environment.
         self.process_retry_delay = DEFAULT_PROCESS_RETRY_DELAY_SECONDS
         self.command: Optional[List[str]] = None
         self.working_dir: str = '.'
-        self.timed_out = False
         self.api_key: Optional[str] = None
         self.api_retry_delay = DEFAULT_API_RETRY_DELAY_SECONDS
         self.api_resume_delay = DEFAULT_API_RESUME_DELAY_SECONDS
@@ -516,7 +517,8 @@ environment.
                         self.auto_create_task_run_environment_name = self.deployment
                     else:
                         _logger.critical('No Run Environment UUID or name for auto-created Task specified, exiting.')
-                        return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                        self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                        return
 
                 args_forced_passive = None if (args.force_task_active is None) \
                         else (not args.force_task_active)
@@ -533,7 +535,8 @@ environment.
                     if (runtime_metadata is None) or \
                             (runtime_metadata.execution_method_capability is None):
                         _logger.critical('Task may not be active unless execution method capability can be determined.')
-                        return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                        self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                        return
 
                 em_overrides_str = resolved_env.get(
                         'PROC_WRAPPER_EXECUTION_METHOD_PROPS',
@@ -559,7 +562,8 @@ environment.
 
             if (not self.task_uuid) and (not self.task_name):
                 _logger.critical('No Task UUID or name specified, exiting.')
-                return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                return
 
             count = self.auto_create_task_overrides.get('min_service_instance_count')
             override_is_service = None if count is None else (count > 0)
@@ -594,7 +598,8 @@ environment.
 
             if not self.api_key:
                 _logger.critical('No API key specified, exiting.')
-                return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                return
 
             self.api_error_timeout = cast(int, _string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS'),
@@ -765,12 +770,14 @@ environment.
 
             if self.process_check_interval <= 0:
                 _logger.critical(f"Process check interval {self.process_check_interval} must be positive.")
-                return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                return
 
             # TODO: allow command override if API key has developer permission
             if not args.command:
                 _logger.critical('Command expected in wrapped mode, but not found')
-                return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+                return
 
             self.command = args.command
             self.working_dir = resolved_env.get('PROC_WRAPPER_WORK_DIR') \
@@ -871,6 +878,35 @@ environment.
         _logger.debug(f"Status update interval = {self.status_update_interval}")
 
         _logger.debug(f"Resolved environment variable TTL = {self.resolved_env_ttl}")
+
+    def print_final_status(self, exit_code: Optional[int],
+            first_attempt_started_at: int, latest_attempt_started_at: int):
+        action = 'failed due to wrapping error'
+
+        if exit_code == 0:
+            action = 'succeeded'
+        elif exit_code is not None:
+            action = f'failed with exit code {exit_code}'
+        elif self.timed_out:
+            action = 'timed out'
+
+        task_name = self.task_name or self.task_uuid or '[Unnamed]'
+
+        now = datetime.now()
+        now_ts = now.timestamp()
+        latest_duration = now_ts - latest_attempt_started_at
+        total_duration = now_ts - first_attempt_started_at
+
+        max_attempts_str = 'infinity' if self.process_max_retries is None \
+                else str(self.process_max_retries + 1)
+
+        msg = f"Task '{task_name}' {action} " + \
+          f"at {now.replace(microsecond=0).isoformat(sep=' ')} " + \
+          f'in {round(latest_duration)} seconds on attempt ' + \
+          f"{self.attempt_count} / {max_attempts_str}, " + \
+          f"for a total duration of {round(total_duration)} seconds."
+
+        print(msg)
 
     def resolve_env(self) -> Tuple[Dict[str, str], List[str]]:
         """
@@ -1406,12 +1442,16 @@ environment.
 
                     if not self.task_execution_uuid:
                         self.task_execution_uuid = response_dict.get('uuid')
+
+                    self.task_uuid = self.task_uuid or response_dict['task']['uuid']
+                    self.task_name = self.task_name or response_dict['task'].get('name')
+
         except Exception as ex:
             _logger.exception('request_process_start_if_max_concurrency_ok() failed with exception')
             if self.prevent_offline_execution:
                 raise ex
-            else:
-                _logger.info('Not preventing offline execution, so continuing')
+
+            _logger.info('Not preventing offline execution, so continuing')
 
     def update_status(self, failed_attempts=None, timed_out_attempts=None,
             pid=None, success_count=None, error_count=None,
@@ -1467,6 +1507,7 @@ environment.
 
         if status not in self._ALLOWED_FINAL_STATUSES:
             self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
+            return
 
         if exit_code is None:
             if status == self.STATUS_SUCCEEDED:
@@ -1489,6 +1530,7 @@ environment.
         if self.failed_env_names:
             _logger.critical(f'Failed to resolve one or more environment variables: {self.failed_env_names}')
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+            return
 
         self.request_task_execution_start()
 
@@ -1569,6 +1611,9 @@ environment.
 
         self.attempt_count = 0
         self.timeout_count = 0
+        first_attempt_started_at: Optional[int] = None
+        latest_attempt_started_at: Optional[int] = None
+        exit_code: Optional[int] = None
 
         self._open_status_socket()
 
@@ -1596,6 +1641,10 @@ environment.
 
             if self.log_secrets:
                 _logger.debug(f"process_env={process_env}")
+
+            latest_attempt_started_at = time.time()
+            if first_attempt_started_at is None:
+                first_attempt_started_at = latest_attempt_started_at
 
             # Set the session ID so we can kill the process as a group, so we kill
             # all subprocesses. See https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true
@@ -1664,12 +1713,18 @@ environment.
                     done_polling = True
 
                     if exit_code == 0:
+                        self.print_final_status(exit_code=0,
+                                first_attempt_started_at=first_attempt_started_at,
+                                latest_attempt_started_at=latest_attempt_started_at)
                         self._exit_or_raise(0)
                         return
 
                     self.failed_count += 1
 
                     if self.attempt_count >= self.max_execution_attempts:
+                        self.print_final_status(exit_code=exit_code,
+                                first_attempt_started_at=first_attempt_started_at,
+                                latest_attempt_started_at=latest_attempt_started_at)
                         self._exit_or_raise(exit_code)
                         return
 
@@ -1686,18 +1741,20 @@ environment.
 
                         # In case API key(s) change
                         self.initialize_fields(mutable_only=True)
-
                         process_env = self.make_process_env()
 
         if self.attempt_count >= self.max_execution_attempts:
+            self.print_final_status(exit_code=exit_code,
+                    first_attempt_started_at=first_attempt_started_at,
+                    latest_attempt_started_at=latest_attempt_started_at)
+
             self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
         else:
-            self.send_update(failed_attempts=self.attempt_count,
-                              timed_out_attempts=self.timeout_count)
+            self.send_update(failed_attempts=self.attempt_count)
 
         # Exit handler will send update to API server
 
-    def _handle_exit(self):
+    def _handle_exit(self) -> None:
         _logger.debug(f"Exit handler, Task Execution UUID = {self.task_execution_uuid}")
 
         if self.called_exit:
