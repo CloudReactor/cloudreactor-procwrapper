@@ -9,8 +9,6 @@ BASE_DIR="$SCRIPT_DIR/../.."
 source $SCRIPT_DIR/common_env.sh;
 source $SCRIPT_DIR/secret_env.sh;
 
-echo "SCRIPT_ABS_DIR = $SCRIPT_ABS_DIR"
-
 CMD="python $SCRIPT_ABS_DIR/sleep.py"
 
 if [[ "$#" -gt 0 ]];
