@@ -221,11 +221,11 @@ class ProcWrapper:
 
     @staticmethod
     def make_arg_parser(require_command=True):
-        parser = argparse.ArgumentParser(prog='python -m proc_wrapper',
+        parser = argparse.ArgumentParser(prog='proc_wrapper',
                 description="""
 Wraps the execution of processes so that a service API endpoint (CloudReactor)
 is optionally informed of the progress.
-Also implements retries, timeouts, and secret injection from AWS into the
+Also implements retries, timeouts, and secret injection into the
 environment.
         """)
 
@@ -245,7 +245,7 @@ environment.
         parser.add_argument('--auto-create-task-run-environment-uuid',
                 help='UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task)')
         parser.add_argument('--auto-create-task-props',
-                help='Additional properties of the auto-created Task, in JSON format')
+                help='Additional properties of the auto-created Task, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create for the schema.')
         parser.add_argument('--force-task-active', action='store_const', const=True,
                 help='Indicates that the auto-created Task should be scheduled and made a service by the API server, if applicable. Otherwise, auto-created Tasks are marked passive.')
         parser.add_argument('--task-execution-uuid', help='UUID of Task Execution to attach to')
@@ -880,7 +880,11 @@ environment.
         _logger.debug(f"Resolved environment variable TTL = {self.resolved_env_ttl}")
 
     def print_final_status(self, exit_code: Optional[int],
-            first_attempt_started_at: int, latest_attempt_started_at: int):
+            first_attempt_started_at: Optional[float],
+            latest_attempt_started_at: Optional[float]):
+        if latest_attempt_started_at is None:
+            latest_attempt_started_at = first_attempt_started_at
+
         action = 'failed due to wrapping error'
 
         if exit_code == 0:
@@ -891,20 +895,26 @@ environment.
             action = 'timed out'
 
         task_name = self.task_name or self.task_uuid or '[Unnamed]'
-
         now = datetime.now()
         now_ts = now.timestamp()
-        latest_duration = now_ts - latest_attempt_started_at
-        total_duration = now_ts - first_attempt_started_at
-
         max_attempts_str = 'infinity' if self.process_max_retries is None \
                 else str(self.process_max_retries + 1)
 
         msg = f"Task '{task_name}' {action} " + \
-          f"at {now.replace(microsecond=0).isoformat(sep=' ')} " + \
-          f'in {round(latest_duration)} seconds on attempt ' + \
-          f"{self.attempt_count} / {max_attempts_str}, " + \
-          f"for a total duration of {round(total_duration)} seconds."
+          f"at {now.replace(microsecond=0).isoformat(sep=' ')} "
+
+        if latest_attempt_started_at is not None:
+            latest_duration = now_ts - latest_attempt_started_at
+            msg += f'in {round(latest_duration)} seconds '
+
+        msg += 'on attempt ' + \
+          f"{self.attempt_count} / {max_attempts_str}"
+
+        if first_attempt_started_at is not None:
+            total_duration = now_ts - first_attempt_started_at
+            msg += f', for a total duration of {round(total_duration)} seconds'
+
+        msg += '.'
 
         print(msg)
 
@@ -1611,8 +1621,8 @@ environment.
 
         self.attempt_count = 0
         self.timeout_count = 0
-        first_attempt_started_at: Optional[int] = None
-        latest_attempt_started_at: Optional[int] = None
+        first_attempt_started_at: Optional[float] = None
+        latest_attempt_started_at: Optional[float] = None
         exit_code: Optional[int] = None
 
         self._open_status_socket()

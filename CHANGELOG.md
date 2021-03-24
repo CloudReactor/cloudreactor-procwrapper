@@ -18,3 +18,13 @@
 * Don't start the process and exit immediately if we get a 409 Conflict from the API server, even if prevent_offline_execution is false
 ## v2.0.0 (2021-02-22)
 * First official release
+## v2.1.0-rc1 (2021-03-22)
+* Support for auto-created and passive Tasks, eliminating the need
+to change user's deployment processes
+* Add ENV method of secret fetch -- lookup from another environment
+variable usually set to a JSON-encoded object, so that jsonpath-ng
+can be used to extract individual secrets
+* Build standalone executables for Linux/AMD64 and Windows
+* Print a final message with information about exit code and timing
+* Add --version option
+* Add many one letter command line option aliases

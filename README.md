@@ -31,17 +31,9 @@ Wraps the execution of processes so that an API server
 ([CloudReactor](https://cloudreactor.io/))
 can monitor and manage them. Also implements retries, timeouts, and
 secret injection from AWS into the environment.
+Available as a standalone executable or as a python module.
 
 ## How it works
-
-During deployment of your code, your deployment process informs the
-API server of details of your Task, so that API server can start, schedule,
-and monitor your Task.
-See [AWS ECS CloudReactor Deployer](https://github.com/CloudReactor/aws-ecs-cloudreactor-deployer)
-for instructions on how to this, and
-[CloudReactor python ECS QuickStart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
-for an example. (This step isn't necessary for auto-created Tasks, discussed later.) The API server ensures the Task is run continuously if it is a
-service, and on a schedule if the Task is configured with one.
 
 Before your code runs, the module requests the API server to create a
 Task Execution associated with the Task name or UUID which you pass to the
@@ -63,8 +55,15 @@ allowing you to view failures and run durations in the past.
 
 ### Auto-created Tasks
 
-The AWS ECS CloudReactor Deployer can be used to deploy your Tasks,
-but it may not be possible or desired to change your deployment process.
+Before your Task is run (including this module),
+the [AWS ECS CloudReactor Deployer](https://github.com/CloudReactor/aws-ecs-cloudreactor-deployer)
+can be used to set it up in AWS ECS,
+and inform CloudReactor of details of your Task.
+That way CloudReactor can start, schedule, and monitor your Task.
+See [CloudReactor python ECS QuickStart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
+for an example.
+
+However, it may not be possible or desired to change your deployment process.
 Instead, you may configure the Task to be *auto-created*.
 
 Auto-created Tasks are created the first time your Task runs.
@@ -72,15 +71,19 @@ This means there is no need to inform the API server of the Task details
 (during deployment) before it runs.
 Instead, whenever the module runs, it informs the API server of the
 Task details at the same time as it requests the creation of a Task Execution.
-The disadvantage of auto-created Tasks is that they are not available
+One disadvantage of auto-created Tasks is that they are not available
 in the CloudReactor dashboard until the first time they run.
 
 When configuring a Task to be auto-created, you must specify the name
 or UUID of the Run Environment in CloudReactor that the Task is
 associated with. The Run Environment must be created ahead of time,
-either by the
-[Cloudreactor AWS Setup Wizard](https://github.com/CloudReactor/cloudreactor-aws-setup-wizard),
+either by the Cloudreactor AWS Setup Wizard,
 or manually in the CloudReactor dashboard.
+
+You can also specify more Task properties, such as Alert Methods and
+external links in the dashboard, by setting the environment variable
+`PROC_WRAPPER_AUTO_CREATE_TASK_PROPS` set to a JSON-encoded object that has the
+[CloudReactor Task schema](https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create).
 
 ### Execution Methods
 
@@ -115,16 +118,64 @@ you configure your Task to be auto-created.
 
 Passive Tasks are Tasks that CloudReactor does not manage. This means
 scheduling and service setup must be handled by other means
-(cron jobs, [supervisord](http://supervisord.org/), etc). The module reports
-to the API server that auto-created Tasks are passive, unless you
-specify the `--force-task-passive` commmand-line option or
-set the `PROC_WRAPPER_TASK_IS_PASSIVE` environment variable to `FALSE`.
+(cron jobs, [supervisord](http://supervisord.org/), etc).
+However, Tasks marked as services or that have a schedule will still be
+monitored by CloudReactor, which will send notifications if
+a service Task goes down or a Task does not run on schedule.
+
+The module reports to the API server that auto-created Tasks are passive,
+unless you specify the `--force-task-passive` commmand-line option or
+set the environment variable `PROC_WRAPPER_TASK_IS_PASSIVE` to `FALSE`.
 If a Task uses the Unknown Execution Method, it must be marked as passive,
 because CloudReactor does not know how to manage it.
 
+## Pre-requisites
+
+If you just want to use this module to retry processes, limit execution time,
+or fetch secrets, you can use offline mode, in which case no CloudReactor API
+key is required. But CloudReactor offers a free tier so we hope you
+[sign up](https://dash.cloudreactor.io/signup)
+or a free account to enable monitoring and/or management.
+
+If you want CloudReactor to be able to start your Tasks, you should use the
+[Cloudreactor AWS Setup Wizard](https://github.com/CloudReactor/cloudreactor-aws-setup-wizard)
+to configure your AWS environment to run Tasks in ECS Fargate.
+You can skip this step if running in passive mode is OK for you.
+
+If you want to use CloudReactor to manager or just monitor your Tasks,
+you need to create a Run Environment and an API key in the CloudReactor
+dashboard. The API key can be scoped to the Run Environment if you
+wish. The key must have at least the Task access level, but for
+an auto-created Task, it must have at least the Developer access level.
+
 ## Installation
 
-Install this via pip (or your favourite package manager):
+### In a Linux/AMD64 or Windows 64 environment
+
+Standalone executables for 64-bit Linux and Windows are available,
+located in `pyinstaller_build/plaforms`. These executables bundle python
+so you don't need to have python installed on your machine. They also bundle
+all optional library dependencies so you can fetch secrets from AWS
+Secrets Manager and extract them with jsonpath-ng, for example.
+
+On a debian buster machine, the following packages (with known supported versions)
+must be installed:
+
+      openssl=1.1.1d-0+deb10u5
+      libexpat1=2.2.6-2+deb10u1
+      ca-certificates=20200601~deb10u2
+
+See the example [Dockerfile](tests/integration/standalone_executable/docker_context_linux_amd64/Dockerfile) for a known working
+environment.
+
+Special thanks to [PyInstaller](https://www.pyinstaller.org/),
+[wine](https://www.winehq.org/), and
+[PyInstaller Docker Images](https://github.com/cdrx/docker-pyinstaller)
+for making this possible!
+
+### When python is available
+
+Install this module via pip (or your favourite package manager):
 
 `pip install cloudreactor-procwrapper`
 
@@ -155,90 +206,91 @@ Instead of running
 
 you would run
 
-    python -m proc_wrapper somecommand --somearg x
+    proc_wrapper somecommand --somearg x
 
-assuming that you configure the module using environment variables.
+assuming that are using the linux standalone executable, and that
+you configure the program using environment variables.
+
+Or, if you have python installed:
+
+    python -m proc_wrapper somecommand --somearg x
 
 Here are all the options:
 
-    usage: python -m proc_wrapper [-h] [--task-name TASK_NAME]
-                                  [--task-uuid TASK_UUID] [--auto-create-task]
-                                  [--auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME]
-                                  [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID]
-                                  [--auto-create-task-props AUTO_CREATE_TASK_PROPS]
-                                  [--force-task-active]
-                                  [--task-execution-uuid TASK_EXECUTION_UUID]
-                                  [--task-version-number TASK_VERSION_NUMBER]
-                                  [--task-version-text TASK_VERSION_TEXT]
-                                  [--task-version-signature TASK_VERSION_SIGNATURE]
-                                  [--execution-method-props EXECUTION_METHOD_PROPS]
-                                  [--task-instance-metadata TASK_INSTANCE_METADATA]
-                                  [--api-base-url API_BASE_URL]
-                                  [--api-key API_KEY]
-                                  [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
-                                  [--api-error-timeout API_ERROR_TIMEOUT]
-                                  [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT]
-                                  [--api-retry-delay API_RETRY_DELAY]
-                                  [--api-resume-delay API_RESUME_DELAY]
-                                  [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT]
-                                  [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
-                                  [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY]
-                                  [--api-request-timeout API_REQUEST_TIMEOUT]
-                                  [--offline-mode] [--service]
-                                  [--max-concurrency MAX_CONCURRENCY]
-                                  [--max-conflicting-age MAX_CONFLICTING_AGE]
-                                  [--prevent-offline-execution]
-                                  [--log-level LOG_LEVEL] [--log-secrets]
-                                  [--work-dir WORK_DIR]
-                                  [--process-timeout PROCESS_TIMEOUT]
-                                  [--process-max-retries PROCESS_MAX_RETRIES]
-                                  [--process-retry-delay PROCESS_RETRY_DELAY]
-                                  [--process-check-interval PROCESS_CHECK_INTERVAL]
-                                  [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD]
-                                  [--enable-status-update-listener]
-                                  [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
-                                  [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
-                                  [--status-update-interval STATUS_UPDATE_INTERVAL]
-                                  [--send-pid] [--send-hostname]
-                                  [--no-send-runtime-metadata]
-                                  [--deployment DEPLOYMENT] [--schedule SCHEDULE]
-                                  [--resolved-env-ttl RESOLVED_ENV_TTL]
-                                  [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
-                                  [--rollbar-retries ROLLBAR_RETRIES]
-                                  [--rollbar-retry-delay ROLLBAR_RETRY_DELAY]
-                                  [--rollbar-timeout ROLLBAR_TIMEOUT]
-                                  ...
+    usage: proc_wrapper [-h] [-v] [-n TASK_NAME] [--task-uuid TASK_UUID] [-a]
+                        [--auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME]
+                        [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID]
+                        [--auto-create-task-props AUTO_CREATE_TASK_PROPS]
+                        [--force-task-active]
+                        [--task-execution-uuid TASK_EXECUTION_UUID]
+                        [--task-version-number TASK_VERSION_NUMBER]
+                        [--task-version-text TASK_VERSION_TEXT]
+                        [--task-version-signature TASK_VERSION_SIGNATURE]
+                        [--execution-method-props EXECUTION_METHOD_PROPS]
+                        [--task-instance-metadata TASK_INSTANCE_METADATA]
+                        [--api-base-url API_BASE_URL] [-k API_KEY]
+                        [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
+                        [--api-error-timeout API_ERROR_TIMEOUT]
+                        [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT]
+                        [--api-retry-delay API_RETRY_DELAY]
+                        [--api-resume-delay API_RESUME_DELAY]
+                        [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT]
+                        [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
+                        [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY]
+                        [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-s]
+                        [--max-concurrency MAX_CONCURRENCY]
+                        [--max-conflicting-age MAX_CONFLICTING_AGE] [-p]
+                        [-l LOG_LEVEL] [--log-secrets] [-w WORK_DIR]
+                        [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES]
+                        [--process-retry-delay PROCESS_RETRY_DELAY]
+                        [--process-check-interval PROCESS_CHECK_INTERVAL]
+                        [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD]
+                        [--enable-status-update-listener]
+                        [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
+                        [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
+                        [--status-update-interval STATUS_UPDATE_INTERVAL]
+                        [--send-pid] [--send-hostname]
+                        [--no-send-runtime-metadata] [-d DEPLOYMENT]
+                        [--schedule SCHEDULE]
+                        [--resolved-env-ttl RESOLVED_ENV_TTL]
+                        [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
+                        [--rollbar-retries ROLLBAR_RETRIES]
+                        [--rollbar-retry-delay ROLLBAR_RETRY_DELAY]
+                        [--rollbar-timeout ROLLBAR_TIMEOUT]
+                        ...
 
     Wraps the execution of processes so that a service API endpoint (CloudReactor)
     is optionally informed of the progress. Also implements retries, timeouts, and
-    secret injection from AWS into the environment.
+    secret injection into the environment.
 
     positional arguments:
       command
 
     optional arguments:
       -h, --help            show this help message and exit
-      --task-name TASK_NAME
+      -v, --version         Print the version and exit
+      -n TASK_NAME, --task-name TASK_NAME
                             Name of Task (either the Task Name or the Task UUID
                             must be specified
       --task-uuid TASK_UUID
                             UUID of Task (either the Task Name or the Task UUID
                             must be specified)
-      --auto-create-task    Create the Task even if not known by the API server
+      -a, --auto-create-task
+                            Create the Task even if not known by the API server
       --auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
                             Name of the Run Environment to use if auto-creating
                             the Task (either the name or UUID of the Run
                             Environment must be specified if auto-creating the
-                            Task). Defaults to the deployment name if the
-                            Run Environment UUID is not specified.
+                            Task). Defaults to the deployment name if the Run
+                            Environment UUID is not specified.
       --auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID
                             UUID of the Run Environment to use if auto-creating
                             the Task (either the name or UUID of the Run
                             Environment must be specified if auto-creating the
                             Task)
       --auto-create-task-props AUTO_CREATE_TASK_PROPS
-                            Additional properties of the auto-created Task,
-                            in JSON format
+                            Additional properties of the auto-created Task, in
+                            JSON format
       --force-task-active   Indicates that the auto-created Task should be
                             scheduled and made a service by the API server, if
                             applicable. Otherwise, auto-created Tasks are marked
@@ -246,21 +298,23 @@ Here are all the options:
       --task-execution-uuid TASK_EXECUTION_UUID
                             UUID of Task Execution to attach to
       --task-version-number TASK_VERSION_NUMBER
-                            Numeric version of the Task's source code (optional)
+                            Numeric version of the Task's source code
       --task-version-text TASK_VERSION_TEXT
                             Human readable version of the Task's source code
-                            (optional)
       --task-version-signature TASK_VERSION_SIGNATURE
-                            Version signature of the Task's source code (optional)
+                            Version signature of the Task's source code
       --execution-method-props EXECUTION_METHOD_PROPS
                             Additional properties of the execution method, in JSON
                             format
       --task-instance-metadata TASK_INSTANCE_METADATA
                             Additional metadata about the Task instance, in JSON
-                            format (optional)
+                            format
       --api-base-url API_BASE_URL
-                            Base URL of API server
-      --api-key API_KEY     API key
+                            Base URL of API server. Defaults to
+                            https://api.cloudreactor.io
+      -k API_KEY, --api-key API_KEY
+                            API key. Must have at least the Task access level, or
+                            Developer access level for auto-created Tasks.
       --api-heartbeat-interval API_HEARTBEAT_INTERVAL
                             Number of seconds to wait between sending heartbeats
                             to the API server. -1 means to not send heartbeats.
@@ -298,30 +352,31 @@ Here are all the options:
       --api-request-timeout API_REQUEST_TIMEOUT
                             Timeout for contacting API server, in seconds.
                             Defaults to 30.
-      --offline-mode        Do not communicate with or rely on an API server
-      --service             Indicate that this is a Task that should run
+      -o, --offline-mode    Do not communicate with or rely on an API server
+      -s, --service         Indicate that this is a Task that should run
                             indefinitely
       --max-concurrency MAX_CONCURRENCY
                             Maximum number of concurrent Task Executions allowed
                             with the same Task UUID. Defaults to 1.
       --max-conflicting-age MAX_CONFLICTING_AGE
-                            Maximum age of conflicting processes to consider, in
+                            Maximum age of conflicting Tasks to consider, in
                             seconds. -1 means no limit. Defaults to the heartbeat
                             interval, plus 60 seconds for services that send
                             heartbeats. Otherwise, defaults to no limit.
-      --prevent-offline-execution
+      -p, --prevent-offline-execution
                             Do not start processes if the API server is
                             unavailable.
-      --log-level LOG_LEVEL
+      -l LOG_LEVEL, --log-level LOG_LEVEL
                             Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
                             Defaults to WARNING.
       --log-secrets         Log sensitive information
-      --work-dir WORK_DIR   Working directory
-      --process-timeout PROCESS_TIMEOUT
+      -w WORK_DIR, --work-dir WORK_DIR
+                            Working directory. Defaults to the current directory.
+      -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
                             Timeout for process, in seconds. Defaults to None for
                             non-services, infinite for services. -1 means no
                             timeout.
-      --process-max-retries PROCESS_MAX_RETRIES
+      -r PROCESS_MAX_RETRIES, --process-max-retries PROCESS_MAX_RETRIES
                             Maximum number of times to retry failed processes. -1
                             means to retry forever. Defaults to 0.
       --process-retry-delay PROCESS_RETRY_DELAY
@@ -352,7 +407,217 @@ Here are all the options:
       --send-hostname       Send the hostname to the API server
       --no-send-runtime-metadata
                             Do not send metadata about the runtime environment
-      --deployment DEPLOYMENT
+      -d DEPLOYMENT, --deployment DEPLOYMENT
+                            Deployment name (production, staging, etc.)
+      --schedule SCHEDULE   Run schedule reported to the API server
+      --resolved-env-ttl RESOLVED_ENV_TTL
+                            Number of seconds to cache resolved environment
+                            variables instead of refreshing them when a process
+                            restarts. -1 means to never refresh. Defaults to -1.
+      --rollbar-access-token ROLLBAR_ACCESS_TOKEN
+                            Access token for Rollbar (used to report error when
+                            communicating with API server)
+      --rollbar-retries ROLLBAR_RETRIES
+                            Number of retries per Rollbar request. Defaults to 2.
+      --rollbar-retry-delay ROLLBAR_RETRY_DELAY
+                            Number of seconds to wait before retrying a Rollbar
+                            request. Defaults to 120.
+      --rollbar-timeout ROLLBAR_TIMEOUT
+                            Timeout for contacting Rollbar server, in seconds.
+                            Defaults to 30.
+    (process_wrapper_python_dev_full) jtsay@DESKTOP-EVHQ2MK:~/cloudreactor/cloudreactor-procwrapper$ python -m proc_wrapper --help
+    usage: proc_wrapper [-h] [-v] [-n TASK_NAME] [--task-uuid TASK_UUID] [-a]
+                        [--auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME]
+                        [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID]
+                        [--auto-create-task-props AUTO_CREATE_TASK_PROPS]
+                        [--force-task-active]
+                        [--task-execution-uuid TASK_EXECUTION_UUID]
+                        [--task-version-number TASK_VERSION_NUMBER]
+                        [--task-version-text TASK_VERSION_TEXT]
+                        [--task-version-signature TASK_VERSION_SIGNATURE]
+                        [--execution-method-props EXECUTION_METHOD_PROPS]
+                        [--task-instance-metadata TASK_INSTANCE_METADATA]
+                        [--api-base-url API_BASE_URL] [-k API_KEY]
+                        [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
+                        [--api-error-timeout API_ERROR_TIMEOUT]
+                        [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT]
+                        [--api-retry-delay API_RETRY_DELAY]
+                        [--api-resume-delay API_RESUME_DELAY]
+                        [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT]
+                        [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
+                        [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY]
+                        [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-s]
+                        [--max-concurrency MAX_CONCURRENCY]
+                        [--max-conflicting-age MAX_CONFLICTING_AGE] [-p]
+                        [-l LOG_LEVEL] [--log-secrets] [-w WORK_DIR]
+                        [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES]
+                        [--process-retry-delay PROCESS_RETRY_DELAY]
+                        [--process-check-interval PROCESS_CHECK_INTERVAL]
+                        [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD]
+                        [--enable-status-update-listener]
+                        [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
+                        [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
+                        [--status-update-interval STATUS_UPDATE_INTERVAL]
+                        [--send-pid] [--send-hostname]
+                        [--no-send-runtime-metadata] [-d DEPLOYMENT]
+                        [--schedule SCHEDULE]
+                        [--resolved-env-ttl RESOLVED_ENV_TTL]
+                        [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
+                        [--rollbar-retries ROLLBAR_RETRIES]
+                        [--rollbar-retry-delay ROLLBAR_RETRY_DELAY]
+                        [--rollbar-timeout ROLLBAR_TIMEOUT]
+                        ...
+
+    Wraps the execution of processes so that a service API endpoint (CloudReactor)
+    is optionally informed of the progress. Also implements retries, timeouts, and
+    secret injection into the environment.
+
+    positional arguments:
+      command
+
+    optional arguments:
+      -h, --help            show this help message and exit
+      -v, --version         Print the version and exit
+      -n TASK_NAME, --task-name TASK_NAME
+                            Name of Task (either the Task Name or the Task UUID
+                            must be specified
+      --task-uuid TASK_UUID
+                            UUID of Task (either the Task Name or the Task UUID
+                            must be specified)
+      -a, --auto-create-task
+                            Create the Task even if not known by the API server
+      --auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
+                            Name of the Run Environment to use if auto-creating
+                            the Task (either the name or UUID of the Run
+                            Environment must be specified if auto-creating the
+                            Task). Defaults to the deployment name if the Run
+                            Environment UUID is not specified.
+      --auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID
+                            UUID of the Run Environment to use if auto-creating
+                            the Task (either the name or UUID of the Run
+                            Environment must be specified if auto-creating the
+                            Task)
+      --auto-create-task-props AUTO_CREATE_TASK_PROPS
+                            Additional properties of the auto-created Task, in
+                            JSON format. See https://apidocs.cloudreactor.io/#oper
+                            ation/api_v1_tasks_create for the schema.
+      --force-task-active   Indicates that the auto-created Task should be
+                            scheduled and made a service by the API server, if
+                            applicable. Otherwise, auto-created Tasks are marked
+                            passive.
+      --task-execution-uuid TASK_EXECUTION_UUID
+                            UUID of Task Execution to attach to
+      --task-version-number TASK_VERSION_NUMBER
+                            Numeric version of the Task's source code
+      --task-version-text TASK_VERSION_TEXT
+                            Human readable version of the Task's source code
+      --task-version-signature TASK_VERSION_SIGNATURE
+                            Version signature of the Task's source code
+      --execution-method-props EXECUTION_METHOD_PROPS
+                            Additional properties of the execution method, in JSON
+                            format
+      --task-instance-metadata TASK_INSTANCE_METADATA
+                            Additional metadata about the Task instance, in JSON
+                            format
+      --api-base-url API_BASE_URL
+                            Base URL of API server. Defaults to
+                            https://api.cloudreactor.io
+      -k API_KEY, --api-key API_KEY
+                            API key. Must have at least the Task access level, or
+                            Developer access level for auto-created Tasks.
+      --api-heartbeat-interval API_HEARTBEAT_INTERVAL
+                            Number of seconds to wait between sending heartbeats
+                            to the API server. -1 means to not send heartbeats.
+                            Defaults to 30 for concurrency limited services, 300
+                            otherwise.
+      --api-error-timeout API_ERROR_TIMEOUT
+                            Number of seconds to wait while receiving recoverable
+                            errors from the API server. Defaults to 300.
+      --api-final-update-timeout API_FINAL_UPDATE_TIMEOUT
+                            Number of seconds to wait while receiving recoverable
+                            errors from the API server when sending the final
+                            update before exiting. Defaults to 1800.
+      --api-retry-delay API_RETRY_DELAY
+                            Number of seconds to wait before retrying an API
+                            request. Defaults to 120.
+      --api-resume-delay API_RESUME_DELAY
+                            Number of seconds to wait before resuming API
+                            requests, after retries are exhausted. Defaults to
+                            600. -1 means no resumption.
+      --api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT
+                            Number of seconds to keep retrying Task Execution
+                            creation while receiving error responses from the API
+                            server. -1 means to keep trying indefinitely. Defaults
+                            to 300.
+      --api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT
+                            Number of seconds to keep retrying Task Execution
+                            creation while conflict is detected by the API server.
+                            -1 means to keep trying indefinitely. Defaults to 1800
+                            for concurrency limited services, 0 otherwise.
+      --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
+                            Number of seconds between attempts to retry Task
+                            Execution creation after conflict is detected.
+                            Defaults to 60 for concurrency-limited services, 120
+                            otherwise.
+      --api-request-timeout API_REQUEST_TIMEOUT
+                            Timeout for contacting API server, in seconds.
+                            Defaults to 30.
+      -o, --offline-mode    Do not communicate with or rely on an API server
+      -s, --service         Indicate that this is a Task that should run
+                            indefinitely
+      --max-concurrency MAX_CONCURRENCY
+                            Maximum number of concurrent Task Executions allowed
+                            with the same Task UUID. Defaults to 1.
+      --max-conflicting-age MAX_CONFLICTING_AGE
+                            Maximum age of conflicting Tasks to consider, in
+                            seconds. -1 means no limit. Defaults to the heartbeat
+                            interval, plus 60 seconds for services that send
+                            heartbeats. Otherwise, defaults to no limit.
+      -p, --prevent-offline-execution
+                            Do not start processes if the API server is
+                            unavailable.
+      -l LOG_LEVEL, --log-level LOG_LEVEL
+                            Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+                            Defaults to WARNING.
+      --log-secrets         Log sensitive information
+      -w WORK_DIR, --work-dir WORK_DIR
+                            Working directory. Defaults to the current directory.
+      -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
+                            Timeout for process, in seconds. Defaults to None for
+                            non-services, infinite for services. -1 means no
+                            timeout.
+      -r PROCESS_MAX_RETRIES, --process-max-retries PROCESS_MAX_RETRIES
+                            Maximum number of times to retry failed processes. -1
+                            means to retry forever. Defaults to 0.
+      --process-retry-delay PROCESS_RETRY_DELAY
+                            Number of seconds to wait before retrying a process.
+                            Defaults to 60.
+      --process-check-interval PROCESS_CHECK_INTERVAL
+                            Number of seconds to wait between checking the status
+                            of processes. Defaults to 10.
+      --process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD
+                            Number of seconds to wait after sending SIGTERM to a
+                            process, but before killing it with SIGKILL. Defaults
+                            to 30.
+      --enable-status-update-listener
+                            Listen for status updates from the process, sent on
+                            the status socket port via UDP. If not specified,
+                            status update messages will not be read.
+      --status-update-socket-port STATUS_UPDATE_SOCKET_PORT
+                            The port used to receive status updates from the
+                            process. Defaults to 2373.
+      --status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES
+                            The maximum number of bytes status update messages can
+                            be. Defaults to 65536.
+      --status-update-interval STATUS_UPDATE_INTERVAL
+                            Minimum of seconds to wait between sending status
+                            updates to the API server. -1 means to not send status
+                            updates except with heartbeats. Defaults to -1.
+      --send-pid            Send the process ID to the API server
+      --send-hostname       Send the hostname to the API server
+      --no-send-runtime-metadata
+                            Do not send metadata about the runtime environment
+      -d DEPLOYMENT, --deployment DEPLOYMENT
                             Deployment name (production, staging, etc.)
       --schedule SCHEDULE   Run schedule reported to the API server
       --resolved-env-ttl RESOLVED_ENV_TTL
@@ -500,19 +765,12 @@ optionally extract embedded data, then inject them into the environment
 (in the case of wrapped mode)
 or a configuration dictionary (in the case of embedded mode).
 
-To enable secret resolution, set environment variable
-
-    PROC_WRAPPER_RESOLVE_SECRETS
-
-to
-
-    TRUE
+To enable secret resolution, set environment variable `PROC_WRAPPER_RESOLVE_SECRETS`
+to `TRUE`.
 
 Then to resolve the target environment variable `MY_SECRET`
 by fetching from AWS Secrets Manager, define the environment variable
-
-    AWS_SM_MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE
-
+`AWS_SM_MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE`
 set to the ARN of the secret, for example:
 
     arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY
@@ -539,7 +797,7 @@ could be used to fetch the same secret, provided there are no conflicting secret
 
 ### Secret Tranformation
 
-Secret fetching is relatively expensive and it makes sense to group related
+Fetching secrets can be relatively expensive and it makes sense to group related
 secrets together. Therefore it is common to store JSON values as secrets.
 To facilitate this, pieces of JSON values can be extracted to individual
 environment variables using [jsonpath-ng](https://github.com/h2non/jsonpath-ng).
@@ -594,13 +852,7 @@ Then to extract the username to the environment variable DB_USERNAME you
 you would add the environment variable ENV_DB_USER_FOR_PROC_WRAPPER_TO_RESOLVE
 set to
 
-
     DB_CONFIG|JP:$.username
-
-Similarly, you would set ENV_DB_PASSWORD_FOR_PROC_WRAPPER_TO_RESOLVE to
-
-    DB_CONFIG|JP:$.password
-
 
 ### Secrets Refreshing
 
@@ -611,9 +863,9 @@ If your process exits, you have configured the script to retry, and the TTL has 
 and resolve them again, for the environment passed to the next invocation of
 your process.
 
-### Status Updates
+## Status Updates
 
-#### Status Updates in Wrapped Mode
+### Status Updates in Wrapped Mode
 
 As your process or function runs, you can send status updates to
 CloudReactor by using the StatusUpdater class. Status updates are shown in
@@ -643,7 +895,7 @@ StatusUpdater class to do this:
 
         updater.send_update(last_status_message='Finished!')
 
-#### Status Updates in Embedded Mode
+### Status Updates in Embedded Mode
 
 In embedded mode, your callback in python code can use the wrapper instance to send updates:
 
