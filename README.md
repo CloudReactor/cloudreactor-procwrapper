@@ -29,9 +29,21 @@
 
 Wraps the execution of processes so that an API server
 ([CloudReactor](https://cloudreactor.io/))
-can monitor and manage them. Also implements retries, timeouts, and
-secret injection from AWS into the environment.
+can monitor and manage them.
 Available as a standalone executable or as a python module.
+
+## Features
+
+* Runs either processes started with a command line or a python function you
+supply
+* Implements retries and time limits on wrapped processes
+* Injects secrets from AWS Secrets Manager and extracts them into the
+process environment
+* When used with the CloudReactor service:
+  * Sends heartbeats, optionally with status information like the number of
+  items processed
+  * Prevents too many concurrent executions
+  * Stops execution when manually stopped in the CloudReactor dashboard
 
 ## How it works
 
@@ -47,9 +59,8 @@ and the API server may signal that your Task stop execution (due to
 user manually stopping the Task Execution), in which
 case the module terminates your code and exits.
 
-When your code is finished running, the module informs the API server of
-the exit code or result.
-CloudReactor monitors Tasks to ensure they
+After your code finishes, the module informs the API server of
+the exit code or result. CloudReactor monitors Tasks to ensure they
 are still responsive, and keeps a history of the Executions of Tasks,
 allowing you to view failures and run durations in the past.
 
@@ -59,7 +70,8 @@ Before your Task is run (including this module),
 the [AWS ECS CloudReactor Deployer](https://github.com/CloudReactor/aws-ecs-cloudreactor-deployer)
 can be used to set it up in AWS ECS,
 and inform CloudReactor of details of your Task.
-That way CloudReactor can start, schedule, and monitor your Task.
+That way CloudReactor can start and schedule your Task, and setup your
+Task as a service.
 See [CloudReactor python ECS QuickStart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
 for an example.
 
@@ -69,7 +81,7 @@ Instead, you may configure the Task to be *auto-created*.
 Auto-created Tasks are created the first time your Task runs.
 This means there is no need to inform the API server of the Task details
 (during deployment) before it runs.
-Instead, whenever the module runs, it informs the API server of the
+Instead, each time the module runs, it informs the API server of the
 Task details at the same time as it requests the creation of a Task Execution.
 One disadvantage of auto-created Tasks is that they are not available
 in the CloudReactor dashboard until the first time they run.
@@ -142,7 +154,7 @@ If you want CloudReactor to be able to start your Tasks, you should use the
 to configure your AWS environment to run Tasks in ECS Fargate.
 You can skip this step if running in passive mode is OK for you.
 
-If you want to use CloudReactor to manager or just monitor your Tasks,
+If you want to use CloudReactor to manage or just monitor your Tasks,
 you need to create a Run Environment and an API key in the CloudReactor
 dashboard. The API key can be scoped to the Run Environment if you
 wish. The key must have at least the Task access level, but for
@@ -206,9 +218,9 @@ Instead of running
 
 you would run
 
-    proc_wrapper somecommand --somearg x
+    ./proc_wrapper somecommand --somearg x
 
-assuming that are using the linux standalone executable, and that
+assuming that are using a standalone executable, and that
 you configure the program using environment variables.
 
 Or, if you have python installed:
