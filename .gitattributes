@@ -1,0 +1,4 @@
+.editorconfig export-ignore
+.github/** export-ignore
+pyinstaller_build/** export-ignore
+tests/** export-ignore
