@@ -12,21 +12,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: procwrapper-linux_amd64-standalone-executable
           draft: false
           prerelease: false
-          files: |
-            pyinstaller_build/platforms/linux-amd64/proc_wrapper
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Release Windows Standalone Executable
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          name: procwrapper-win64-standalone-executable
-          draft: false
-          prerelease: false
-          files: |
-            pyinstaller_build/platforms/win64/proc_wrapper.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
