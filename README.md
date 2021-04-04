@@ -165,7 +165,7 @@ an auto-created Task, it must have at least the Developer access level.
 ### In a Linux/AMD64 or Windows 64 environment
 
 Standalone executables for 64-bit Linux and Windows are available,
-located in `pyinstaller_build/plaforms`. These executables bundle python
+located in `pyinstaller_build/platforms`. These executables bundle python
 so you don't need to have python installed on your machine. They also bundle
 all optional library dependencies so you can fetch secrets from AWS
 Secrets Manager and extract them with jsonpath-ng, for example.
