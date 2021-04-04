@@ -28,3 +28,7 @@ can be used to extract individual secrets
 * Print a final message with information about exit code and timing
 * Add --version option
 * Add many one letter command line option aliases
+## v2.1.0-rc2 (2021-04-03)
+* Publish release to GitHub
+## v2.1.0 (2021-04-03)
+* No changes
