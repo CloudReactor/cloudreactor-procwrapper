@@ -459,7 +459,7 @@ environment.
 
             self.rollbar_timeout = _string_to_int(
                     resolved_env.get('PROC_WRAPPER_ROLLBAR_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(args.api_request_timeout,
+                    default_value=_coalesce(args.rollbar_timeout,
                             DEFAULT_ROLLBAR_TIMEOUT_SECONDS))
         else:
             self.rollbar_retries = None
