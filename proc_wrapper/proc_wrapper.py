@@ -449,7 +449,7 @@ environment.
         if self.rollbar_access_token:
             self.rollbar_retries = _string_to_int(
                     resolved_env.get('PROC_WRAPPER_ROLLBAR_RETRIES'),
-                    default_value=_coalesce(args.api_retries,
+                    default_value=_coalesce(args.rollbar_retries,
                             DEFAULT_ROLLBAR_RETRIES))
 
             self.rollbar_retry_delay = _string_to_int(

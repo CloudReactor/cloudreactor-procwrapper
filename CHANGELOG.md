@@ -32,3 +32,5 @@ can be used to extract individual secrets
 * Publish release to GitHub
 ## v2.1.0 (2021-04-03)
 * No changes
+## v2.1.1 (2021-04-07)
+* Fix an issue with Rollbar configuration

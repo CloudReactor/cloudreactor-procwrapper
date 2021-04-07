@@ -441,3 +441,16 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
 
     emc = task_dict.get('execution_method_capability')
     assert emc['type'] == 'Unknown'
+
+def test_rollbar_config():
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+    env_override['PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN'] = 'rbtoken'
+    env_override['PROC_WRAPPER_ROLLBAR_RETRIES'] = '3'
+    env_override['PROC_WRAPPER_ROLLBAR_RETRY_DELAY_SECONDS'] = '10'
+    env_override['PROC_WRAPPER_ROLLBAR_RETRY_TIMEOUT_SECONDS'] = '30'
+    wrapper = ProcWrapper(env_override=env_override)
+    assert wrapper.rollbar_access_token == 'rbtoken'
+    assert wrapper.rollbar_retries == 3
+    assert wrapper.rollbar_retry_delay == 10
+    assert wrapper.rollbar_timeout == 30
+    assert wrapper.rollbar_retries_exhausted is False
