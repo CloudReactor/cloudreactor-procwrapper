@@ -442,6 +442,7 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
     emc = task_dict.get('execution_method_capability')
     assert emc['type'] == 'Unknown'
 
+
 def test_rollbar_config():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override['PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN'] = 'rbtoken'
