@@ -40,6 +40,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
+from .common_utils import coalesce, string_to_bool, string_to_int
+
 _DEFAULT_LOG_LEVEL = 'WARNING'
 
 HEARTBEAT_DELAY_TOLERANCE_SECONDS = 60
@@ -113,44 +115,6 @@ def _signal_handler(signum, frame):
     caught_sigterm = True
     # This will cause the exit handler to be executed, if it is registered.
     raise RuntimeError('Caught SIGTERM, exiting.')
-
-
-# From glglgl on
-# https://stackoverflow.com/questions/4978738/is-there-a-python-equivalent-of-the-c-sharp-null-coalescing-operator
-def _coalesce(*arg):
-    return next((a for a in arg if a is not None), None)
-
-
-def _string_to_bool(s: Optional[str],
-        default_value: Optional[bool] = None) -> Optional[bool]:
-    if s is None:
-        return default_value
-
-    trimmed = s.strip()
-    if trimmed == '':
-        return default_value
-
-    return (trimmed.upper() == 'TRUE')
-
-
-def _string_to_int(s: Optional[Any],
-        default_value: Optional[int] = None,
-        negative_value: Optional[int] = None) -> Optional[int]:
-    if s is None:
-        return default_value
-    else:
-        trimmed = str(s).strip()
-
-        if trimmed == '':
-            return default_value
-
-        x = int(trimmed)
-
-        if x < 0:
-            return negative_value
-
-        return x
-
 
 def _encode_int(x: Optional[int], empty_value: Optional[int] = None) -> \
         Optional[int]:
@@ -347,9 +311,9 @@ environment.
 
         self.args = args
 
-        self.log_secrets = _string_to_bool(
+        self.log_secrets = string_to_bool(
                 self.env.get('PROC_WRAPPER_API_LOG_SECRETS'),
-                default_value=_coalesce(args.log_secrets, False))
+                default_value=coalesce(args.log_secrets, False))
 
         self.task_uuid: Optional[str] = None
         self.task_name: Optional[str] = None
@@ -413,12 +377,14 @@ environment.
         self.last_update_sent_at: Optional[float] = None
 
         self.rollbar_retries_exhausted = False
+        self.exit_handler_installed = False
+        self.in_pytest = False
 
-        self.resolved_env_ttl: Optional[int] = _string_to_int(
+        self.resolved_env_ttl: Optional[int] = string_to_int(
                 self.env.get('PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS'),
                 default_value=args.resolved_env_ttl)
 
-        self.overwrite_env_during_secret_resolution = _string_to_bool(
+        self.overwrite_env_during_secret_resolution = string_to_bool(
                 self.env.get('PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS'),
                 default_value=False)
 
@@ -430,38 +396,43 @@ environment.
 
         self.resolved_env, self.failed_env_names = self.resolve_env()
 
-        self.exit_handler_installed = False
-        self.in_pytest = False
-
         self.initialize_fields(mutable_only=False)
 
     def initialize_fields(self, mutable_only: bool = True) -> None:
         resolved_env = self.resolved_env
         args = self.args
 
-        self.offline_mode = _string_to_bool(
+        self.offline_mode = string_to_bool(
             resolved_env.get('PROC_WRAPPER_OFFLINE_MODE'),
-            default_value=_coalesce(args.offline_mode, False))
+            default_value=args.offline_mode) or False
 
-        self.deployment = _coalesce(resolved_env.get('PROC_WRAPPER_DEPLOYMENT'),
+        self.prevent_offline_execution = string_to_bool(
+                resolved_env.get('PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION'),
+                default_value=args.prevent_offline_execution) or False
+
+        if self.offline_mode and self.prevent_offline_execution:
+            _logger.critical('Offline mode and offline execution prevention cannot both be enabled.')
+            return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+
+        self.deployment = coalesce(resolved_env.get('PROC_WRAPPER_DEPLOYMENT'),
                 args.deployment)
 
         self.rollbar_access_token = resolved_env.get('PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN')
 
         if self.rollbar_access_token:
-            self.rollbar_retries = _string_to_int(
+            self.rollbar_retries = string_to_int(
                     resolved_env.get('PROC_WRAPPER_ROLLBAR_RETRIES'),
-                    default_value=_coalesce(args.rollbar_retries,
+                    default_value=coalesce(args.rollbar_retries,
                             DEFAULT_ROLLBAR_RETRIES))
 
-            self.rollbar_retry_delay = _string_to_int(
+            self.rollbar_retry_delay = string_to_int(
                     resolved_env.get('PROC_WRAPPER_ROLLBAR_RETRY_DELAY_SECONDS'),
-                    default_value=_coalesce(args.rollbar_retry_delay,
+                    default_value=coalesce(args.rollbar_retry_delay,
                             DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS))
 
-            self.rollbar_timeout = _string_to_int(
+            self.rollbar_timeout = string_to_int(
                     resolved_env.get('PROC_WRAPPER_ROLLBAR_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(args.rollbar_timeout,
+                    default_value=coalesce(args.rollbar_timeout,
                             DEFAULT_ROLLBAR_TIMEOUT_SECONDS))
         else:
             self.rollbar_retries = None
@@ -494,9 +465,9 @@ environment.
                 except json.JSONDecodeError:
                     _logger.warning(f"Failed to parse Task props: '{task_overrides_str}', ensure it is valid JSON.")
 
-            self.auto_create_task = _string_to_bool(
+            self.auto_create_task = string_to_bool(
                     resolved_env.get('PROC_WRAPPER_AUTO_CREATE_TASK'),
-                    default_value=_coalesce(args.auto_create_task,
+                    default_value=coalesce(args.auto_create_task,
                     self.auto_create_task_overrides.get('was_auto_created'))) \
                     or task_overrides_loaded
 
@@ -508,7 +479,7 @@ environment.
                         override_run_env.get('uuid',
                         args.auto_create_task_run_environment_uuid))
 
-                self.auto_create_task_run_environment_name = _coalesce(
+                self.auto_create_task_run_environment_name = coalesce(
                         resolved_env.get('PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME'),
                         override_run_env.get('name'),
                         args.auto_create_task_run_environment_name)
@@ -525,9 +496,9 @@ environment.
                 args_forced_passive = None if (args.force_task_active is None) \
                         else (not args.force_task_active)
 
-                self.task_is_passive = cast(bool, _string_to_bool(
+                self.task_is_passive = cast(bool, string_to_bool(
                         resolved_env.get('PROC_WRAPPER_TASK_IS_PASSIVE'),
-                        default_value=_coalesce(
+                        default_value=coalesce(
                                 self.auto_create_task_overrides.get('passive'),
                                 args_forced_passive, self.auto_create_task)))
 
@@ -575,11 +546,11 @@ environment.
             self.api_base_url = api_base_url.rstrip('/')
 
         if not mutable_only:
-            self.task_is_service = _string_to_bool(
+            self.task_is_service = string_to_bool(
                 resolved_env.get('PROC_WRAPPER_TASK_IS_SERVICE'),
-                default_value=_coalesce(override_is_service, args.service))
+                default_value=coalesce(override_is_service, args.service))
 
-            self.max_concurrency = _string_to_int(
+            self.max_concurrency = string_to_int(
                     resolved_env.get('PROC_WRAPPER_TASK_MAX_CONCURRENCY'),
                     negative_value=-1)
 
@@ -599,18 +570,20 @@ environment.
             self.api_key = resolved_env.get('PROC_WRAPPER_API_KEY', args.api_key)
 
             if not self.api_key:
+
+
                 _logger.critical('No API key specified, exiting.')
                 self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
                 return
 
-            self.api_error_timeout = cast(int, _string_to_int(
+            self.api_error_timeout = cast(int, string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(args.api_error_timeout,
+                    default_value=coalesce(args.api_error_timeout,
                     DEFAULT_API_ERROR_TIMEOUT_SECONDS)))
 
-            self.api_task_execution_creation_error_timeout = _string_to_int(
+            self.api_task_execution_creation_error_timeout = string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_TASK_CREATION_ERROR_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(
+                    default_value=coalesce(
                             args.api_task_execution_creation_error_timeout,
                             DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS))
 
@@ -622,39 +595,39 @@ environment.
                 default_task_execution_creation_conflict_retry_delay = \
                         DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 
-            self.api_task_execution_creation_conflict_timeout = _string_to_int(
+            self.api_task_execution_creation_conflict_timeout = string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(
+                    default_value=coalesce(
                             args.api_task_execution_creation_conflict_timeout,
                             default_task_execution_creation_conflict_timeout))
 
-            self.api_final_update_timeout = _string_to_int(
+            self.api_final_update_timeout = string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(args.api_final_update_timeout,
+                    default_value=coalesce(args.api_final_update_timeout,
                             DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS))
 
-            self.api_retry_delay = cast(int, _string_to_int(
+            self.api_retry_delay = cast(int, string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_RETRY_DELAY_SECONDS'),
-                    default_value=_coalesce(args.api_retry_delay,
+                    default_value=coalesce(args.api_retry_delay,
                             DEFAULT_API_RETRY_DELAY_SECONDS),
                     negative_value=0))
 
-            self.api_resume_delay = cast(int, _string_to_int(
+            self.api_resume_delay = cast(int, string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_RESUME_DELAY_SECONDS'),
-                    default_value=_coalesce(args.api_resume_delay,
+                    default_value=coalesce(args.api_resume_delay,
                             DEFAULT_API_RESUME_DELAY_SECONDS)))
 
-            self.api_task_execution_creation_conflict_retry_delay = _string_to_int(
+            self.api_task_execution_creation_conflict_retry_delay = string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS'),
                     default_value=args.api_task_execution_creation_conflict_retry_delay) \
                     or default_task_execution_creation_conflict_retry_delay
 
-            self.api_request_timeout = _string_to_int(
+            self.api_request_timeout = string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS'),
-                    default_value=_coalesce(args.api_request_timeout,
+                    default_value=coalesce(args.api_request_timeout,
                             DEFAULT_API_REQUEST_TIMEOUT_SECONDS))
 
-        other_instance_metadata_str = _coalesce(
+        other_instance_metadata_str = coalesce(
                 resolved_env.get('PROC_WRAPPER_TASK_INSTANCE_METADATA'),
                 args.task_instance_metadata)
 
@@ -665,7 +638,7 @@ environment.
             except Exception:
                 _logger.exception(f"Failed to parse instance metadata: '{other_instance_metadata_str}'")
 
-        self.in_pytest = _string_to_bool(os.environ.get('IN_PYTEST')) or False
+        self.in_pytest = string_to_bool(os.environ.get('IN_PYTEST')) or False
 
         # Now we have enough info to try to send errors if problems happen below.
 
@@ -681,57 +654,49 @@ environment.
             self.exit_handler_installed = True
 
         if not self.offline_mode:
-            self.send_pid = _string_to_bool(
+            self.send_pid = string_to_bool(
                     resolved_env.get('PROC_WRAPPER_SEND_PID'),
                     default_value=args.send_pid) or False
 
-            self.send_hostname = _string_to_bool(
+            self.send_hostname = string_to_bool(
                     resolved_env.get('PROC_WRAPPER_SEND_HOSTNAME'),
                     default_value=args.send_hostname) or False
 
-            self.send_runtime_metadata = _string_to_bool(
+            self.send_runtime_metadata = string_to_bool(
                     resolved_env.get('PROC_WRAPPER_SEND_RUNTIME_METADATA'),
-                    default_value=not _coalesce(args.no_send_runtime_metadata, False)) \
+                    default_value=not coalesce(args.no_send_runtime_metadata, False)) \
                     or False
 
         env_process_timeout_seconds = resolved_env.get('PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS')
 
         if self.task_is_service:
             if (args.process_timeout is not None) \
-                    and ((_string_to_int(args.process_timeout) or 0) > 0):
+                    and ((string_to_int(args.process_timeout) or 0) > 0):
                 _logger.warning(
                         'Ignoring argument --process-timeout since Task is a service')
 
             if env_process_timeout_seconds \
-                    and ((_string_to_int(env_process_timeout_seconds) or 0) > 0):
+                    and ((string_to_int(env_process_timeout_seconds) or 0) > 0):
                 _logger.warning(
                         'Ignoring environment variable PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS since Task is a service')
         else:
-            self.process_timeout = _string_to_int(
+            self.process_timeout = string_to_int(
                     env_process_timeout_seconds,
                     default_value=args.process_timeout)
 
-        self.prevent_offline_execution = _string_to_bool(
-                resolved_env.get('PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION'),
-                default_value=args.prevent_offline_execution) or False
-
-        if self.offline_mode and self.prevent_offline_execution:
-            _logger.critical('Offline mode and offline execution prevention cannot both be enabled.')
-            return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-
-        self.process_max_retries = _string_to_int(
+        self.process_max_retries = string_to_int(
                 resolved_env.get('PROC_WRAPPER_TASK_MAX_RETRIES'),
-                default_value=_coalesce(args.process_max_retries, 0))
+                default_value=coalesce(args.process_max_retries, 0))
 
-        self.process_retry_delay = cast(int, _string_to_int(
+        self.process_retry_delay = cast(int, string_to_int(
                 resolved_env.get('PROC_WRAPPER_PROCESS_RETRY_DELAY_SECONDS'),
-                default_value=_coalesce(args.process_retry_delay,
+                default_value=coalesce(args.process_retry_delay,
                         DEFAULT_PROCESS_RETRY_DELAY_SECONDS),
                 negative_value=0))
 
-        self.process_termination_grace_period_seconds = cast(int, _string_to_int(
+        self.process_termination_grace_period_seconds = cast(int, string_to_int(
                 resolved_env.get('PROC_WRAPPER_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS'),
-                default_value=_coalesce(args.process_termination_grace_period,
+                default_value=coalesce(args.process_termination_grace_period,
                         DEFAULT_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS),
                 negative_value=0))
 
@@ -740,9 +705,9 @@ environment.
         if self.is_concurrency_limited_service:
             default_heartbeat_interval = DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS
 
-        self.api_heartbeat_interval = _string_to_int(
+        self.api_heartbeat_interval = string_to_int(
                 resolved_env.get('PROC_WRAPPER_API_HEARTBEAT_INTERVAL_SECONDS'),
-                default_value=_coalesce(args.api_heartbeat_interval,
+                default_value=coalesce(args.api_heartbeat_interval,
                         default_heartbeat_interval))
 
         default_max_conflicting_age_seconds = None
@@ -750,23 +715,23 @@ environment.
         if self.task_is_service and self.api_heartbeat_interval:
             default_max_conflicting_age_seconds = self.api_heartbeat_interval + HEARTBEAT_DELAY_TOLERANCE_SECONDS
 
-        self.max_conflicting_age = _string_to_int(
+        self.max_conflicting_age = string_to_int(
                 resolved_env.get('PROC_WRAPPER_MAX_CONFLICTING_AGE_SECONDS'),
-                default_value=_coalesce(args.max_conflicting_age,
+                default_value=coalesce(args.max_conflicting_age,
                         default_max_conflicting_age_seconds))
 
-        self.status_update_interval = _string_to_int(
+        self.status_update_interval = string_to_int(
                 resolved_env.get('PROC_WRAPPER_STATUS_UPDATE_INTERVAL_SECONDS'),
                 default_value=args.status_update_interval)
 
         # Properties to be reported to CloudRector
-        self.schedule = _coalesce(resolved_env.get('PROC_WRAPPER_SCHEDULE'),
+        self.schedule = coalesce(resolved_env.get('PROC_WRAPPER_SCHEDULE'),
                 args.schedule, '')
 
         if not self._embedded_mode:
-            self.process_check_interval = cast(int, _string_to_int(
+            self.process_check_interval = cast(int, string_to_int(
                     resolved_env.get('PROC_WRAPPER_PROCESS_CHECK_INTERVAL_SECONDS'),
-                    default_value=_coalesce(args.process_check_interval,
+                    default_value=coalesce(args.process_check_interval,
                             DEFAULT_PROCESS_CHECK_INTERVAL_SECONDS),
                     negative_value=-1))
 
@@ -787,19 +752,19 @@ environment.
 
             # We don't support changing the status update listener parameters
             if (not mutable_only) and (not self.offline_mode):
-                enable_status_update_listener = _string_to_bool(
+                enable_status_update_listener = string_to_bool(
                         resolved_env.get('PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER'),
-                        default_value=_coalesce(args.enable_status_update_listener, False))
+                        default_value=coalesce(args.enable_status_update_listener, False))
 
                 if enable_status_update_listener:
-                    self.status_update_socket_port = _string_to_int(_coalesce(
+                    self.status_update_socket_port = string_to_int(coalesce(
                           resolved_env.get('PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT'),
                           args.status_update_socket_port),
                           default_value=DEFAULT_STATUS_UPDATE_SOCKET_PORT,
                           negative_value=DEFAULT_STATUS_UPDATE_SOCKET_PORT)
                     self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
                     self._status_message_so_far = bytearray()
-                    self.status_update_message_max_bytes = _string_to_int(_coalesce(
+                    self.status_update_message_max_bytes = string_to_int(coalesce(
                             resolved_env.get('PROC_WRAPPER_STATUS_UPDATE_MESSAGE_MAX_BYTES'),
                             args.status_update_message_max_bytes),
                             default_value=DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES,
@@ -927,16 +892,16 @@ environment.
         """
         _logger.debug('Starting secrets resolution ...')
 
-        if not _string_to_bool(
+        if not string_to_bool(
                 self.env.get('PROC_WRAPPER_RESOLVE_SECRETS'), False):
             _logger.debug('Secrets resolution is disabled.')
             return (self.env, [])
 
-        prefix = _coalesce(self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_PREFIX'),
+        prefix = coalesce(self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_PREFIX'),
                 DEFAULT_RESOLVABLE_ENV_VAR_PREFIX)
         prefix_length = len(prefix)
 
-        suffix = _coalesce(self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_SUFFIX'),
+        suffix = coalesce(self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_SUFFIX'),
                 DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX)
         suffix_length = len(suffix)
 
