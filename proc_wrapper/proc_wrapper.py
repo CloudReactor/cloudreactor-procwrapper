@@ -116,6 +116,7 @@ def _signal_handler(signum, frame):
     # This will cause the exit handler to be executed, if it is registered.
     raise RuntimeError('Caught SIGTERM, exiting.')
 
+
 def _encode_int(x: Optional[int], empty_value: Optional[int] = None) -> \
         Optional[int]:
     if x is None:
@@ -252,8 +253,7 @@ environment.
                 help='Do not start processes if the API server is unavailable.')
         parser.add_argument('-l', '--log-level',
                 choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                default=_DEFAULT_LOG_LEVEL,
-                help=f"Log level")
+                default=_DEFAULT_LOG_LEVEL, help='Log level')
         parser.add_argument('--log-secrets', action='store_true', help='Log sensitive information')
         parser.add_argument('-w', '--work-dir', help='Working directory. Defaults to the current directory.')
         parser.add_argument('-t', '--process-timeout',
@@ -380,7 +380,7 @@ environment.
         self.exit_handler_installed = False
         self.in_pytest = False
 
-        self.resolved_env_ttl: Optional[int] = string_to_int(
+        self.resolved_env_ttl = string_to_int(
                 self.env.get('PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS'),
                 default_value=args.resolved_env_ttl)
 
@@ -570,8 +570,6 @@ environment.
             self.api_key = resolved_env.get('PROC_WRAPPER_API_KEY', args.api_key)
 
             if not self.api_key:
-
-
                 _logger.critical('No API key specified, exiting.')
                 self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
                 return

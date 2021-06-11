@@ -1,9 +1,11 @@
-from typing import Any,  Optional
+from typing import Any, Optional
+
 
 # From glglgl on
 # https://stackoverflow.com/questions/4978738/is-there-a-python-equivalent-of-the-c-sharp-null-coalescing-operator
 def coalesce(*arg):
     return next((a for a in arg if a is not None), None)
+
 
 def string_to_bool(s: Optional[str],
         default_value: Optional[bool] = None) -> Optional[bool]:
