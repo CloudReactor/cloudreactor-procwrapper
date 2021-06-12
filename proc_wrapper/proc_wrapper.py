@@ -211,7 +211,8 @@ environment.
                 help='Do not start processes if the API server is unavailable.')
         parser.add_argument('-l', '--log-level',
                 choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                default=_DEFAULT_LOG_LEVEL, help='Log level')
+                default=os.environ.get('PROC_WRAPPER_LOG_LEVEL', _DEFAULT_LOG_LEVEL),
+                help='Log level')
         parser.add_argument('--log-secrets', action='store_true', help='Log sensitive information')
         parser.add_argument('-w', '--work-dir', help='Working directory. Defaults to the current directory.')
         parser.add_argument('-t', '--process-timeout',
