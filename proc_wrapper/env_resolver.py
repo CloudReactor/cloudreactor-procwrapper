@@ -5,6 +5,8 @@ import time
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple
 
 from .common_utils import coalesce, string_to_bool
+from .arg_parser import make_default_args
+from .runtime_metadata import RuntimeMetadata
 
 DEFAULT_RESOLVABLE_ENV_VAR_PREFIX = ''
 DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX = '_FOR_PROC_WRAPPER_TO_RESOLVE'
@@ -33,6 +35,34 @@ _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
 
 
+def _json_path_results_to_env_value(results: List,
+        should_splat: bool, env_name: str, path_expr: Optional[str]) -> str:
+    results_len = len(results)
+
+    if results_len == 0:
+        _logger.warning(f"Got no results for environment variable '{env_name}' with JSON path '{path_expr}'")
+        if should_splat:
+            return '[]'
+
+        return ''
+
+    if (results_len == 1) and not should_splat:
+        v = results[0].value
+        if isinstance(v, bool):
+            # Boolean values get transformed to environment value TRUE or FALSE
+            return str(v).upper()
+
+        if isinstance(v, (dict, list)):
+            # Collections get serialized as JSON
+            return json.dumps(v)
+
+        return str(v)
+
+    # Multiple values get serialized as a JSON array
+    # TODO: implement a way to output comma-separated values
+    return json.dumps([r.value for r in results])
+
+
 class CachedEnvValueEntry(NamedTuple):
     string_value: str
     parsed_value: Any
@@ -55,10 +85,13 @@ class CachedEnvValueEntry(NamedTuple):
 
 class EnvResolver:
     def __init__(self, resolved_env_ttl: Optional[int] = None,
-            log_secrets: bool = False, args: Any = None,
+            log_secrets: bool = False,
+            runtime_metadata: Optional[RuntimeMetadata] = None,
+            args: Any = None,
             env_override: Optional[Mapping[str, Any]] = None) -> None:
         self.resolved_env_ttl = resolved_env_ttl
         self.log_secrets = log_secrets
+        self.runtime_metadata = runtime_metadata
 
         # Dictionary from SECRET_PROVIDER_XXX constants to caches from lookup values
         # to resolved values and metadata
@@ -78,8 +111,7 @@ class EnvResolver:
         if args:
             self.args = args
         else:
-            from .proc_wrapper import ProcWrapper
-            self.args = ProcWrapper.make_default_args()
+            self.args = make_default_args()
 
     def resolve_env(self) -> Tuple[Dict[str, str], List[str]]:
         """
@@ -233,7 +265,7 @@ class EnvResolver:
         if self.log_secrets:
             _logger.debug(f"json path results = {results}")
 
-        env_value = self._json_path_results_to_env_value(results,
+        env_value = _json_path_results_to_env_value(results,
                 should_splat=should_splat,
                 env_name=env_name, path_expr=jsonpath_expr_str)
 
@@ -241,33 +273,6 @@ class EnvResolver:
             _logger.debug(f"resolved env_name = '{env_name}', resolved env_value = '{env_value}'")
 
         return env_name, env_value
-
-    def _json_path_results_to_env_value(self, results: List,
-            should_splat: bool, env_name: str, path_expr: Optional[str]) -> str:
-        results_len = len(results)
-
-        if results_len == 0:
-            _logger.warning(f"Got no results for environment variable '{env_name}' with JSON path '{path_expr}'")
-            if should_splat:
-                return '[]'
-
-            return ''
-
-        if (results_len == 1) and not should_splat:
-            v = results[0].value
-            if isinstance(v, bool):
-                # Boolean values get transformed to environment value TRUE or FALSE
-                return str(v).upper()
-
-            if isinstance(v, (dict, list)):
-                # Collections get serialized as JSON
-                return json.dumps(v)
-
-            return str(v)
-
-        # Multiple values get serialized as a JSON array
-        # TODO: implement a way to output comma-separated values
-        return json.dumps([r.value for r in results])
 
     def get_or_create_aws_secrets_manager_client(self):
         if not self.aws_secrets_manager_client:
@@ -286,10 +291,9 @@ class EnvResolver:
                     self.env.get('AWS_REGION') or self.env.get('AWS_DEFAULT_REGION')
 
             if not region_name:
-                runtime_metadata = self.fetch_runtime_metadata()
-
-                if runtime_metadata and ('aws' in runtime_metadata.derived):
-                    region_name = runtime_metadata.derived['aws'].get('region')
+                if self.runtime_metadata \
+                        and ('aws' in self.runtime_metadata.derived):
+                    region_name = self.runtime_metadata.derived['aws'].get('region')
 
             self.aws_secrets_manager_client = boto3.client(
                 service_name='secretsmanager',

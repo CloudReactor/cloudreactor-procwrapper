@@ -21,7 +21,6 @@
 # and distribute software on your own terms without any open source license
 # obligations.
 
-import argparse
 import atexit
 from datetime import datetime
 import json
@@ -35,46 +34,42 @@ import time
 from http import HTTPStatus
 from io import RawIOBase
 from subprocess import Popen, TimeoutExpired
-from typing import Any, Dict, List, Mapping, NamedTuple, Optional, cast
+from typing import Any, Dict, List, Mapping, Optional, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
 from .common_utils import coalesce, string_to_bool, string_to_int
+from .arg_parser import (
+    DEFAULT_API_BASE_URL,
+    DEFAULT_API_REQUEST_TIMEOUT_SECONDS,
+    DEFAULT_API_ERROR_TIMEOUT_SECONDS,
+    DEFAULT_API_RETRY_DELAY_SECONDS,
+    DEFAULT_API_RESUME_DELAY_SECONDS,
+    DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS,
+    DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS,
+    DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS,
+    DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS,
+    DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS,
+    DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS,
+    DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS,
+    DEFAULT_STATUS_UPDATE_SOCKET_PORT,
+    DEFAULT_ROLLBAR_TIMEOUT_SECONDS,
+    DEFAULT_ROLLBAR_RETRIES,
+    DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS,
+    DEFAULT_PROCESS_CHECK_INTERVAL_SECONDS,
+    DEFAULT_PROCESS_RETRY_DELAY_SECONDS,
+    DEFAULT_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS,
+    DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES,
+    HEARTBEAT_DELAY_TOLERANCE_SECONDS,
+    make_arg_parser,
+    make_default_args
+)
+
+from .runtime_metadata import RuntimeMetadata
 from .env_resolver import EnvResolver
+from .runtime_metadata import fetch_runtime_metadata
 
-_DEFAULT_LOG_LEVEL = 'WARNING'
-
-HEARTBEAT_DELAY_TOLERANCE_SECONDS = 60
-
-DEFAULT_API_BASE_URL = 'https://api.cloudreactor.io'
-DEFAULT_API_REQUEST_TIMEOUT_SECONDS = 30
-DEFAULT_API_ERROR_TIMEOUT_SECONDS = 300
-DEFAULT_API_RETRY_DELAY_SECONDS = 120
-DEFAULT_API_RESUME_DELAY_SECONDS = 600
-DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS = 300
-DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS = 120
-DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS = 1800
-DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS = 60
-DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS = 300
-DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS = 30
-DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS = 1800
-
-DEFAULT_STATUS_UPDATE_SOCKET_PORT = 2373
-
-DEFAULT_ROLLBAR_TIMEOUT_SECONDS = 30
-DEFAULT_ROLLBAR_RETRIES = 2
-DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS = 120
-
-DEFAULT_TASK_NAME = '[Unnamed Task]'
-DEFAULT_PROCESS_TIMEOUT_SECONDS = None
-DEFAULT_PROCESS_CHECK_INTERVAL_SECONDS = 10
-DEFAULT_PROCESS_RETRY_DELAY_SECONDS = 60
-DEFAULT_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS = 30
-
-DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES = 64 * 1024
-
-AWS_ECS_METADATA_TIMEOUT_SECONDS = 60
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
@@ -85,7 +80,7 @@ caught_sigterm = False
 def _exit_handler(wrapper: 'ProcWrapper'):
     # Prevent re-entrancy and changing of the exit code
     atexit.unregister(_exit_handler)
-    wrapper._handle_exit()
+    wrapper.handle_exit()
 
 
 def _signal_handler(signum, frame):
@@ -101,13 +96,6 @@ def _encode_int(x: Optional[int], empty_value: Optional[int] = None) -> \
         return empty_value
     else:
         return x
-
-
-class RuntimeMetadata(NamedTuple):
-    execution_method: Dict[str, Any]
-    execution_method_capability: Dict[str, Any]
-    raw: Dict[str, Any]
-    derived: Dict[str, Any]
 
 
 class ProcWrapper:
@@ -144,117 +132,13 @@ class ProcWrapper:
 
     @staticmethod
     def make_arg_parser(require_command=True):
-        parser = argparse.ArgumentParser(prog='proc_wrapper',
-                description="""
-Wraps the execution of processes so that a service API endpoint (CloudReactor)
-is optionally informed of the progress.
-Also implements retries, timeouts, and secret injection into the
-environment.
-        """)
-
-        if require_command:
-            parser.add_argument('command', nargs=argparse.REMAINDER)
-
-        parser.add_argument('-v', '--version', action='store_true',
-                help='Print the version and exit')
-        parser.add_argument('-n', '--task-name',
-                help='Name of Task (either the Task Name or the Task UUID must be specified')
-        parser.add_argument('--task-uuid',
-                help='UUID of Task (either the Task Name or the Task UUID must be specified)')
-        parser.add_argument('-a', '--auto-create-task', action='store_true',
-                help='Create the Task even if not known by the API server')
-        parser.add_argument('--auto-create-task-run-environment-name',
-                help='Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run Environment UUID is not specified.')
-        parser.add_argument('--auto-create-task-run-environment-uuid',
-                help='UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task)')
-        parser.add_argument('--auto-create-task-props',
-                help='Additional properties of the auto-created Task, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create for the schema.')
-        parser.add_argument('--force-task-active', action='store_const', const=True,
-                help='Indicates that the auto-created Task should be scheduled and made a service by the API server, if applicable. Otherwise, auto-created Tasks are marked passive.')
-        parser.add_argument('--task-execution-uuid', help='UUID of Task Execution to attach to')
-        parser.add_argument('--task-version-number', help="Numeric version of the Task's source code")
-        parser.add_argument('--task-version-text', help="Human readable version of the Task's source code")
-        parser.add_argument('--task-version-signature', help="Version signature of the Task's source code")
-        parser.add_argument('--execution-method-props',
-                help='Additional properties of the execution method, in JSON format')
-        parser.add_argument('--task-instance-metadata', help="Additional metadata about the Task instance, in JSON format")
-        parser.add_argument('--api-base-url',
-                help=f'Base URL of API server. Defaults to {DEFAULT_API_BASE_URL}')
-        parser.add_argument('-k', '--api-key', help='API key. Must have at least the Task access level, or Developer access level for auto-created Tasks.')
-        parser.add_argument('--api-heartbeat-interval',
-                help=f"Number of seconds to wait between sending heartbeats to the API server. -1 means to not send heartbeats. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS} for concurrency limited services, {DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS} otherwise.")
-        parser.add_argument('--api-error-timeout',
-                help=f"Number of seconds to wait while receiving recoverable errors from the API server. Defaults to {DEFAULT_API_ERROR_TIMEOUT_SECONDS}.")
-        parser.add_argument('--api-final-update-timeout',
-                help=f"Number of seconds to wait while receiving recoverable errors from the API server when sending the final update before exiting. Defaults to {DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS}.")
-        parser.add_argument('--api-retry-delay',
-                help=f"Number of seconds to wait before retrying an API request. Defaults to {DEFAULT_API_RETRY_DELAY_SECONDS}.")
-        parser.add_argument('--api-resume-delay',
-                help=f"Number of seconds to wait before resuming API requests, after retries are exhausted. Defaults to {DEFAULT_API_RESUME_DELAY_SECONDS}. -1 means no resumption.")
-        parser.add_argument('--api-task-execution-creation-error-timeout',
-                help=f"Number of seconds to keep retrying Task Execution creation while receiving error responses from the API server. -1 means to keep trying indefinitely. Defaults to {DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS}.")
-        parser.add_argument('--api-task-execution-creation-conflict-timeout',
-                help=f"Number of seconds to keep retrying Task Execution creation while conflict is detected by the API server. -1 means to keep trying indefinitely. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS} for concurrency limited services, 0 otherwise.")
-        parser.add_argument('--api-task-execution-creation-conflict-retry-delay',
-                help=f"Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_CONFLICT_RETRY_DELAY_SECONDS} for concurrency-limited services, {DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS} otherwise.")
-        parser.add_argument('--api-request-timeout',
-                help=f"Timeout for contacting API server, in seconds. Defaults to {DEFAULT_API_REQUEST_TIMEOUT_SECONDS}.")
-        parser.add_argument('-o', '--offline-mode', action='store_true',
-                help='Do not communicate with or rely on an API server')
-        parser.add_argument('-s', '--service', action='store_true',
-                help='Indicate that this is a Task that should run indefinitely')
-        parser.add_argument('--max-concurrency',
-                help='Maximum number of concurrent Task Executions allowed with the same Task UUID. Defaults to 1.')
-        parser.add_argument('--max-conflicting-age',
-                help=f"Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit. Defaults to the heartbeat interval, plus {HEARTBEAT_DELAY_TOLERANCE_SECONDS} seconds for services that send heartbeats. Otherwise, defaults to no limit.")
-        parser.add_argument('-p', '--prevent-offline-execution', action='store_true',
-                help='Do not start processes if the API server is unavailable.')
-        parser.add_argument('-l', '--log-level',
-                choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                default=os.environ.get('PROC_WRAPPER_LOG_LEVEL', _DEFAULT_LOG_LEVEL),
-                help='Log level')
-        parser.add_argument('--log-secrets', action='store_true', help='Log sensitive information')
-        parser.add_argument('-w', '--work-dir', help='Working directory. Defaults to the current directory.')
-        parser.add_argument('-t', '--process-timeout',
-                help=f"Timeout for process, in seconds. Defaults to {DEFAULT_PROCESS_TIMEOUT_SECONDS} for non-services, infinite for services. -1 means no timeout.")
-        parser.add_argument('-r', '--process-max-retries',
-                help='Maximum number of times to retry failed processes. -1 means to retry forever. Defaults to 0.')
-        parser.add_argument('--process-retry-delay',
-                help=f"Number of seconds to wait before retrying a process. Defaults to {DEFAULT_PROCESS_RETRY_DELAY_SECONDS}.")
-        parser.add_argument('--process-check-interval',
-                help=f"Number of seconds to wait between checking the status of processes. Defaults to {DEFAULT_PROCESS_CHECK_INTERVAL_SECONDS}.")
-        parser.add_argument('--process-termination-grace-period',
-                help=f"Number of seconds to wait after sending SIGTERM to a process, but before killing it with SIGKILL. Defaults to {DEFAULT_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS}.")
-        parser.add_argument('--enable-status-update-listener', action='store_true',
-                help='Listen for status updates from the process, sent on the status socket port via UDP. If not specified, status update messages will not be read.')
-        parser.add_argument('--status-update-socket-port',
-                help=f"The port used to receive status updates from the process. Defaults to {DEFAULT_STATUS_UPDATE_SOCKET_PORT}.")
-        parser.add_argument('--status-update-message-max-bytes',
-                help=f"The maximum number of bytes status update messages can be. Defaults to {DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES}.")
-        parser.add_argument('--status-update-interval',
-                help='Minimum of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.')
-        parser.add_argument('--send-pid', action='store_true', help='Send the process ID to the API server')
-        parser.add_argument('--send-hostname', action='store_true', help='Send the hostname to the API server')
-        parser.add_argument('--no-send-runtime-metadata', action='store_true',
-                help='Do not send metadata about the runtime environment')
-        parser.add_argument('-d', '--deployment',
-                help='Deployment name (production, staging, etc.)')
-        parser.add_argument('--schedule', help='Run schedule reported to the API server')
-        parser.add_argument('--resolved-env-ttl',
-                help='Number of seconds to cache resolved environment variables instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.')
-        parser.add_argument('--rollbar-access-token',
-                help='Access token for Rollbar (used to report error when communicating with API server)')
-        parser.add_argument('--rollbar-retries',
-                help=f"Number of retries per Rollbar request. Defaults to {DEFAULT_ROLLBAR_RETRIES}.")
-        parser.add_argument('--rollbar-retry-delay',
-                help=f"Number of seconds to wait before retrying a Rollbar request. Defaults to {DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS}.")
-        parser.add_argument('--rollbar-timeout',
-                help=f"Timeout for contacting Rollbar server, in seconds. Defaults to {DEFAULT_ROLLBAR_TIMEOUT_SECONDS}.")
-        return parser
+        """Deprecated in 2.2, use the top-level make_arg_parser() function."""
+        make_arg_parser(require_command=require_command)
 
     @staticmethod
     def make_default_args():
-        return ProcWrapper.make_arg_parser(require_command=False).parse_args([])
+        """Deprecated in 2.2, use the top-level make_default_args() function."""
+        return make_default_args()
 
     def __init__(self, args=None, embedded_mode=True,
             env_override: Optional[Mapping[str, Any]] = None) -> None:
@@ -266,13 +150,13 @@ environment.
             self.env = os.environ.copy()
 
         if not args:
-            args = ProcWrapper.make_default_args()
+            args = make_default_args()
 
         self.args = args
 
         self.log_secrets = string_to_bool(
                 self.env.get('PROC_WRAPPER_API_LOG_SECRETS'),
-                default_value=coalesce(args.log_secrets, False))
+                default_value=args.log_secrets) or False
 
         self.task_uuid: Optional[str] = None
         self.task_name: Optional[str] = None
@@ -343,8 +227,11 @@ environment.
                 self.env.get('PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS'),
                 default_value=args.resolved_env_ttl)
 
+        self.load_runtime_metadata()
+
         self.env_resolver = EnvResolver(resolved_env_ttl=self.resolved_env_ttl,
                 log_secrets=self.log_secrets,
+                runtime_metadata=self.runtime_metadata,
                 args=args, env_override=self.env)
         self.resolved_env, self.failed_env_names = \
                 self.env_resolver.resolve_env()
@@ -444,7 +331,7 @@ environment.
                     else:
                         _logger.critical('No Run Environment UUID or name for auto-created Task specified, exiting.')
                         self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                        return
+                        return None
 
                 args_forced_passive = None if (args.force_task_active is None) \
                         else (not args.force_task_active)
@@ -456,13 +343,13 @@ environment.
                                 args_forced_passive, self.auto_create_task)))
 
                 if not self.task_is_passive:
-                    runtime_metadata = self.fetch_runtime_metadata()
+                    runtime_metadata = self.load_runtime_metadata()
 
                     if (runtime_metadata is None) or \
                             (runtime_metadata.execution_method_capability is None):
                         _logger.critical('Task may not be active unless execution method capability can be determined.')
                         self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                        return
+                        return None
 
                 em_overrides_str = resolved_env.get(
                         'PROC_WRAPPER_EXECUTION_METHOD_PROPS',
@@ -489,7 +376,7 @@ environment.
             if (not self.task_uuid) and (not self.task_name):
                 _logger.critical('No Task UUID or name specified, exiting.')
                 self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                return
+                return None
 
             count = self.auto_create_task_overrides.get('min_service_instance_count')
             override_is_service = None if count is None else (count > 0)
@@ -525,7 +412,7 @@ environment.
             if not self.api_key:
                 _logger.critical('No API key specified, exiting.')
                 self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                return
+                return None
 
             self.api_error_timeout = cast(int, string_to_int(
                     resolved_env.get('PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS'),
@@ -689,13 +576,13 @@ environment.
             if self.process_check_interval <= 0:
                 _logger.critical(f"Process check interval {self.process_check_interval} must be positive.")
                 self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                return
+                return None
 
             # TODO: allow command override if API key has developer permission
             if not args.command:
                 _logger.critical('Command expected in wrapped mode, but not found')
                 self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                return
+                return None
 
             self.command = args.command
             self.working_dir = resolved_env.get('PROC_WRAPPER_WORK_DIR') \
@@ -722,6 +609,7 @@ environment.
                             negative_value=DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES)
 
         self.log_configuration()
+        return None
 
     def log_configuration(self):
         _logger.info(f"Task Execution UUID = {self.task_execution_uuid}")
@@ -836,146 +724,27 @@ environment.
 
         print(msg)
 
-    def fetch_runtime_metadata(self) -> Optional[RuntimeMetadata]:
-        _logger.debug('Entering fetch_runtime_metadata() ...')
+    def load_runtime_metadata(self) -> Optional[RuntimeMetadata]:
+        _logger.debug('Entering load_runtime_metadata() ...')
 
         # Don't refetch if we have already attempted previously
         if self.runtime_metadata or self.fetched_runtime_metadata_at:
             _logger.debug('Runtime metadata already fetched, returning existing metadata.')
             return self.runtime_metadata
 
-        self.runtime_metadata = self.fetch_ecs_container_metadata()
+        self.runtime_metadata = fetch_runtime_metadata(env=self.env)
 
         self.fetched_runtime_metadata_at = time.time()
 
-        _logger.debug(f'Done fetching runtime metadata, got {self.runtime_metadata}')
+        _logger.debug(f'Done loading runtime metadata, got {self.runtime_metadata}')
         return self.runtime_metadata
-
-    def fetch_ecs_container_metadata(self) -> Optional[RuntimeMetadata]:
-        task_metadata_url = self.env.get('ECS_CONTAINER_METADATA_URI_V4') \
-                or self.env.get('ECS_CONTAINER_METADATA_URI')
-
-        if task_metadata_url:
-            url = f'{task_metadata_url}/task'
-
-            _logger.debug(f"Fetching ECS task metadata from '{task_metadata_url}' ...")
-
-            headers = {
-                'Accept': 'application/json'
-            }
-            try:
-                req = Request(url, method='GET', headers=headers)
-                resp = urlopen(req, timeout=AWS_ECS_METADATA_TIMEOUT_SECONDS)
-                response_body = resp.read().decode('utf-8')
-                parsed_metadata = json.loads(response_body)
-                return self.convert_ecs_task_metadata(parsed_metadata)
-            except HTTPError as http_error:
-                status_code = http_error.code
-                _logger.warning(f'Unable to fetch ECS task metadata endpoint. Response code = {status_code}.')
-            except Exception:
-                _logger.exception('Unable to fetch ECS task metadata endpoint or convert metadata.')
-        else:
-            _logger.debug('No ECS metadata URL found')
-
-        return None
-
-    def convert_ecs_task_metadata(self, metadata: Dict[str, Any]) -> RuntimeMetadata:
-        cluster_arn = metadata.get('Cluster') or ''
-        task_arn = metadata.get('TaskARN') or ''
-        task_definition_arn = self.compute_ecs_task_definition_arn(metadata) or ''
-
-        common_props: Dict[str, Any] = {
-            'type': 'AWS ECS',
-            'task_definition_arn': task_definition_arn,
-        }
-
-        execution_method: Dict[str, Any] = {
-            'task_arn': task_arn,
-            'cluster_arn': cluster_arn,
-        }
-
-        execution_method_capability: Dict[str, Any] = {
-            'default_cluster_arn': cluster_arn
-        }
-
-        launch_type = metadata.get('LaunchType')
-        if launch_type:
-            execution_method['launch_type'] = launch_type
-            execution_method_capability['default_launch_type'] = launch_type
-            execution_method_capability['supported_launch_types'] = [launch_type]
-
-        limits = metadata.get('Limits')
-        if isinstance(limits, dict):
-            cpu_fraction = limits.get('CPU')
-            if (cpu_fraction is not None) \
-                    and isinstance(cpu_fraction, (float, int)):
-                common_props['allocated_cpu_units'] = round(cpu_fraction * 1024)
-
-            memory_mb = limits.get('Memory')
-            if memory_mb is not None:
-                common_props['allocated_memory_mb'] = memory_mb
-
-        execution_method.update(common_props)
-        execution_method_capability.update(common_props)
-
-        # Only available for Fargate platform 1.4+
-        az = metadata.get('AvailabilityZone')
-
-        if az:
-            # Remove the last character, e.g. "a" from "us-west-1a"
-            region = az[0:-1]
-        else:
-            region = self.compute_region_from_ecs_cluster_arn(cluster_arn)
-
-        aws_props = {
-            'network': {
-                'availability_zone': az,
-                'region': region,
-            },
-        }
-
-        derived = {
-            'aws': aws_props
-        }
-
-        return RuntimeMetadata(execution_method=execution_method,
-                execution_method_capability=execution_method_capability,
-                raw=metadata, derived=derived)
-
-    def compute_ecs_task_definition_arn(self, metadata: Dict[str, Any]) -> Optional[str]:
-        task_arn = metadata.get('TaskARN')
-        family = metadata.get('Family')
-        revision = metadata.get('Revision')
-
-        if not (task_arn and family and revision):
-            _logger.warning("Can't compute ECS task definition ARN: task_arn = {task_arn}, family = {family}, revision = {revision}")
-            return None
-
-        prefix_end_index = task_arn.find(':task/')
-
-        if prefix_end_index < 0:
-            _logger.warning("Can't compute ECS task definition ARN: task_arn = {task_arn} has an unexpected format")
-            return None
-
-        return task_arn[0:prefix_end_index] + ':task-definition/' + family + ':' + revision
-
-    def compute_region_from_ecs_cluster_arn(self, cluster_arn: Optional[str]) -> Optional[str]:
-        if not cluster_arn:
-            return None
-
-        if cluster_arn.startswith('arn:aws:ecs:'):
-            parts = cluster_arn.split(':')
-            return parts[3]
-
-        _logger.warning(f"Can't determine AWS region from cluster ARN '{cluster_arn}'")
-        return None
 
     @property
     def max_execution_attempts(self) -> float:
         if self.process_max_retries is None:
             return math.inf
-        else:
-            return self.process_max_retries + 1
+
+        return self.process_max_retries + 1
 
     def request_task_execution_start(self) -> None:
         """
@@ -995,7 +764,7 @@ environment.
                 _logger.warning("Can't get hostname", exc_info=True)
 
         if self.send_runtime_metadata:
-            self.fetch_runtime_metadata()
+            self.load_runtime_metadata()
 
         try:
             url = f"{self.api_base_url}/api/v1/task_executions/"
@@ -1455,7 +1224,7 @@ environment.
 
         # Exit handler will send update to API server
 
-    def _handle_exit(self) -> None:
+    def handle_exit(self) -> None:
         _logger.debug(f"Exit handler, Task Execution UUID = {self.task_execution_uuid}")
 
         if self.called_exit:
@@ -1968,7 +1737,7 @@ environment.
             raise RuntimeError(f"Raising an error in embedded mode, exit code {exit_code}")
 
         if self.in_pytest:
-            self._handle_exit()
+            self.handle_exit()
         else:
             if self.called_exit:
                 raise RuntimeError(

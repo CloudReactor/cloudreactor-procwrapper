@@ -2,12 +2,12 @@ import logging
 import os
 import sys
 
-from proc_wrapper import ProcWrapper
+from proc_wrapper import ProcWrapper, make_arg_parser
 
 _DEFAULT_LOG_LEVEL = 'WARNING'
 
 
-main_parser = ProcWrapper.make_arg_parser(require_command=True)
+main_parser = make_arg_parser(require_command=True)
 main_args = main_parser.parse_args()
 
 if main_args.version:
