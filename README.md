@@ -54,7 +54,7 @@ The API server may reject the request if too many instances of the Task are
 currently running, but otherwise records that a Task Execution has started.
 The module then passes control to your code.
 
-While your code is running, you may report progress to the API server,
+While your code is running, it may report progress to the API server,
 and the API server may signal that your Task stop execution (due to
 user manually stopping the Task Execution), in which
 case the module terminates your code and exits.
@@ -531,14 +531,16 @@ dependencies. To run a task you want to be monitored:
 
     from typing import Any, Dict, Mapping
 
+    import proc_wrapper
     from proc_wrapper import ProcWrapper
+
 
     def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
             config: Mapping[str, str]) -> int:
         print(cbdata)
         return cbdata['a']
 
-    args = ProcWrapper.make_default_args()
+    args = proc_wrapper.make_default_args()
     args.auto_create_task = True
     args.auto_create_run_environment_name = 'production'
     args.task_name = 'embedded_test'
@@ -704,6 +706,7 @@ In embedded mode, your callback in python code can use the wrapper instance to s
 
     from typing import Any, Dict, Mapping
 
+    import proc_wrapper
     from proc_wrapper import ProcWrapper
 
     def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
@@ -726,7 +729,7 @@ In embedded mode, your callback in python code can use the wrapper instance to s
 
         return cbdata['a']
 
-    args = ProcWrapper.make_default_args()
+    args = proc_wrapper.make_default_args()
     args.auto_create_task = True
     args.auto_create_run_environment_name = 'production'
     args.task_name = 'embedded_test'
