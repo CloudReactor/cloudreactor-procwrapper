@@ -135,7 +135,7 @@ def test_embedded_offline_mode_failure():
 
 def callback_with_config(wrapper: ProcWrapper, cbdata: str,
         config: Dict[str, str]) -> str:
-    return 'super' + cbdata + config['ANOTHER_ENV']
+    return 'super' + cbdata + config['ENV']['ANOTHER_ENV']
 
 
 def test_env_pass_through():

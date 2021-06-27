@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import re
 import signal
 import socket
 import sys
@@ -53,6 +54,7 @@ from .arg_parser import (
     DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS,
     DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS,
     DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS,
+    DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH,
     DEFAULT_STATUS_UPDATE_SOCKET_PORT,
     DEFAULT_ROLLBAR_TIMEOUT_SECONDS,
     DEFAULT_ROLLBAR_RETRIES,
@@ -227,14 +229,59 @@ class ProcWrapper:
                 self.env.get('PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS'),
                 default_value=args.resolved_env_ttl)
 
+
+        config_resolution_depth = DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH
+        overwrite_env_during_secret_resolution = string_to_bool(
+                self.env.get('PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS')) or False
+
+        should_resolve_secrets = string_to_bool(
+                self.env.get('PROC_WRAPPER_RESOLVE_SECRETS'), False)
+
+        if not should_resolve_secrets:
+            config_resolution_depth = 0
+
+        if not should_resolve_secrets:
+            _logger.debug('Secrets resolution is disabled.')
+
         self.load_runtime_metadata()
 
+        env_var_prefix = self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_PREFIX')
+        env_var_suffix = self.env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_SUFFIX')
+        config_var_prefix = self.env.get('PROC_WRAPPER_RESOLVABLE_CONFIG_VAR_PREFIX')
+        config_var_suffix = self.env.get('PROC_WRAPPER_RESOLVABLE_CONFIG_VAR_SUFFIX')
+
+        config_locations = args.config_locations or []
+
+        config_locations_in_env = self.env.get('PROC_WRAPPER_CONFIG_LOCATIONS')
+
+        if config_locations_in_env is not None:
+            # Use , or ; to split locations, except they may be escaped by
+            # backslashes. Any occurrence of , or ; in a location string
+            # must be backslash escaped. This doesn't handle the weird case
+            # when a location contains "\," or "\;".
+            config_locations = [location.replace(r'\,', ',') \
+                .replace(r'\;', ';').replace(r'\\\\', r'\\') for location in \
+                re.split('\s*(?<!(?<!\\)\\)[,;]\s*', config_locations_in_env)]
+
+        config_merge_strategy = self.env.get(
+                'PROC_WRAPPER_CONFIG_MERGE_STRATEGY',
+                args.config_merge_strategy)
+
         self.env_resolver = EnvResolver(resolved_env_ttl=self.resolved_env_ttl,
-                log_secrets=self.log_secrets,
+                should_log_values=self.log_secrets,
                 runtime_metadata=self.runtime_metadata,
-                args=args, env_override=self.env)
+                config_locations=config_locations,
+                config_merge_strategy=config_merge_strategy,
+                max_depth=config_resolution_depth,
+                env_var_prefix=env_var_prefix,
+                env_var_suffix=env_var_suffix,
+                config_var_prefix=config_var_prefix,
+                config_var_suffix=config_var_suffix,
+                should_overwrite_env_during_resolution=overwrite_env_during_secret_resolution,
+                env_override=self.env)
+
         self.resolved_env, self.failed_env_names = \
-                self.env_resolver.resolve_env()
+                self.env_resolver.fetch_and_resolve_env()
 
         self.initialize_fields(mutable_only=False)
 
@@ -1002,7 +1049,7 @@ class ProcWrapper:
 
         self.request_task_execution_start()
 
-        config = self.make_process_env()
+        config, failed_var_names = self.env_resolver.fetch_and_resolve_config()
 
         self.attempt_count = 0
         self.failed_count = 0
@@ -1032,8 +1079,8 @@ class ProcWrapper:
                         _logger.debug('Done sleeping after managed function failed.')
 
                     if self.resolved_env_ttl is not None:
-                        self.resolved_env, self.failed_env_names = \
-                                self.env_resolver.resolve_env()
+                        config, failed_var_names = \
+                                self.env_resolver.fetch_and_resolve_config()
 
                         # In case API key(s) change
                         self.initialize_fields(mutable_only=True)
@@ -1207,7 +1254,7 @@ class ProcWrapper:
 
                     if self.resolved_env_ttl is not None:
                         self.resolved_env, self.failed_env_names = \
-                                self.env_resolver.resolve_env()
+                                  self.env_resolver.fetch_and_resolve_env()
 
                         # In case API key(s) change
                         self.initialize_fields(mutable_only=True)

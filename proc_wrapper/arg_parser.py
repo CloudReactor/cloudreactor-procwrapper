@@ -18,6 +18,11 @@ DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS = 300
 DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS = 30
 DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS = 1800
 
+CONFIG_MERGE_STRATEGY_SHALLOW = 'SHALLOW'
+DEFAULT_CONFIG_MERGE_STRATEGY = CONFIG_MERGE_STRATEGY_SHALLOW
+
+DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH = 5
+
 DEFAULT_STATUS_UPDATE_SOCKET_PORT = 2373
 
 DEFAULT_ROLLBAR_TIMEOUT_SECONDS = 30
@@ -128,11 +133,23 @@ environment.
     parser.add_argument('-d', '--deployment',
             help='Deployment name (production, staging, etc.)')
     parser.add_argument('--schedule', help='Run schedule reported to the API server')
-    parser.add_argument('--env-file', action='append',
+    parser.add_argument('-c', '--config', action='append', dest='config_locations',
             help="""
     Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN
-    of file used to populate environment. Specify multiple times to include
-    multiple files.""")
+    containing properties used to populate the configuration for embedded mode,
+    or the process environment for wrapped mode. Specify multiple times to
+    include multiple locations.""")
+    parser.add_argument('--config-merge-strategy',
+            choices=[
+                CONFIG_MERGE_STRATEGY_SHALLOW, 'REPLACE', 'ADDITIVE',
+                'TYPESAFE_REPLACE', 'TYPESAFE_ADDITIVE'
+            ],
+            default=DEFAULT_CONFIG_MERGE_STRATEGY,
+            help=f"""
+            Merge strategy for merging config files with mergedeep.
+            Defaults to {DEFAULT_CONFIG_MERGE_STRATEGY}, which does not require
+            mergedeep. All other strategies require mergedeep to be installed.
+            """)
     parser.add_argument('--resolved-env-ttl',
             help='Number of seconds to cache resolved environment variables instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.')
     parser.add_argument('--rollbar-access-token',

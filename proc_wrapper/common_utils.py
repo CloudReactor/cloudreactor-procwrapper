@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 
 # From glglgl on
@@ -36,3 +36,10 @@ def string_to_int(s: Optional[Any],
             return negative_value
 
         return x
+
+def strip_after(s: str, partial_suffix: str) -> Tuple[str, Optional[str]]:
+    try:
+        index = s.index(partial_suffix)
+        return (s[0:index], s[index + len(partial_suffix):])
+    except ValueError:
+        return (s, None)
