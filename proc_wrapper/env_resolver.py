@@ -45,7 +45,7 @@ FORMAT_YAML = 'yaml'
 
 ALL_SUPPORTED_FORMATS = [FORMAT_DOTENV, FORMAT_JSON, FORMAT_YAML]
 
-ENV_LOCATION_FORMAT_SEPARATOR = ':'
+DEFAULT_FORMAT_SEPARATOR = '!'
 
 EXTENSION_TO_FORMAT = {
     'env': FORMAT_DOTENV,
@@ -138,16 +138,20 @@ class ValueNotFoundException(Exception):
 class SecretProvider:
     def __init__(self, name: str, value_prefix: Optional[str] = None,
             should_cache: bool = True, top_level: bool = True,
+            format_separator: Optional[str] = DEFAULT_FORMAT_SEPARATOR,
             transform_separator: str = DEFAULT_TRANSFORM_SEPARATOR):
         self.name = name
         self.value_prefix = coalesce(value_prefix, name + ':')
         self.should_cache = should_cache
         self.top_level = top_level
+        self.format_separator = format_separator
         self.transform_separator = transform_separator
 
-    def cache_key_for_value(self, value):
+    def cache_key_for_value(self, value: str):
+        value, _format = self.extract_format(value)
+
         if value.startswith(self.value_prefix):
-            return value[len(self.value_prefix):]
+            value = value[len(self.value_prefix):]
 
         return value
 
@@ -156,11 +160,31 @@ class SecretProvider:
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         if location.startswith(self.name + ':'):
             location = location[len(self.name) + 1:]
-        return self.fetch_internal(location=location, config=config, env=env)
 
+        location, explicit_format = self.extract_format(location)
+
+        data_string, format, parsed_data = self.fetch_internal(
+                location=location, config=config, env=env,
+                explicit_format=explicit_format)
+
+        return (data_string, explicit_format or format, parsed_data)
+
+    def extract_format(self, location: str) -> Tuple[str, Optional[str]]:
+        explicit_format: Optional[str] = None
+        if self.format_separator:
+            upper_full_location = location.lower()
+            for trial_format in ALL_SUPPORTED_FORMATS:
+                search_string = self.format_separator + trial_format
+                if upper_full_location.endswith(search_string):
+                    location = location[0:-len(search_string)]
+                    explicit_format = trial_format
+                    break
+
+        return (location, explicit_format)
 
     def fetch_internal(self, location: str, config: Dict[str, Any],
-            env: Dict[str, str]) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+            env: Dict[str, str], explicit_format: Optional[str]) \
+            -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         raise NotImplementedError()
 
 
@@ -170,9 +194,9 @@ class PlainSecretProvider(SecretProvider):
                 top_level=True)
 
     def fetch_internal(self, location: str, config: Dict[str, Any],
-            env: Dict[str, str]) \
+            env: Dict[str, str], explicit_format: Optional[str]) \
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
-        return (location, None, None)
+        return (location, explicit_format, None)
 
 
 class EnvSecretProvider(SecretProvider):
@@ -181,14 +205,14 @@ class EnvSecretProvider(SecretProvider):
                 top_level=False)
 
     def fetch_internal(self, location: str, config: Dict[str, Any],
-            env: Dict[str, str]) \
+            env: Dict[str, str], explicit_format: Optional[str]) \
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         string_value = env.get(location)
 
         if string_value is None:
             raise ValueNotFoundException(location)
 
-        return (string_value, None, None)
+        return (string_value, explicit_format, None)
 
 
 class ConfigSecretProvider(SecretProvider):
@@ -198,7 +222,7 @@ class ConfigSecretProvider(SecretProvider):
         self.log_secrets = log_secrets
 
     def fetch_internal(self, location: str, config: Dict[str, Any],
-            env: Dict[str, str]) \
+            env: Dict[str, str], explicit_format: Optional[str]) \
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         transformed = transform_value(parsed_value=config,
                 string_value='<config>',
@@ -223,7 +247,7 @@ class AwsSecretsManagerSecretProvider(SecretProvider):
 
 
     def fetch_internal(self, location: str, config: Dict[str, Any],
-            env: Dict[str, str]) \
+            env: Dict[str, str], explicit_format: Optional[str]) \
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         if not self.aws_region_name:
             raise RuntimeError("Can't use AWS Secrets Manager without AWS region setting")
@@ -268,7 +292,7 @@ class FileSecretProvider(SecretProvider):
             value_prefix=value_prefix, should_cache=True)
 
     def fetch_internal(self, location: str, config: Dict[str, Any],
-            env: Dict[str, str]) \
+            env: Dict[str, str], explicit_format: Optional[str]) \
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         if location.startswith(FILE_URL_PREFIX):
             location = location[FILE_URL_PREFIX_LENGTH:]
@@ -293,8 +317,8 @@ class AwsS3SecretProvider(SecretProvider):
         self.aws_s3_resource = None
         self.aws_s3_resource_create_attempted_at: Optional[float] = None
 
-    def fetch_data(self, location: str, config: Dict[str, Any],
-            env: Dict[str, str]) \
+    def fetch_internal(self, location: str, config: Dict[str, Any],
+            env: Dict[str, str], explicit_format: Optional[str]) \
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         s3_data = self.fetch_aws_s3_data(location)
 
@@ -363,20 +387,6 @@ DEFAULT_RESOLVABLE_ENV_VAR_PREFIX = ''
 DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX = '_FOR_PROC_WRAPPER_TO_RESOLVE'
 DEFAULT_RESOLVABLE_CONFIG_VAR_PREFIX = ''
 DEFAULT_RESOLVABLE_CONFIG_VAR_SUFFIX = '__to_resolve'
-
-
-class ParsedResourceLocation:
-    def __init__(self, full_location: str):
-        upper_full_location = full_location.lower()
-
-        self.location = full_location
-        self.format: Optional[str] = None
-        for trial_format in ALL_SUPPORTED_FORMATS:
-            search_string = trial_format + ENV_LOCATION_FORMAT_SEPARATOR
-            if upper_full_location.startswith(search_string):
-                self.location = full_location[len(search_string):]
-                self.format = trial_format
-                break
 
 
 class CachedValueEntry(NamedTuple):
@@ -594,10 +604,8 @@ class EnvResolver:
         merged_env: Dict[str, Any] = {}
 
         for env_file_location in self.env_locations:
-            parsed = ParsedResourceLocation(env_file_location)
-
-            env = self.fetch_config_from_location(parsed.location,
-                    format=parsed.format, default_format=FORMAT_DOTENV)
+            env = self.fetch_config_from_location(env_file_location,
+                    default_format=FORMAT_DOTENV)
 
             if env:
                 if self.merge and self.mergedeep_strategy:
@@ -611,10 +619,8 @@ class EnvResolver:
         merged_env.update(self.env)
 
         for config_location in self.config_locations:
-            parsed = ParsedResourceLocation(config_location)
-
-            config = self.fetch_config_from_location(parsed.location,
-                    format=parsed.format, default_format=FORMAT_JSON)
+            config = self.fetch_config_from_location(config_location,
+                    default_format=FORMAT_JSON)
 
             if config:
                 if self.merge and self.mergedeep_strategy:
@@ -627,7 +633,7 @@ class EnvResolver:
         return (merged_config, merged_env)
 
     def fetch_config_from_location(self, location: str,
-            format: Optional[str], default_format: str) -> Dict[str, Any]:
+            default_format: str) -> Dict[str, Any]:
         secret_provider: Optional[SecretProvider] = None
         cache: Optional[Dict[str, CachedValueEntry]] = None
         cache_key = location
@@ -659,11 +665,11 @@ class EnvResolver:
 
         _logger.debug(f"Using secret provider '{secret_provider.name}' for location '{location}'")
 
+        format: Optional[str] = None
         if (data_string is None) and (parsed_value is None):
-            data_string, format_from_location, parsed_value = \
+            data_string, format, parsed_value = \
                     secret_provider.fetch_data(location=location, config={},
                             env={})
-            format = format or format_from_location
 
         if format is None:
             format = self.guess_format_from_location(location)

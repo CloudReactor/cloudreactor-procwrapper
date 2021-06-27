@@ -38,8 +38,8 @@ def string_to_int(s: Optional[Any],
         return x
 
 def strip_after(s: str, partial_suffix: str) -> Tuple[str, Optional[str]]:
-    try:
-        index = s.index(partial_suffix)
+    index = s.find(partial_suffix)
+    if index >= 0:
         return (s[0:index], s[index + len(partial_suffix):])
-    except ValueError:
-        return (s, None)
+
+    return (s, None)

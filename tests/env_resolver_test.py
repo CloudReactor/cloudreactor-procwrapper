@@ -11,6 +11,15 @@ from moto import mock_secretsmanager, mock_s3
 
 from proc_wrapper import EnvResolver
 
+FORMAT_METHOD_EXTENSION = 'extension'
+FORMAT_METHOD_CONTENT_TYPE = 'content_type'
+FORMAT_METHOD_SUFFIX = 'suffix'
+
+S3_FORMAT_METHODS = [
+    FORMAT_METHOD_EXTENSION,
+    FORMAT_METHOD_CONTENT_TYPE,
+    FORMAT_METHOD_SUFFIX
+]
 
 RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_TASK_NAME': 'Foo',
@@ -74,7 +83,8 @@ def test_env_in_aws_secrets_manager():
         assert bad_vars == []
 
 
-def test_yaml_config_in_aws_s3():
+@pytest.mark.parametrize('format_method', S3_FORMAT_METHODS)
+def test_yaml_config_in_aws_s3(format_method: str):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
 
     h = {
@@ -88,14 +98,33 @@ def test_yaml_config_in_aws_s3():
 
     with mock_s3():
         s3_client = boto3.client('s3', region_name='us-east-2')
-        s3_arn = put_aws_s3_file(s3_client, 'db.yaml', yaml_string)
+
+        name = 'db'
+
+        if format_method == FORMAT_METHOD_EXTENSION:
+            name += '.yml'
+
+        content_type = 'text_plain'
+
+        if format_method == FORMAT_METHOD_CONTENT_TYPE:
+            content_type = 'application/yaml'
+
+        s3_arn = put_aws_s3_file(s3_client, name, yaml_string,
+            content_type=content_type)
+
+        location = s3_arn
+
+        if format_method == FORMAT_METHOD_SUFFIX:
+            location = s3_arn + '!YAML'
+
         resolver = EnvResolver(env_override=env_override,
-                config_locations=[s3_arn])
+                config_locations=[location])
 
         resolved_config, bad_vars = resolver.fetch_and_resolve_config()
         assert resolved_config['db']['username'] == 'yuser'
         assert resolved_config['db']['password'] == 'ypw'
         assert bad_vars == []
+
 
 @pytest.mark.parametrize('prefix', [
   'file://',
