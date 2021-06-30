@@ -15,7 +15,6 @@ from .runtime_metadata import RuntimeMetadata
 FILE_URL_PREFIX = 'file://'
 FILE_URL_PREFIX_LENGTH = len(FILE_URL_PREFIX)
 
-
 AWS_S3_VERSION_SEPARATOR = '#'
 
 # By default JSON Path expressions that resolve to an single element
@@ -73,13 +72,7 @@ _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
 
 
-def guess_format_from_mime_type(mime_type: str) -> Optional[str]:
-    mime_type, _content_encoding = strip_after(mime_type, ';')
-    mime_type = mime_type.strip().lower()
-    return MIME_TYPE_TO_FORMAT.get(mime_type)
-
-
-def transform_value(parsed_value: Any, string_value: str,
+def transform_value(parsed_value: Any, string_value: Optional[str],
     transform_expr_str: str, log_secrets: bool=False) -> Any:
 
     result: Any = None
@@ -116,7 +109,7 @@ def transform_value(parsed_value: Any, string_value: str,
         results_len = len(results)
 
         if results_len == 0:
-            msg = f"Got no results for value '{string_value}' with JSON path '{jsonpath_expr_str}'"
+            msg = f"Got no results for value '{string_value or parsed_value}' with JSON path '{jsonpath_expr_str}'"
             _logger.info(msg)
             raise ValueNotFoundException(msg)
         else:
@@ -128,7 +121,7 @@ def transform_value(parsed_value: Any, string_value: str,
 
         return result
     else:
-        raise ValueError(f"Unknown transform for value '{string_value}'")
+        raise ValueError(f"Unknown transform for value '{string_value or parsed_value}'")
 
 
 class ValueNotFoundException(Exception):
@@ -148,10 +141,14 @@ class SecretProvider:
         self.transform_separator = transform_separator
 
     def cache_key_for_value(self, value: str):
-        value, _format = self.extract_format(value)
+        _logger.debug(f"Cache key for input value '{value}'")
+
+        value, _format = self.extract_explicit_format(value)
 
         if value.startswith(self.value_prefix):
             value = value[len(self.value_prefix):]
+
+        _logger.debug(f"Cache key for output value '{value}'")
 
         return value
 
@@ -161,15 +158,21 @@ class SecretProvider:
         if location.startswith(self.name + ':'):
             location = location[len(self.name) + 1:]
 
-        location, explicit_format = self.extract_format(location)
+        location, explicit_format = self.extract_explicit_format(location)
 
         data_string, format, parsed_data = self.fetch_internal(
                 location=location, config=config, env=env,
                 explicit_format=explicit_format)
 
-        return (data_string, explicit_format or format, parsed_data)
+        format = explicit_format or format
 
-    def extract_format(self, location: str) -> Tuple[str, Optional[str]]:
+        if format is None:
+            format = self.guess_format_from_location(location)
+
+        return (data_string, format, parsed_data)
+
+    def extract_explicit_format(self, location: str) \
+            -> Tuple[str, Optional[str]]:
         explicit_format: Optional[str] = None
         if self.format_separator:
             upper_full_location = location.lower()
@@ -187,6 +190,24 @@ class SecretProvider:
             -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         raise NotImplementedError()
 
+    def guess_format_from_location(self, location: str) -> Optional[str]:
+        if '.env.' in location:
+            return FORMAT_DOTENV
+
+        location, _suffix = strip_after(location, '#')
+        last_dot_index = location.rfind('.')
+        if last_dot_index < 0:
+            _logger.info(f"No file extension found in location '{location}', can't guess format")
+            return None
+
+        extension = location[last_dot_index + 1 :].lower()
+
+        return EXTENSION_TO_FORMAT.get(extension)
+
+    def guess_format_from_mime_type(self, mime_type: str) -> Optional[str]:
+        mime_type, _content_encoding = strip_after(mime_type, ';')
+        mime_type = mime_type.strip().lower()
+        return MIME_TYPE_TO_FORMAT.get(mime_type)
 
 class PlainSecretProvider(SecretProvider):
     def __init__(self):
@@ -324,7 +345,7 @@ class AwsS3SecretProvider(SecretProvider):
 
         format: Optional[str] = None
         if s3_data.content_type:
-            format = guess_format_from_mime_type(s3_data.content_type)
+            format = self.guess_format_from_mime_type(s3_data.content_type)
 
         return (s3_data.body, format, None)
 
@@ -410,7 +431,7 @@ class ResolutionResult(NamedTuple):
 
 
 class EnvResolver:
-    def __init__(self, resolved_env_ttl: Optional[int] = None,
+    def __init__(self, cached_value_ttl_seconds: Optional[int] = None,
             should_log_values: bool = False,
             runtime_metadata: Optional[RuntimeMetadata] = None,
             should_overwrite_env_during_resolution: bool = False,
@@ -420,14 +441,14 @@ class EnvResolver:
             config_var_prefix: Optional[str] = None,
             config_var_suffix: Optional[str] = None,
             config_locations: List[str] = [],
-            config_merge_strategy: Optional[str] = None,
+            merge_strategy: Optional[str] = None,
             max_depth: int = DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH,
             max_resolution_iterations: int = DEFAULT_MAX_RESOLUTION_ITERATIONS,
             should_fail_fast: bool = True,
             env_var_name_for_config: Optional[str] = DEFAULT_ENV_VAR_NAME_FOR_CONFIG,
             config_var_name_for_env: Optional[str] = DEFAULT_CONFIG_VAR_NAME_FOR_ENV,
             env_override: Optional[Mapping[str, Any]] = None) -> None:
-        self.resolved_env_ttl = resolved_env_ttl
+        self.cached_value_ttl_seconds = cached_value_ttl_seconds
         self.should_log_values = should_log_values
         self.runtime_metadata = runtime_metadata
 
@@ -462,14 +483,14 @@ class EnvResolver:
         self.merge: Optional[Any] = None
         self.mergedeep_strategy: Optional[Any] = None
 
-        if not config_merge_strategy:
-            config_merge_strategy = DEFAULT_CONFIG_MERGE_STRATEGY
+        if not merge_strategy:
+            merge_strategy = DEFAULT_CONFIG_MERGE_STRATEGY
 
-        if config_merge_strategy != DEFAULT_CONFIG_MERGE_STRATEGY:
+        if merge_strategy != DEFAULT_CONFIG_MERGE_STRATEGY:
             import mergedeep # type: ignore
             self.merge = mergedeep.merge
             self.mergedeep_strategy = getattr(mergedeep.Strategy,
-                    config_merge_strategy)
+                    merge_strategy)
 
         self.max_depth = max_depth
         self.max_resolution_iterations = max_resolution_iterations
@@ -513,9 +534,8 @@ class EnvResolver:
         Populate the variable with the name config_var_name_for_env
         in the configuration with the JSON-serialized configuration in
         the environment. Populate the variable with the name
-        config_var_name_for_env in the environment with the JSON-serialized configuration in
-        the environment.
-
+        config_var_name_for_env in the environment with the JSON-serialized
+        configuration in the environment.
         """
         config, env = self.fetch_and_merge()
 
@@ -528,39 +548,48 @@ class EnvResolver:
         unresolved_config_var_names: List[str] = []
         failed_config_var_names: List[str] = []
 
-        for iteration in range(self.max_resolution_iterations):
-            _logger.debug(f'Starting resolution pass {iteration} ...')
+        for epoch in range(2):
+            for iteration in range(self.max_resolution_iterations):
+                _logger.debug(f'Starting resolution iteration {iteration} of epoch {epoch} ...')
 
-            env_result = self.resolve_value(value=env, config=config, env=env,
-                is_env=True)
+                env_result = self.resolve_value(value=env, config=config,
+                    env=env, is_env=True)
 
-            env = cast(Dict[str, Any], env_result.resolved_value)
-            failed_env_var_names = env_result.failed_var_names
+                env = cast(Dict[str, Any], env_result.resolved_value)
+                failed_env_var_names = env_result.failed_var_names
 
-            if self.should_fail_fast and (len(failed_env_var_names) > 0):
-                _logger.warning(f"Failing fast after finding failed env vars: {failed_env_var_names}")
-                return (env, failed_env_var_names, config, failed_config_var_names)
+                if self.should_fail_fast and (len(failed_env_var_names) > 0):
+                    _logger.warning(f"Failing fast after finding failed env vars: {failed_env_var_names}")
+                    return (env, failed_env_var_names, config, failed_config_var_names)
 
-            unresolved_env_var_names = env_result.unresolved_var_names
+                unresolved_env_var_names = env_result.unresolved_var_names
 
-            config_result = self.resolve_value(value=config, config=config,
-                env=env, is_env=False)
+                config_result = self.resolve_value(value=config, config=config,
+                    env=env, is_env=False)
 
-            config = cast(Dict[str, Any], config_result.resolved_value)
-            failed_config_var_names = config_result.failed_var_names
+                config = cast(Dict[str, Any], config_result.resolved_value)
+                failed_config_var_names = config_result.failed_var_names
 
-            if self.should_fail_fast and (len(failed_config_var_names) > 0):
-                _logger.warning(f"Failing fast after finding failed config vars: {failed_config_var_names}")
-                return (env, failed_env_var_names, config, failed_config_var_names)
+                if self.should_fail_fast and (len(failed_config_var_names) > 0):
+                    _logger.warning(f"Failing fast after finding failed config vars: {failed_config_var_names}")
+                    return (env, failed_env_var_names, config, failed_config_var_names)
 
-            unresolved_config_var_names = config_result.unresolved_var_names
+                unresolved_config_var_names = config_result.unresolved_var_names
 
-            if (len(unresolved_env_var_names) == 0) \
-                    and (len(unresolved_config_var_names) == 0):
+                if (len(unresolved_env_var_names) == 0) \
+                        and (len(unresolved_config_var_names) == 0):
+                    break
+
+            if iteration >= self.max_resolution_iterations:
+                raise RuntimeError('Resolution iteration count of {iteration} exceeds maximum allowed')
+
+            # If we want to prevent the environment from being overwritten,
+            # re-merge the environment so it overrides everything, then
+            # re-run resolution.
+            if (epoch > 0) or self.should_overwrite_env_during_resolution:
                 break
-
-        if iteration >= self.max_resolution_iterations:
-            raise RuntimeError('Resolution iteration count of {iteration} exceeds maximum allowed')
+            else:
+                env.update(self.env)
 
         final_env: Dict[str, str] = {}
         if want_env or self.config_var_name_for_env:
@@ -582,7 +611,7 @@ class EnvResolver:
         flattened = {}
 
         for name, value in env.items():
-            string_value: str = ''
+            string_value = ''
 
             if value is None:
                 string_value = ''
@@ -600,7 +629,6 @@ class EnvResolver:
         return flattened
 
     def fetch_and_merge(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        merged_config: Dict[str, Any] = {}
         merged_env: Dict[str, Any] = {}
 
         for env_file_location in self.env_locations:
@@ -618,6 +646,7 @@ class EnvResolver:
         # Merge the current environment last
         merged_env.update(self.env)
 
+        merged_config: Dict[str, Any] = {}
         for config_location in self.config_locations:
             config = self.fetch_config_from_location(config_location,
                     default_format=FORMAT_JSON)
@@ -634,86 +663,13 @@ class EnvResolver:
 
     def fetch_config_from_location(self, location: str,
             default_format: str) -> Dict[str, Any]:
-        secret_provider: Optional[SecretProvider] = None
-        cache: Optional[Dict[str, CachedValueEntry]] = None
-        cache_key = location
-        data_string: Optional[str] = None
-        parsed_value: Optional[Any] = None
+        _name, value = self.resolve_var(name='', value=location, config={},
+            env=self.env, top_level=True, default_format=default_format)
 
-        for sp in self.secret_providers:
-            if sp.top_level and location.startswith(sp.value_prefix):
-                secret_provider = sp
+        if issubclass(type(value), dict):
+            return value
 
-                if secret_provider.should_cache:
-                    cache = self.secret_cache.get(secret_provider.name)
-                    if cache is None:
-                        cache = {}
-                        self.secret_cache[secret_provider.name] = cache
-                    cache_key = sp.cache_key_for_value(location)
-                    cache_entry = cache.get(cache_key)
-                    if cache_entry and \
-                            not cache_entry.is_stale(self.resolved_env_ttl):
-                        parsed_value = cache_entry.parsed_value
-                        if cache_entry.is_value_dict:
-                            return cast(Dict[str, Any], parsed_value)
-
-                        data_string = cache_entry.string_value
-                break
-
-        if secret_provider is None:
-            raise RuntimeError('No matching secret provider (file is supposed to be catch all)?!')
-
-        _logger.debug(f"Using secret provider '{secret_provider.name}' for location '{location}'")
-
-        format: Optional[str] = None
-        if (data_string is None) and (parsed_value is None):
-            data_string, format, parsed_value = \
-                    secret_provider.fetch_data(location=location, config={},
-                            env={})
-
-        if format is None:
-            format = self.guess_format_from_location(location)
-
-            if format is None:
-                _logger.warning(f"Can't guess format from location, defaulting to {default_format}")
-                format = default_format
-
-        config_data: Optional[Dict[str, Any]] = None
-
-        if parsed_value is None:
-            if data_string is None:
-                raise RuntimeError(f"No string or parsed data returned from secret provider '{secret_provider.name}'")
-
-            config_data = self.parse_data_string(data_string=data_string,
-                    format=format)
-        elif type(parsed_value) == dict:
-            config_data = parsed_value
-
-        if config_data is None:
-            raise RuntimeError(f"Unknown config format '{format}'")
-
-        if secret_provider.should_cache and cache:
-            cache[cache_key] = CachedValueEntry(
-                    string_value=data_string,
-                    parsed_value=config_data,
-                    fetched_at=time.time(),
-                    is_value_dict=(config_data is not None))
-
-        return config_data
-
-    def guess_format_from_location(self, location: str) -> Optional[str]:
-        if '.env.' in location:
-            return FORMAT_DOTENV
-
-        location, _suffix = strip_after(location, '#')
-        last_dot_index = location.rfind('.')
-        if last_dot_index < 0:
-            _logger.info(f"No file extension found in location '{location}', can't guess format")
-            return None
-
-        extension = location[last_dot_index + 1 :].lower()
-
-        return EXTENSION_TO_FORMAT.get(extension)
+        raise RuntimeError(f"Configuration value at {location} is not a dict!")
 
     def resolve_value(self, value: Any, config: Dict[str, Any],
             env: Dict[str, Any], is_env: bool = True, path: str = '',
@@ -724,12 +680,12 @@ class EnvResolver:
         unresolved_var_names = []
         failed_var_names = []
 
-        if value_type is dict:
+        if issubclass(value_type, dict):
             dict_value = cast(Dict[str, Any], value)
             return self.resolve_dict(dict_value=dict_value,
                 config=config, env=env, is_env=is_env,
                 path=path, depth=depth)
-        elif (value_type is list) and (depth < self.max_depth):
+        elif issubclass(value_type, list) and (depth < self.max_depth):
             list_value = cast(List[Any], value)
             resolved_value = []
             for index, element in enumerate(list_value):
@@ -805,9 +761,6 @@ class EnvResolver:
                     if var_name is None:
                         _logger.info(f"Skipping setting of environment variable '{var_name}'")
                         continue
-                    elif is_env and (not self.should_overwrite_env_during_resolution) \
-                            and (var_name in dict_value):
-                        _logger.info(f"Skipping overwriting of environment variable '{var_name}'")
                     else:
                         value = var_value
                         inner_path = EnvResolver.qualify_path(path, var_name)
@@ -834,7 +787,19 @@ class EnvResolver:
                     env=env, is_env=is_env, path=inner_path,
                     depth=depth + 1)
 
-            resolved_dict_value[var_name] = inner_result.resolved_value
+            resolved_value = inner_result.resolved_value
+            if issubclass(type(resolved_value), dict):
+                # Looking up in resolved_dict_value might fix some cases, but
+                # is non-deterministic due to key ordering.
+                old_value = dict_value.get(var_name)
+                if (old_value is not None) and issubclass(type(old_value), dict):
+                    if self.merge and self.mergedeep_strategy:
+                        new_resolved_value = old_value.copy()
+                        self.merge(new_resolved_value, resolved_value,
+                                strategy=self.mergedeep_strategy)
+                        resolved_value = new_resolved_value
+
+            resolved_dict_value[var_name] = resolved_value
             resolved_var_names.extend(inner_result.resolved_var_names)
             unresolved_var_names.extend(inner_result.unresolved_var_names)
             failed_var_names.extend(inner_result.failed_var_names)
@@ -869,11 +834,16 @@ class EnvResolver:
         return safe_load(data)
 
     def resolve_var(self, name: str, value: str, config: Dict[str, Any],
-            env: Dict[str, str]) -> Tuple[str, Any]:
+            env: Dict[str, str],
+            top_level: bool = False,
+            default_format: Optional[str] = None) -> Tuple[str, Any]:
         var_name = name
         secret_provider: Optional[SecretProvider] = None
 
         for sp in self.secret_providers:
+            if top_level and not sp.top_level:
+                continue
+
             sp_name = sp.name
 
             # Legacy method of indicating the secret provider type was to prefix
@@ -888,7 +858,10 @@ class EnvResolver:
                 break
 
         if secret_provider is None:
-            secret_provider = self.plain_secret_provider
+            if top_level:
+                raise RuntimeError('No matching secret provider (file is supposed to be catch all)?!')
+            else:
+                secret_provider = self.plain_secret_provider
 
         sp_name = secret_provider.name
 
@@ -914,15 +887,15 @@ class EnvResolver:
             cache = self.secret_cache.get(sp_name)
 
             cached_value_entry: Optional[CachedValueEntry] = None
+            cache_key = secret_provider.cache_key_for_value(value_to_lookup)
             if cache is None:
                 cache = {}
                 self.secret_cache[sp_name] = cache
             else:
-                cache_key = secret_provider.cache_key_for_value(value_to_lookup)
                 cached_value_entry = cache.get(cache_key)
 
             if (cached_value_entry is None) \
-                    or cached_value_entry.is_stale(self.resolved_env_ttl):
+                    or cached_value_entry.is_stale(self.cached_value_ttl_seconds):
                 _logger.debug(f"Secret cache miss for '{cache_key}' from value '{value_to_lookup}' with provider {sp_name}")
             else:
                 string_value = cached_value_entry.string_value
@@ -931,21 +904,26 @@ class EnvResolver:
                 # Don't re-install in cache
                 cache = None
 
-        if string_value is None:
+        if (string_value is None) and (parsed_value is None):
             string_value, format, parsed_value = secret_provider.fetch_data(
                 location=value_to_lookup, config=config, env=env)
 
-            if format and (parsed_value is None):
-                config_data = self.parse_data_string(
-                        data_string=string_value, format=format)
-                is_value_config_dict = (config_data is not None)
-                parsed_value = config_data or string_value
+            if parsed_value is None:
+                if format is None:
+                    if default_format:
+                        _logger.warning(f"Can't guess format from location, defaulting to {default_format}")
+                        format = default_format
 
+                if format:
+                    config_data = self.parse_data_string(
+                            data_string=string_value, format=format)
+                    is_value_config_dict = issubclass(type(config_data), dict)
+                    parsed_value = config_data or string_value
 
         if self.should_log_values:
             _logger.debug(f"value_to_lookup = '{value_to_lookup}', resolved value = '{string_value}'")
 
-        if cache:
+        if cache is not None:
             cache[cache_key] = CachedValueEntry(
                     string_value=string_value, parsed_value=parsed_value,
                     fetched_at=time.time(),
@@ -954,7 +932,10 @@ class EnvResolver:
         if not transform_expr_str:
             return (var_name, parsed_value or string_value)
 
-        if not parsed_value:
+        if parsed_value is None:
+            if string_value is None:
+                raise RuntimeError('Cannot parse missing string value for transform')
+
             parsed_value = json.loads(string_value)
 
         resolved_value = transform_value(parsed_value=parsed_value,

@@ -1,5 +1,9 @@
+from proc_wrapper.arg_parser import CONFIG_MERGE_STRATEGY_SHALLOW
+from typing import Any, Dict, Optional
+
 import logging
 import json
+from proc_wrapper.env_resolver import DEFAULT_FORMAT_SEPARATOR
 import yaml
 
 import pytest
@@ -27,11 +31,19 @@ RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_RESOLVE_SECRETS': 'TRUE',
     'PROC_WRAPPER_SECRETS_AWS_REGION': 'us-east-2',
 }
-
-
-def test_resolve_env_with_json_path_and_plain_format():
+@pytest.mark.parametrize('format', [
+  'json',
+  ''
+])
+def test_resolve_env_from_plaintext_with_json_path(format: str):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
-    env_override['SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = 'PLAIN:{"a": "bug"}|JP:$.a'
+
+    value = 'PLAIN:{"a": "bug"}'
+
+    if format:
+        value += DEFAULT_FORMAT_SEPARATOR + format
+
+    env_override['SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = value + '|JP:$.a'
     resolver = EnvResolver(env_override=env_override)
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env['SOME_ENV'] == 'bug'
@@ -83,8 +95,20 @@ def test_env_in_aws_secrets_manager():
         assert bad_vars == []
 
 
-@pytest.mark.parametrize('format_method', S3_FORMAT_METHODS)
-def test_yaml_config_in_aws_s3(format_method: str):
+@pytest.mark.parametrize(
+  ('format_method_suffix', 'extension', 'content_type'), [
+      ('YAML', None, 'text/plain'),
+      (None, 'yml', 'text/plain'),
+      (None, 'yaml', 'text/plain'),
+      (None, None, 'application/yaml'),
+      (None, None, 'application/x-yaml'),
+      (None, None, 'text/vnd.yaml'),
+      (None, None, 'text/yaml'),
+      (None, None, 'text/x-yaml'),
+
+  ])
+def test_yaml_config_in_aws_s3(format_method_suffix: Optional[str],
+        extension: Optional[str], content_type: Optional[str]):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
 
     h = {
@@ -101,21 +125,16 @@ def test_yaml_config_in_aws_s3(format_method: str):
 
         name = 'db'
 
-        if format_method == FORMAT_METHOD_EXTENSION:
-            name += '.yml'
-
-        content_type = 'text_plain'
-
-        if format_method == FORMAT_METHOD_CONTENT_TYPE:
-            content_type = 'application/yaml'
+        if extension:
+            name += '.' + extension
 
         s3_arn = put_aws_s3_file(s3_client, name, yaml_string,
             content_type=content_type)
 
         location = s3_arn
 
-        if format_method == FORMAT_METHOD_SUFFIX:
-            location = s3_arn + '!YAML'
+        if format_method_suffix:
+            location = s3_arn + '!' + format_method_suffix
 
         resolver = EnvResolver(env_override=env_override,
                 config_locations=[location])
@@ -125,16 +144,32 @@ def test_yaml_config_in_aws_s3(format_method: str):
         assert resolved_config['db']['password'] == 'ypw'
         assert bad_vars == []
 
+    # Test one more with S3 support to check caching
+    resolved_config, bad_vars = resolver.fetch_and_resolve_config()
+    assert resolved_config['db']['username'] == 'yuser'
+    assert resolved_config['db']['password'] == 'ypw'
+    assert bad_vars == []
 
-@pytest.mark.parametrize('prefix', [
-  'file://',
-  ''
+
+
+@pytest.mark.parametrize(
+    ('prefix', 'filename', 'format_method_suffix'), [
+    ('FILE:', 'config.json', None),
+    ('file://', 'config.json', None),
+    ('', 'config.json', None),
+    ('', 'config_json.txt', 'json'),
 ])
-def test_json_config_file(prefix: str):
+def test_json_config_file(prefix: str, filename: str,
+      format_method_suffix: Optional[str]):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
 
+    location = prefix + 'tests/data/' + filename
+
+    if format_method_suffix:
+        location += DEFAULT_FORMAT_SEPARATOR + format_method_suffix
+
     resolver = EnvResolver(env_override=env_override,
-        env_locations=[prefix + 'tests/data/config.json'])
+            env_locations=[location])
 
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env['animal'] == 'dog'
@@ -143,6 +178,33 @@ def test_json_config_file(prefix: str):
         "weight": 66
     })
     assert bad_vars == []
+
+@pytest.mark.parametrize(
+        ('merge_strategy', 'dimensions'), [
+       (CONFIG_MERGE_STRATEGY_SHALLOW,  {
+            "height": 23,
+        }),
+        ('REPLACE',  {
+            "height": 23,
+            "weight": 66
+        }),
+    ]
+)
+def test_env_merging(merge_strategy: str, dimensions: Dict[str, Any]):
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+
+    env_locations = ['tests/data/config.json', 'tests/data/test.env']
+
+    resolver = EnvResolver(env_override=env_override,
+            env_locations=env_locations, merge_strategy=merge_strategy)
+
+    resolved_env, bad_vars = resolver.fetch_and_resolve_env()
+    assert resolved_env['animal'] == 'cat'
+    assert json.loads(resolved_env['dimensions']) == dimensions
+    assert bad_vars == []
+
+
+
 
 
 @pytest.mark.parametrize('prefix', [

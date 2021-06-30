@@ -267,11 +267,11 @@ class ProcWrapper:
                 'PROC_WRAPPER_CONFIG_MERGE_STRATEGY',
                 args.config_merge_strategy)
 
-        self.env_resolver = EnvResolver(resolved_env_ttl=self.resolved_env_ttl,
+        self.env_resolver = EnvResolver(cached_value_ttl_seconds=self.resolved_env_ttl,
                 should_log_values=self.log_secrets,
                 runtime_metadata=self.runtime_metadata,
                 config_locations=config_locations,
-                config_merge_strategy=config_merge_strategy,
+                merge_strategy=config_merge_strategy,
                 max_depth=config_resolution_depth,
                 env_var_prefix=env_var_prefix,
                 env_var_suffix=env_var_suffix,
