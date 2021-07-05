@@ -28,7 +28,7 @@ args = proc_wrapper.make_default_args()
 args.offline_mode = True
 args.status_update_interval = 5
 args.task_name = 'managed_call_test'
-proc_wrapper = ProcWrapper(args=args)
+proc_wrapper = ProcWrapper(params=args)
 
 proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
 

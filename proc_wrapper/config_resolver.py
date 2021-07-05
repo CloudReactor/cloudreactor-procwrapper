@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
 from .common_utils import coalesce, strip_after
 from .arg_parser import (
     DEFAULT_CONFIG_MERGE_STRATEGY,
-    DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH,
+    ConfigResolverParams
 )
 from .runtime_metadata import RuntimeMetadata
 
@@ -63,10 +63,6 @@ MIME_TYPE_TO_FORMAT = {
     'text/x-yaml': FORMAT_YAML,
 }
 
-DEFAULT_MAX_RESOLUTION_ITERATIONS = 3
-
-DEFAULT_ENV_VAR_NAME_FOR_CONFIG = 'TASK_CONFIG'
-DEFAULT_CONFIG_VAR_NAME_FOR_ENV = 'ENV'
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
@@ -404,12 +400,6 @@ class AwsS3SecretProvider(SecretProvider):
         )
 
 
-DEFAULT_RESOLVABLE_ENV_VAR_PREFIX = ''
-DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX = '_FOR_PROC_WRAPPER_TO_RESOLVE'
-DEFAULT_RESOLVABLE_CONFIG_VAR_PREFIX = ''
-DEFAULT_RESOLVABLE_CONFIG_VAR_SUFFIX = '__to_resolve'
-
-
 class CachedValueEntry(NamedTuple):
     string_value: Optional[str]
     parsed_value: Any
@@ -430,26 +420,12 @@ class ResolutionResult(NamedTuple):
     unresolved_var_names: List[str]
 
 
-class EnvResolver:
-    def __init__(self, cached_value_ttl_seconds: Optional[int] = None,
-            should_log_values: bool = False,
+class ConfigResolver:
+    def __init__(self,
+            params: ConfigResolverParams,
             runtime_metadata: Optional[RuntimeMetadata] = None,
-            should_overwrite_env_during_resolution: bool = False,
-            env_var_prefix: Optional[str] = None,
-            env_var_suffix: Optional[str] = None,
-            env_locations: List[str] = [],
-            config_var_prefix: Optional[str] = None,
-            config_var_suffix: Optional[str] = None,
-            config_locations: List[str] = [],
-            merge_strategy: Optional[str] = None,
-            max_depth: int = DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH,
-            max_resolution_iterations: int = DEFAULT_MAX_RESOLUTION_ITERATIONS,
-            should_fail_fast: bool = True,
-            env_var_name_for_config: Optional[str] = DEFAULT_ENV_VAR_NAME_FOR_CONFIG,
-            config_var_name_for_env: Optional[str] = DEFAULT_CONFIG_VAR_NAME_FOR_ENV,
             env_override: Optional[Mapping[str, Any]] = None) -> None:
-        self.cached_value_ttl_seconds = cached_value_ttl_seconds
-        self.should_log_values = should_log_values
+        self.params = params
         self.runtime_metadata = runtime_metadata
 
         # Dictionary from SECRET_PROVIDER_XXX constants to caches from lookup values
@@ -461,40 +437,24 @@ class EnvResolver:
         else:
             self.env = os.environ.copy()
 
-        self.should_overwrite_env_during_resolution = \
-                should_overwrite_env_during_resolution
-
-        self.env_var_prefix = cast(str, coalesce(env_var_prefix,
-                DEFAULT_RESOLVABLE_ENV_VAR_PREFIX))
-        self.env_var_prefix_length = len(self.env_var_prefix)
-        self.env_var_suffix = cast(str, coalesce(env_var_suffix,
-                DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX))
-        self.env_var_suffix_length = len(self.env_var_suffix)
-        self.env_locations = env_locations.copy()
-
-        self.config_var_prefix = cast(str, coalesce(config_var_prefix,
-                DEFAULT_RESOLVABLE_CONFIG_VAR_PREFIX))
-        self.config_var_prefix_length = len(self.config_var_prefix)
-        self.config_var_suffix = cast(str, coalesce(config_var_suffix,
-                DEFAULT_RESOLVABLE_CONFIG_VAR_SUFFIX))
-        self.config_var_suffix_length = len(self.config_var_suffix)
-        self.config_locations = config_locations.copy()
+        self.env_var_prefix_length = len(self.params.resolved_env_var_prefix)
+        self.env_var_suffix_length  = len(self.params.resolved_env_var_suffix)
+        self.config_var_prefix_length = len(self.params.resolved_config_var_prefix)
+        self.config_var_suffix_length = len(self.params.resolved_config_var_suffix)
 
         self.merge: Optional[Any] = None
         self.mergedeep_strategy: Optional[Any] = None
 
-        if not merge_strategy:
-            merge_strategy = DEFAULT_CONFIG_MERGE_STRATEGY
+        merge_strategy = DEFAULT_CONFIG_MERGE_STRATEGY
+
+        if params.config_merge_strategy:
+           merge_strategy = params.config_merge_strategy
 
         if merge_strategy != DEFAULT_CONFIG_MERGE_STRATEGY:
             import mergedeep # type: ignore
             self.merge = mergedeep.merge
             self.mergedeep_strategy = getattr(mergedeep.Strategy,
                     merge_strategy)
-
-        self.max_depth = max_depth
-        self.max_resolution_iterations = max_resolution_iterations
-        self.should_fail_fast = should_fail_fast
 
         self.plain_secret_provider = PlainSecretProvider()
 
@@ -503,15 +463,12 @@ class EnvResolver:
         self.secret_providers = [
             self.plain_secret_provider,
             EnvSecretProvider(),
-            ConfigSecretProvider(log_secrets=should_log_values),
+            ConfigSecretProvider(log_secrets=self.params.log_secrets),
             AwsSecretsManagerSecretProvider(aws_region_name=aws_region_name),
             AwsS3SecretProvider(),
             FileSecretProvider(value_prefix=FILE_URL_PREFIX),
             FileSecretProvider(value_prefix=''),
         ]
-
-        self.env_var_name_for_config = env_var_name_for_config
-        self.config_var_name_for_env = config_var_name_for_env
 
     def fetch_and_resolve_env(self) -> Tuple[Dict[str, str], List[str]]:
         env, failed_var_names, _c, _fcn = self.fetch_and_resolve_env_and_config(
@@ -539,7 +496,7 @@ class EnvResolver:
         """
         config, env = self.fetch_and_merge()
 
-        if self.max_depth <= 0:
+        if self.params.max_config_resolution_depth <= 0:
             _logger.debug('Not resolving variables, returning merged config')
             return (env, [], config, [])
 
@@ -549,7 +506,7 @@ class EnvResolver:
         failed_config_var_names: List[str] = []
 
         for epoch in range(2):
-            for iteration in range(self.max_resolution_iterations):
+            for iteration in range(self.params.max_config_resolution_iterations):
                 _logger.debug(f'Starting resolution iteration {iteration} of epoch {epoch} ...')
 
                 env_result = self.resolve_value(value=env, config=config,
@@ -558,7 +515,7 @@ class EnvResolver:
                 env = cast(Dict[str, Any], env_result.resolved_value)
                 failed_env_var_names = env_result.failed_var_names
 
-                if self.should_fail_fast and (len(failed_env_var_names) > 0):
+                if self.params.fail_fast_config_resolution and (len(failed_env_var_names) > 0):
                     _logger.warning(f"Failing fast after finding failed env vars: {failed_env_var_names}")
                     return (env, failed_env_var_names, config, failed_config_var_names)
 
@@ -570,7 +527,7 @@ class EnvResolver:
                 config = cast(Dict[str, Any], config_result.resolved_value)
                 failed_config_var_names = config_result.failed_var_names
 
-                if self.should_fail_fast and (len(failed_config_var_names) > 0):
+                if self.params.fail_fast_config_resolution and (len(failed_config_var_names) > 0):
                     _logger.warning(f"Failing fast after finding failed config vars: {failed_config_var_names}")
                     return (env, failed_env_var_names, config, failed_config_var_names)
 
@@ -580,30 +537,30 @@ class EnvResolver:
                         and (len(unresolved_config_var_names) == 0):
                     break
 
-            if iteration >= self.max_resolution_iterations:
+            if iteration >= self.params.max_config_resolution_iterations:
                 raise RuntimeError('Resolution iteration count of {iteration} exceeds maximum allowed')
 
             # If we want to prevent the environment from being overwritten,
             # re-merge the environment so it overrides everything, then
             # re-run resolution.
-            if (epoch > 0) or self.should_overwrite_env_during_resolution:
+            if (epoch > 0) or self.params.overwrite_env_during_resolution:
                 break
             else:
                 env.update(self.env)
 
         final_env: Dict[str, str] = {}
-        if want_env or self.config_var_name_for_env:
+        if want_env or self.params.config_var_name_for_env:
             final_env = self.flatten_env(env)
 
         env_for_config = final_env
 
-        if want_env and self.env_var_name_for_config:
-            if want_config and self.config_var_name_for_env:
+        if want_env and self.params.env_var_name_for_config:
+            if want_config and self.params.config_var_name_for_env:
                 env_for_config = final_env.copy()
-            final_env[self.env_var_name_for_config] = json.dumps(config)
+            final_env[self.params.env_var_name_for_config] = json.dumps(config)
 
-        if want_config and self.config_var_name_for_env:
-            config[self.config_var_name_for_env] = env_for_config
+        if want_config and self.params.config_var_name_for_env:
+            config[self.params.config_var_name_for_env] = env_for_config
 
         return (final_env, failed_env_var_names, config, failed_config_var_names)
 
@@ -631,7 +588,7 @@ class EnvResolver:
     def fetch_and_merge(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         merged_env: Dict[str, Any] = {}
 
-        for env_file_location in self.env_locations:
+        for env_file_location in self.params.env_locations:
             env = self.fetch_config_from_location(env_file_location,
                     default_format=FORMAT_DOTENV)
 
@@ -647,7 +604,7 @@ class EnvResolver:
         merged_env.update(self.env)
 
         merged_config: Dict[str, Any] = {}
-        for config_location in self.config_locations:
+        for config_location in self.params.config_locations:
             config = self.fetch_config_from_location(config_location,
                     default_format=FORMAT_JSON)
 
@@ -685,7 +642,7 @@ class EnvResolver:
             return self.resolve_dict(dict_value=dict_value,
                 config=config, env=env, is_env=is_env,
                 path=path, depth=depth)
-        elif issubclass(value_type, list) and (depth < self.max_depth):
+        elif issubclass(value_type, list) and (depth < self.params.max_config_resolution_depth):
             list_value = cast(List[Any], value)
             resolved_value = []
             for index, element in enumerate(list_value):
@@ -699,7 +656,7 @@ class EnvResolver:
                 failed_var_names.extend(inner_result.failed_var_names)
                 value = resolved_value
 
-                if self.should_fail_fast \
+                if self.params.fail_fast_config_resolution \
                         and (len(inner_result.failed_var_names) > 0):
                     return ResolutionResult(resolved_value=resolved_value,
                         resolved_var_names=resolved_var_names,
@@ -724,7 +681,7 @@ class EnvResolver:
         if depth == 0:
             target = 'environment' if is_env else 'configuration'
             _logger.debug(f'Starting secrets resolution of {target} ...')
-        elif depth >= self.max_depth:
+        elif depth >= self.params.max_config_resolution_depth:
             _logger.info(f'Reached max depth of {depth}, stopping further resolution')
             return ResolutionResult(resolved_value=dict_value,
                     resolved_var_names=[], failed_var_names=[],
@@ -736,23 +693,23 @@ class EnvResolver:
         unresolved_var_names: List[str] = []
 
         if is_env:
-            var_prefix = self.env_var_prefix
+            var_prefix = self.params.resolved_env_var_prefix
             var_prefix_length = self.env_var_prefix_length
-            var_suffix = self.env_var_suffix
+            var_suffix = self.params.resolved_env_var_suffix
             var_suffix_length = self.env_var_suffix_length
         else:
-            var_prefix = self.config_var_prefix
+            var_prefix = self.params.resolved_config_var_prefix
             var_prefix_length = self.config_var_prefix_length
-            var_suffix = self.config_var_suffix
+            var_suffix = self.params.resolved_config_var_suffix
             var_suffix_length = self.config_var_suffix_length
 
         for name, value in dict_value.items():
             var_name = name
-            inner_path = EnvResolver.qualify_path(path, var_name)
+            inner_path = ConfigResolver.qualify_path(path, var_name)
             if name.startswith(var_prefix) and name.endswith(var_suffix) \
                     and (type(value) is str):
                 var_name = name[var_prefix_length : -var_suffix_length]
-                inner_path = EnvResolver.qualify_path(path, var_name)
+                inner_path = ConfigResolver.qualify_path(path, var_name)
                 try:
                     _logger.debug(f"Resolving key '{var_name}' with value '{value}' ...")
                     var_name, var_value = self.resolve_var(name=var_name,
@@ -763,19 +720,19 @@ class EnvResolver:
                         continue
                     else:
                         value = var_value
-                        inner_path = EnvResolver.qualify_path(path, var_name)
+                        inner_path = ConfigResolver.qualify_path(path, var_name)
                         resolved_var_names.append(inner_path)
                 except ValueNotFoundException:
                     _logger.info(f"Variable '{var_name}' is unresolved")
                     unresolved_var_names.append(inner_path)
                 except Exception:
                     msg = f"Failed to resolve environment variable '{var_name}'"
-                    if self.should_log_values:
+                    if self.params.log_secrets:
                         msg += f" which had value '{value}'"
                     _logger.exception(msg)
                     failed_var_names.append(inner_path)
 
-                    if self.should_fail_fast:
+                    if self.params.fail_fast_config_resolution:
                         _logger.warning(f"Failing fast after {msg}")
                         return ResolutionResult(
                                 resolved_value=resolved_dict_value,
@@ -865,7 +822,7 @@ class EnvResolver:
 
         sp_name = secret_provider.name
 
-        if self.should_log_values:
+        if self.params.log_secrets:
             _logger.debug(f"Secret provider = '{sp_name}', name = '{name}', value = '{value}'")
 
         value_to_lookup = value
@@ -895,7 +852,7 @@ class EnvResolver:
                 cached_value_entry = cache.get(cache_key)
 
             if (cached_value_entry is None) \
-                    or cached_value_entry.is_stale(self.cached_value_ttl_seconds):
+                    or cached_value_entry.is_stale(self.params.config_ttl):
                 _logger.debug(f"Secret cache miss for '{cache_key}' from value '{value_to_lookup}' with provider {sp_name}")
             else:
                 string_value = cached_value_entry.string_value
@@ -920,7 +877,7 @@ class EnvResolver:
                     is_value_config_dict = issubclass(type(config_data), dict)
                     parsed_value = config_data or string_value
 
-        if self.should_log_values:
+        if self.params.log_secrets:
             _logger.debug(f"value_to_lookup = '{value_to_lookup}', resolved value = '{string_value}'")
 
         if cache is not None:
@@ -940,9 +897,9 @@ class EnvResolver:
 
         resolved_value = transform_value(parsed_value=parsed_value,
             string_value=string_value, transform_expr_str=transform_expr_str,
-            log_secrets=self.should_log_values)
+            log_secrets=self.params.log_secrets)
 
-        if self.should_log_values:
+        if self.params.log_secrets:
             _logger.debug(f"resolved var_name = '{var_name}', resolved_value = '{resolved_value}'")
 
         return (var_name, resolved_value)

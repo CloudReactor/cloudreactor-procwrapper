@@ -1,9 +1,9 @@
-from proc_wrapper.arg_parser import CONFIG_MERGE_STRATEGY_SHALLOW
+from proc_wrapper.arg_parser import CONFIG_MERGE_STRATEGY_SHALLOW, ConfigResolverParams
 from typing import Any, Dict, Optional
 
 import logging
 import json
-from proc_wrapper.env_resolver import DEFAULT_FORMAT_SEPARATOR
+from proc_wrapper.config_resolver import DEFAULT_FORMAT_SEPARATOR
 import yaml
 
 import pytest
@@ -13,7 +13,7 @@ import boto3
 
 from moto import mock_secretsmanager, mock_s3
 
-from proc_wrapper import EnvResolver
+from proc_wrapper import ConfigResolver
 
 FORMAT_METHOD_EXTENSION = 'extension'
 FORMAT_METHOD_CONTENT_TYPE = 'content_type'
@@ -44,7 +44,8 @@ def test_resolve_env_from_plaintext_with_json_path(format: str):
         value += DEFAULT_FORMAT_SEPARATOR + format
 
     env_override['SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = value + '|JP:$.a'
-    resolver = EnvResolver(env_override=env_override)
+    params = ConfigResolverParams()
+    resolver = ConfigResolver(params=params, env_override=env_override)
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env['SOME_ENV'] == 'bug'
     assert bad_vars == []
@@ -80,14 +81,18 @@ def put_aws_s3_file(s3_client, name: str, value: str,
 def test_env_in_aws_secrets_manager():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
 
+    params = ConfigResolverParams()
+
     with mock_secretsmanager():
         sm = boto3.client('secretsmanager', region_name='us-east-2')
         secret_arn = put_aws_sm_secret(sm, 'envs', """
             USERNAME=theuser
             PASSWORD=thepass
         """)
-        resolver = EnvResolver(env_override=env_override,
-            env_locations=[secret_arn])
+
+        params.env_locations = [secret_arn]
+
+        resolver = ConfigResolver(params=params, env_override=env_override)
 
         resolved_env, bad_vars = resolver.fetch_and_resolve_env()
         assert resolved_env['USERNAME'] == 'theuser'
@@ -120,6 +125,8 @@ def test_yaml_config_in_aws_s3(format_method_suffix: Optional[str],
 
     yaml_string = yaml.dump(h)
 
+    params = ConfigResolverParams()
+
     with mock_s3():
         s3_client = boto3.client('s3', region_name='us-east-2')
 
@@ -136,8 +143,10 @@ def test_yaml_config_in_aws_s3(format_method_suffix: Optional[str],
         if format_method_suffix:
             location = s3_arn + '!' + format_method_suffix
 
-        resolver = EnvResolver(env_override=env_override,
-                config_locations=[location])
+        params.config_locations = [location]
+
+        resolver = ConfigResolver(params=params,
+                env_override=env_override)
 
         resolved_config, bad_vars = resolver.fetch_and_resolve_config()
         assert resolved_config['db']['username'] == 'yuser'
@@ -168,8 +177,10 @@ def test_json_config_file(prefix: str, filename: str,
     if format_method_suffix:
         location += DEFAULT_FORMAT_SEPARATOR + format_method_suffix
 
-    resolver = EnvResolver(env_override=env_override,
-            env_locations=[location])
+    params = ConfigResolverParams()
+    params.env_locations = [location]
+
+    resolver = ConfigResolver(params=params, env_override=env_override)
 
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env['animal'] == 'dog'
@@ -192,11 +203,10 @@ def test_json_config_file(prefix: str, filename: str,
 )
 def test_env_merging(merge_strategy: str, dimensions: Dict[str, Any]):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
-
-    env_locations = ['tests/data/config.json', 'tests/data/test.env']
-
-    resolver = EnvResolver(env_override=env_override,
-            env_locations=env_locations, merge_strategy=merge_strategy)
+    params = ConfigResolverParams()
+    params.env_locations = ['tests/data/config.json', 'tests/data/test.env']
+    params.config_merge_strategy = merge_strategy
+    resolver = ConfigResolver(params=params, env_override=env_override)
 
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env['animal'] == 'cat'
@@ -213,6 +223,7 @@ def test_env_merging(merge_strategy: str, dimensions: Dict[str, Any]):
 ])
 def test_resolve_env_with_aws_secrets_manager(prefix: str):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
+    params = ConfigResolverParams()
 
     with mock_secretsmanager():
         sm = boto3.client('secretsmanager', region_name='us-east-2')
@@ -224,7 +235,7 @@ def test_resolve_env_with_aws_secrets_manager(prefix: str):
 
         env_override[prefix + 'ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = secret_arn
 
-        resolver = EnvResolver(env_override=env_override)
+        resolver = ConfigResolver(params=params, env_override=env_override)
         resolved_env, bad_vars = resolver.fetch_and_resolve_env()
         assert resolved_env['SOME_ENV'] == 'Secret PW'
         assert resolved_env['ANOTHER_ENV'] == 'Secret PW 2'
@@ -235,8 +246,9 @@ def test_resolve_env_with_env_reference():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override['ENV_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = 'ANOTHER_VAR'
     env_override['ANOTHER_VAR'] = 'env resolution works'
+    params = ConfigResolverParams()
 
-    resolver = EnvResolver(env_override=env_override)
+    resolver = ConfigResolver(params=params, env_override=env_override)
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env['SOME_ENV'] == 'env resolution works'
     assert bad_vars == []
@@ -246,8 +258,9 @@ def test_resolve_env_with_env_reference_and_json_path():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override['ENV_SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE'] = 'ANOTHER_VAR|JP:$.password'
     env_override['ANOTHER_VAR'] = '{"password": "foobar"}'
+    params = ConfigResolverParams()
 
-    resolver = EnvResolver(env_override=env_override)
+    resolver = ConfigResolver(params=params, env_override=env_override)
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env['SOME_ENV'] == 'foobar'
     assert bad_vars == []

@@ -532,20 +532,20 @@ dependencies. To run a task you want to be monitored:
     from typing import Any, Dict, Mapping
 
     import proc_wrapper
-    from proc_wrapper import ProcWrapper
+    from proc_wrapper import ProcWrapper, ProcWrapperParams
 
 
     def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
-            config: Mapping[str, str]) -> int:
+            config: Mapping[str, Any]) -> int:
         print(cbdata)
         return cbdata['a']
 
-    args = proc_wrapper.make_default_args()
-    args.auto_create_task = True
-    args.auto_create_run_environment_name = 'production'
-    args.task_name = 'embedded_test'
-    args.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
-    proc_wrapper = ProcWrapper(args=args)
+    params = ProcWrapperParams()
+    params.auto_create_task = True
+    params.auto_create_run_environment_name = 'production'
+    params.task_name = 'embedded_test'
+    params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+    proc_wrapper = ProcWrapper(params=params)
     x = proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
     # Should print 1
     print(x)
@@ -710,7 +710,7 @@ In embedded mode, your callback in python code can use the wrapper instance to s
     from proc_wrapper import ProcWrapper
 
     def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
-            config: Mapping[str, str]) -> int:
+            config: Mapping[str, Any]) -> int:
         wrapper.send_update(status_message='Starting the fun ...')
 
         for i in range(100):
@@ -729,12 +729,12 @@ In embedded mode, your callback in python code can use the wrapper instance to s
 
         return cbdata['a']
 
-    args = proc_wrapper.make_default_args()
-    args.auto_create_task = True
-    args.auto_create_run_environment_name = 'production'
-    args.task_name = 'embedded_test'
-    args.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
-    proc_wrapper = ProcWrapper(args=args)
+    params = ProcWrapperParams()
+    params.auto_create_task = True
+    params.auto_create_run_environment_name = 'production'
+    params.task_name = 'embedded_test'
+    params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+    proc_wrapper = ProcWrapper(params=params)
     proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
 
 ## Example Project

@@ -1,4 +1,4 @@
-from proc_wrapper.runtime_metadata import fetch_ecs_container_metadata
+from proc_wrapper import RuntimeMetadataFetcher
 
 from pytest_httpserver import HTTPServer
 
@@ -21,7 +21,9 @@ def test_ecs_runtime_metadata(httpserver: HTTPServer):
             method='GET', headers=ACCEPT_JSON_HEADERS) \
             .respond_with_handler(ecs_metadata_handler)
 
-    metadata = fetch_ecs_container_metadata(env=env)
+    fetcher = RuntimeMetadataFetcher()
+
+    metadata = fetcher.fetch(env=env)
 
     assert metadata is not None
 

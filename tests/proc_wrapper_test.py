@@ -1,11 +1,17 @@
-from typing import Dict
+from typing import Dict, Mapping
+
 from urllib.parse import quote_plus
 
 import pytest
 
 from pytest_httpserver import HTTPServer
 
-from proc_wrapper import ProcWrapper, make_arg_parser
+from proc_wrapper import (
+    ConfigResolver,
+    ProcWrapper, ProcWrapperParams,
+    RuntimeMetadataFetcher,
+    make_arg_parser
+)
 
 from .test_commons import (
     ACCEPT_JSON_HEADERS, TEST_ECS_TASK_METADATA,
@@ -30,6 +36,26 @@ RESOLVE_ENV_BASE_ENV = {
     'PROC_WRAPPER_SECRETS_AWS_REGION': 'us-east-2',
 }
 
+def make_wrapped_mode_proc_wrapper(env: Mapping[str, str]) -> ProcWrapper:
+    main_parser = make_arg_parser(require_command=True)
+    params = main_parser.parse_args(args=['echo'], namespace=ProcWrapperParams(
+        embedded_mode=False))
+    runtime_metadata_fetcher = RuntimeMetadataFetcher()
+    runtime_metadata = runtime_metadata_fetcher.fetch(env=env)
+    params.override_resolver_params_from_env(env=env)
+
+    config_resolver = ConfigResolver(params=params,
+        runtime_metadata=runtime_metadata,
+        env_override=env)
+
+    resolved_env, _failed_var_names = config_resolver.fetch_and_resolve_env()
+
+    params.override_proc_wrapper_params_from_env(resolved_env,
+            mutable_only=False, runtime_metadata=runtime_metadata)
+
+    return ProcWrapper(params=params,
+            runtime_metadata_fetcher=runtime_metadata_fetcher,
+            config_resolver=config_resolver)
 
 def make_online_base_env(port: int) -> Dict[str, str]:
     return {
@@ -48,14 +74,12 @@ def make_online_base_env(port: int) -> Dict[str, str]:
 
 
 def test_wrapped_offline_mode():
-    args = make_arg_parser().parse_args(['echo'])
-
     env_override = {
         'PROC_WRAPPER_LOG_LEVEL': 'DEBUG',
         'PROC_WRAPPER_OFFLINE_MODE': 'TRUE',
     }
-    wrapper = ProcWrapper(args=args, env_override=env_override,
-            embedded_mode=False)
+
+    wrapper = make_wrapped_mode_proc_wrapper(env=env_override)
     wrapper.run()
 
 
@@ -79,9 +103,7 @@ def test_wrapped_mode_with_server(httpserver: HTTPServer):
             method='PATCH', headers=CLIENT_HEADERS) \
             .respond_with_handler(update_handler)
 
-    args = make_arg_parser().parse_args(['echo'])
-    wrapper = ProcWrapper(args=args, env_override=env_override,
-            embedded_mode=False)
+    wrapper = make_wrapped_mode_proc_wrapper(env=env_override)
     wrapper.run()
 
     httpserver.check_assertions()
@@ -193,9 +215,7 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
             method='PATCH', headers=CLIENT_HEADERS) \
             .respond_with_handler(update_handler)
 
-    args = make_arg_parser().parse_args(['echo'])
-    wrapper = ProcWrapper(args=args, env_override=env_override,
-            embedded_mode=False)
+    wrapper = make_wrapped_mode_proc_wrapper(env_override)
     wrapper.run()
 
     httpserver.check_assertions()
@@ -252,9 +272,8 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
             method='PATCH', headers=CLIENT_HEADERS) \
             .respond_with_handler(update_handler)
 
-    args = make_arg_parser().parse_args(['echo'])
-    wrapper = ProcWrapper(args=args, env_override=env_override,
-            embedded_mode=False)
+
+    wrapper = make_wrapped_mode_proc_wrapper(env_override)
     wrapper.run()
 
     httpserver.check_assertions()
@@ -272,17 +291,3 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
 
     emc = task_dict.get('execution_method_capability')
     assert emc['type'] == 'Unknown'
-
-
-def test_rollbar_config():
-    env_override = RESOLVE_ENV_BASE_ENV.copy()
-    env_override['PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN'] = 'rbtoken'
-    env_override['PROC_WRAPPER_ROLLBAR_RETRIES'] = '3'
-    env_override['PROC_WRAPPER_ROLLBAR_RETRY_DELAY_SECONDS'] = '10'
-    env_override['PROC_WRAPPER_ROLLBAR_RETRY_TIMEOUT_SECONDS'] = '30'
-    wrapper = ProcWrapper(env_override=env_override)
-    assert wrapper.rollbar_access_token == 'rbtoken'
-    assert wrapper.rollbar_retries == 3
-    assert wrapper.rollbar_retry_delay == 10
-    assert wrapper.rollbar_timeout == 30
-    assert wrapper.rollbar_retries_exhausted is False
