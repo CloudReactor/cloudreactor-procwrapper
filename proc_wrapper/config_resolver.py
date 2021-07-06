@@ -437,10 +437,10 @@ class ConfigResolver:
         else:
             self.env = os.environ.copy()
 
-        self.env_var_prefix_length = len(self.params.resolved_env_var_prefix)
-        self.env_var_suffix_length  = len(self.params.resolved_env_var_suffix)
-        self.config_var_prefix_length = len(self.params.resolved_config_var_prefix)
-        self.config_var_suffix_length = len(self.params.resolved_config_var_suffix)
+        self.env_var_prefix_length = len(self.params.resolved_env_var_name_prefix)
+        self.env_var_suffix_length  = len(self.params.resolved_env_var_name_suffix)
+        self.config_var_prefix_length = len(self.params.resolved_config_property_name_prefix)
+        self.config_var_suffix_length = len(self.params.resolved_config_property_name_suffix)
 
         self.merge: Optional[Any] = None
         self.mergedeep_strategy: Optional[Any] = None
@@ -549,18 +549,18 @@ class ConfigResolver:
                 env.update(self.env)
 
         final_env: Dict[str, str] = {}
-        if want_env or self.params.config_var_name_for_env:
+        if want_env or self.params.config_property_name_for_env:
             final_env = self.flatten_env(env)
 
         env_for_config = final_env
 
         if want_env and self.params.env_var_name_for_config:
-            if want_config and self.params.config_var_name_for_env:
+            if want_config and self.params.config_property_name_for_env:
                 env_for_config = final_env.copy()
             final_env[self.params.env_var_name_for_config] = json.dumps(config)
 
-        if want_config and self.params.config_var_name_for_env:
-            config[self.params.config_var_name_for_env] = env_for_config
+        if want_config and self.params.config_property_name_for_env:
+            config[self.params.config_property_name_for_env] = env_for_config
 
         return (final_env, failed_env_var_names, config, failed_config_var_names)
 
@@ -693,14 +693,14 @@ class ConfigResolver:
         unresolved_var_names: List[str] = []
 
         if is_env:
-            var_prefix = self.params.resolved_env_var_prefix
+            var_prefix = self.params.resolved_env_var_name_prefix
             var_prefix_length = self.env_var_prefix_length
-            var_suffix = self.params.resolved_env_var_suffix
+            var_suffix = self.params.resolved_env_var_name_suffix
             var_suffix_length = self.env_var_suffix_length
         else:
-            var_prefix = self.params.resolved_config_var_prefix
+            var_prefix = self.params.resolved_config_property_name_prefix
             var_prefix_length = self.config_var_prefix_length
-            var_suffix = self.params.resolved_config_var_suffix
+            var_suffix = self.params.resolved_config_property_name_suffix
             var_suffix_length = self.config_var_suffix_length
 
         for name, value in dict_value.items():

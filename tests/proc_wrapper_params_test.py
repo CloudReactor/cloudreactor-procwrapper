@@ -1,10 +1,4 @@
-from typing import Dict, Mapping
-
-from urllib.parse import quote_plus
-
-import pytest
-
-from pytest_httpserver import HTTPServer
+from typing import Mapping
 
 from proc_wrapper import (
     ConfigResolver,

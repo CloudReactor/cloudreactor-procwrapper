@@ -261,8 +261,9 @@ class ProcWrapper:
 
 
         runtime_metadata: Optional[RuntimeMetadata] = None
-        if not self.params.no_send_runtime_metadata:
-            runtime_metadata = self.runtime_metadata_fetcher.fetch(self.resolved_env)
+        if self.params.send_runtime_metadata:
+            runtime_metadata = self.runtime_metadata_fetcher.fetch(
+                env=self.resolved_env)
 
         try:
             url = f"{self.params.api_base_url}/api/v1/task_executions/"
@@ -352,7 +353,7 @@ class ProcWrapper:
                 task_dict['run_environment'] = run_env_dict
 
                 task_emc: Optional[Dict[str, Any]] = None
-                if (not self.params.no_send_runtime_metadata) and runtime_metadata:
+                if self.params.send_runtime_metadata and runtime_metadata:
                     task_emc = runtime_metadata.execution_method_capability
 
                 if self.params.auto_create_task_props:
@@ -379,7 +380,7 @@ class ProcWrapper:
                 body['other_instance_metadata'] = self.params.task_instance_metadata
 
             execution_method: Optional[Dict[str, Any]] = None
-            if (not self.params.no_send_runtime_metadata) and runtime_metadata:
+            if self.params.send_runtime_metadata and runtime_metadata:
                 execution_method = runtime_metadata.execution_method
 
             if self.params.execution_method_props:

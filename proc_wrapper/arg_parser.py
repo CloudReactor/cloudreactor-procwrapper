@@ -28,14 +28,14 @@ DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS = 1800
 
 CONFIG_MERGE_STRATEGY_SHALLOW = 'SHALLOW'
 DEFAULT_CONFIG_MERGE_STRATEGY = CONFIG_MERGE_STRATEGY_SHALLOW
-DEFAULT_MAX_RESOLUTION_ITERATIONS = 3
-DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH = 5
+DEFAULT_MAX_CONFIG_RESOLUTION_ITERATIONS = 3
+DEFAULT_MAX_CONFIG_RESOLUTION_DEPTH = 5
 DEFAULT_ENV_VAR_NAME_FOR_CONFIG = 'TASK_CONFIG'
 DEFAULT_CONFIG_VAR_NAME_FOR_ENV = 'ENV'
-DEFAULT_RESOLVABLE_ENV_VAR_PREFIX = ''
-DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX = '_FOR_PROC_WRAPPER_TO_RESOLVE'
-DEFAULT_RESOLVABLE_CONFIG_VAR_PREFIX = ''
-DEFAULT_RESOLVABLE_CONFIG_VAR_SUFFIX = '__to_resolve'
+DEFAULT_RESOLVABLE_ENV_VAR_NAME_PREFIX = ''
+DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX = '_FOR_PROC_WRAPPER_TO_RESOLVE'
+DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX = ''
+DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX = '__to_resolve'
 
 
 DEFAULT_STATUS_UPDATE_SOCKET_PORT = 2373
@@ -63,16 +63,17 @@ class ConfigResolverParams:
         self.config_locations: List[str] = []
         self.config_merge_strategy: str = CONFIG_MERGE_STRATEGY_SHALLOW
         self.overwrite_env_during_resolution: bool = False
+        self.max_config_resolution_depth: int = DEFAULT_MAX_CONFIG_RESOLUTION_DEPTH
+        self.max_config_resolution_iterations: int = DEFAULT_MAX_CONFIG_RESOLUTION_ITERATIONS
         self.config_ttl: Optional[int] = None
-        self.resolved_env_var_prefix: str = DEFAULT_RESOLVABLE_ENV_VAR_PREFIX
-        self.resolved_env_var_suffix: str = DEFAULT_RESOLVABLE_ENV_VAR_SUFFIX
-        self.resolved_config_var_prefix: str = DEFAULT_RESOLVABLE_CONFIG_VAR_PREFIX
-        self.resolved_config_var_suffix: str = DEFAULT_RESOLVABLE_CONFIG_VAR_SUFFIX
-        self.max_config_resolution_depth: int = DEFAULT_CONFIG_RESOLUTION_MAX_DEPTH
-        self.max_config_resolution_iterations: int = DEFAULT_MAX_RESOLUTION_ITERATIONS
         self.fail_fast_config_resolution: bool = True
+        self.resolved_env_var_name_prefix: str = DEFAULT_RESOLVABLE_ENV_VAR_NAME_PREFIX
+        self.resolved_env_var_name_suffix: str = DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX
+        self.resolved_config_property_name_prefix: str = DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX
+        self.resolved_config_property_name_suffix: str = DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX
+
         self.env_var_name_for_config: Optional[str] = DEFAULT_ENV_VAR_NAME_FOR_CONFIG
-        self.config_var_name_for_env: Optional[str] = DEFAULT_CONFIG_VAR_NAME_FOR_ENV
+        self.config_property_name_for_env: Optional[str] = DEFAULT_CONFIG_VAR_NAME_FOR_ENV
 
     def override_resolver_params_from_env(self, env: Dict[str, str]) -> None:
         self.log_secrets = string_to_bool(
@@ -89,57 +90,65 @@ class ConfigResolverParams:
             self.config_locations = self.split_location_string(
                     config_locations_in_env)
 
-        self.overwrite_env_during_resolution = string_to_bool(
-                env.get('PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS'),
-                default_value=self.overwrite_env_during_resolution) or False
-
         self.config_merge_strategy = env.get(
                 'PROC_WRAPPER_CONFIG_MERGE_STRATEGY',
                 self.config_merge_strategy)
 
-        self.config_ttl = string_to_int(
-                env.get('PROC_WRAPPER_CONFIG_TTL_SECONDS'),
-                default_value=self.config_ttl)
-
-        self.resolved_env_var_prefix = coalesce(
-                env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_PREFIX'),
-                self.resolved_env_var_prefix)
-
-        self.resolved_env_var_suffix = coalesce(
-                env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_SUFFIX'),
-                self.resolved_env_var_suffix)
-
-        self.resolved_config_var_prefix = coalesce(
-                env.get('PROC_WRAPPER_RESOLVABLE_CONFIG_VAR_PREFIX'),
-                self.resolved_config_var_prefix)
-
-        self.resolved_config_var_suffix = coalesce(
-                env.get('PROC_WRAPPER_RESOLVABLE_CONFIG_VAR_SUFFIX'),
-                self.resolved_config_var_suffix)
-
-        max_config_resolution_depth = self.max_config_resolution_depth
+        self.overwrite_env_during_resolution = string_to_bool(
+                env.get('PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS'),
+                default_value=self.overwrite_env_during_resolution) or False
 
         should_resolve_secrets = string_to_bool(
                 env.get('PROC_WRAPPER_RESOLVE_SECRETS'), False)
 
         if not should_resolve_secrets:
             _logger.debug('Secrets resolution is disabled.')
-            max_config_resolution_depth = 0
+            self.max_config_resolution_depth = 0
+            self.max_config_resolution_iterations = 0
         else:
-            max_config_resolution_depth = coalesce(string_to_int(
+            self.max_config_resolution_depth = coalesce(string_to_int(
                     env.get('PROC_WRAPPER_MAX_CONFIG_RESOLUTION_DEPTH'),
-                    negative_value=0), max_config_resolution_depth)
+                    negative_value=0), self.max_config_resolution_depth) or 0
+            self.max_config_resolution_iterations = string_to_int(
+                    env.get('PROC_WRAPPER_MAX_CONFIG_RESOLUTION_ITERATIONS'),
+                    negative_value=0,
+                    default_value=self.max_config_resolution_iterations) or 0
 
-        self.max_config_resolution_depth = max_config_resolution_depth
+        self.config_ttl = string_to_int(
+                env.get('PROC_WRAPPER_CONFIG_TTL_SECONDS'),
+                default_value=self.config_ttl)
 
-        self.max_config_resolution_iterations = coalesce(string_to_int(
-                env.get('PROC_WRAPPER_MAX_CONFIG_RESOLUTION_ITERATIONS'),
-                negative_value=0),
-                self.max_config_resolution_iterations)
+        self.fail_fast_config_resolution = string_to_bool(
+                env.get('PROC_WRAPPER_FAIL_FAST_CONFIG_RESOLUTION'),
+                default_value=self.fail_fast_config_resolution) or False
+
+        self.resolved_env_var_name_prefix = coalesce(
+                env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_PREFIX'),
+                self.resolved_env_var_name_prefix) or ''
+
+        self.resolved_env_var_name_suffix = coalesce(
+                env.get('PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_SUFFIX'),
+                self.resolved_env_var_name_suffix) or ''
+
+        self.resolved_config_property_name_prefix = coalesce(
+                env.get('PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX'),
+                self.resolved_config_property_name_prefix) or ''
+
+        self.resolved_config_property_name_suffix = coalesce(
+                env.get('PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX'),
+                self.resolved_config_property_name_suffix) or ''
 
         self.fail_fast_config_resolution = coalesce(string_to_bool(
                 env.get('PROC_WRAPPER_FAIL_FAST_CONFIG_RESOLUTION')),
                 self.fail_fast_config_resolution)
+
+        self.env_var_name_for_config = coalesce(
+                env.get('PROC_WRAPPER_ENV_VAR_NAME_FOR_CONFIG'),
+                self.env_var_name_for_config)
+
+        self.config_property_name_for_env = coalesce(
+                env.get('PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR'),
+                self.config_property_name_for_env)
 
     def log_configuration(self) -> None:
         _logger.debug(f"Log secrets = {self.log_secrets}")
@@ -148,15 +157,15 @@ class ConfigResolverParams:
         _logger.debug(f"Config merge strategy = {self.config_merge_strategy}")
         _logger.debug(f"Overwrite env during resolution = {self.overwrite_env_during_resolution}")
         _logger.debug(f"Config TTL = {self.config_ttl}")
-        _logger.debug(f"Resolved env var prefix = '{self.resolved_env_var_prefix}'")
-        _logger.debug(f"Resolved env var suffix = '{self.resolved_env_var_suffix}'")
-        _logger.debug(f"Resolved config var prefix = '{self.resolved_config_var_prefix}'")
-        _logger.debug(f"Resolved config var suffix = '{self.resolved_config_var_suffix}'")
+        _logger.debug(f"Resolved env var name prefix = '{self.resolved_env_var_name_prefix}'")
+        _logger.debug(f"Resolved env var name suffix = '{self.resolved_env_var_name_suffix}'")
+        _logger.debug(f"Resolved config property name prefix = '{self.resolved_config_property_name_prefix}'")
+        _logger.debug(f"Resolved config property name suffix = '{self.resolved_config_property_name_suffix}'")
         _logger.debug(f"Max config resolution depth = {self.max_config_resolution_depth}")
         _logger.debug(f"Max config resolution iterations = {self.max_config_resolution_iterations}")
         _logger.debug(f"Fail fast config resolution = {self.fail_fast_config_resolution}")
         _logger.debug(f"Env var name for config = '{self.env_var_name_for_config}'")
-        _logger.debug(f"Config var name for config = '{self.config_var_name_for_env}'")
+        _logger.debug(f"Config var property for env = '{self.config_property_name_for_env}'")
 
     def split_location_string(self, locations: str) -> List[str]:
         # Use , or ; to split locations, except they may be escaped by
@@ -215,7 +224,7 @@ class ProcWrapperParams(ConfigResolverParams):
         self.api_request_timeout: Optional[int] = None
         self.send_pid: bool = False
         self.send_hostname: bool = False
-        self.no_send_runtime_metadata: bool = False
+        self.send_runtime_metadata: bool = True
 
         self.command: Optional[List[str]] = None
         self.work_dir: str = '.'
@@ -717,9 +726,9 @@ class ProcWrapperParams(ConfigResolverParams):
                 env.get('PROC_WRAPPER_SEND_HOSTNAME'),
                 default_value=self.send_hostname) or False
 
-        self.no_send_runtime_metadata = string_to_bool(
+        self.send_runtime_metadata = string_to_bool(
                 env.get('PROC_WRAPPER_SEND_RUNTIME_METADATA'),
-                default_value=self.no_send_runtime_metadata) or False
+                default_value=self.send_runtime_metadata) or False
 
 
 def json_encoded(s: str):
@@ -865,7 +874,8 @@ Timeout for contacting API server, in seconds. Defaults to
             help='Send the process ID to the API server')
     api_group.add_argument('--send-hostname', action='store_true',
             help='Send the hostname to the API server')
-    api_group.add_argument('--no-send-runtime-metadata', action='store_true',
+    api_group.add_argument('--no-send-runtime-metadata', action='store_false',
+            dest='send_runtime_metadata',
             help='Do not send metadata about the runtime environment')
 
     log_group = parser.add_argument_group('log', 'Logging settings')
@@ -953,16 +963,59 @@ Defaults to {DEFAULT_CONFIG_MERGE_STRATEGY}, which does not require mergedeep.
 All other strategies require the mergedeep python package to be installed.
             """)
 
-    config_group.add_argument('--config-ttl',
-            help="""
-Number of seconds to cache resolved environment variables
-and configuration instead of refreshing them when a process restarts. -1 means
-to never refresh. Defaults to -1.""")
-
     config_group.add_argument('--overwrite_env_during_resolution',
             action='store_true',
             help="""
 Do not overwrite existing environment variables when resolving them""")
+
+    config_group.add_argument('--config-ttl',
+            help="""
+Number of seconds to cache resolved environment variables and configuration
+properties instead of refreshing them when a process restarts. -1 means
+to never refresh. Defaults to -1.""")
+
+    config_group.add_argument('--no-fail-fast-config-resolution',
+            action='store_false', dest='fail_fast_config_resolution',
+            help="""
+Exit immediately if an error occurs resolving the configuration""")
+
+    config_group.add_argument('--resolved-env-var-name-prefix',
+            default=DEFAULT_RESOLVABLE_ENV_VAR_NAME_PREFIX,
+            help=f"""
+Required prefix for names of environment variables that should resolved.
+The prefix will be removed in the resolved variable name.
+Defaults to '{DEFAULT_RESOLVABLE_ENV_VAR_NAME_PREFIX}'.""")
+
+    config_group.add_argument('--resolved-env-var-name-suffix',
+            default=DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX,
+            help=f"""
+Required suffix for names of environment variables that should resolved.
+The suffix will be removed in the resolved variable name.
+Defaults to '{DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX}'.""")
+
+    config_group.add_argument('--resolved-config-property-name-prefix',
+            default=DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX,
+            help=f"""
+Required prefix for names of configuration properties that should resolved.
+The prefix will be removed in the resolved property name.
+Defaults to '{DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX}'.""")
+
+    config_group.add_argument('--resolved-config-property-name-suffix',
+            default=DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX,
+            help=f"""
+Required suffix for names of configuration properties that should resolved.
+The suffix will be removed in the resolved property name.
+Defaults to '{DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX}'.""")
+
+    config_group.add_argument('--env-var-name-for-config',
+            help=f"""
+The name of the environment variable used to set to the value of the
+JSON encoded configuration. Defaults to not setting any environment variable.""")
+
+    config_group.add_argument('--config-property-name-for-env',
+            help=f"""
+The name of the configuration property used to set to the value of the
+JSON encoded environment. Defaults to not setting any property.""")
 
     rollbar_group = parser.add_argument_group('rollbar', 'Rollbar settings')
     rollbar_group.add_argument('--rollbar-access-token',
