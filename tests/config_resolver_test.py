@@ -1,4 +1,4 @@
-from proc_wrapper.arg_parser import CONFIG_MERGE_STRATEGY_SHALLOW, ConfigResolverParams
+from proc_wrapper import CONFIG_MERGE_STRATEGY_SHALLOW, ConfigResolverParams
 from typing import Any, Dict, Optional
 
 import logging

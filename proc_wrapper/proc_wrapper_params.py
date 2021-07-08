@@ -207,7 +207,7 @@ class ConfigResolverParams:
         # when a location contains "\," or "\;".
         return [location.replace(r'\,', ',') \
                 .replace(r'\;', ';').replace(r'\\\\', r'\\') for location in \
-                re.split('\s*(?<!(?<!\\)\\)[,;]\s*', locations)]
+                re.split(r'\s*(?<!(?<!\\)\\)[,;]\s*', locations)]
 
 class ProcWrapperParams(ConfigResolverParams):
     def __init__(self, embedded_mode: bool=True):

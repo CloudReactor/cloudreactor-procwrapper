@@ -2,7 +2,8 @@ __version__ = "2.1.1"
 
 
 from .proc_wrapper import ProcWrapper  # noqa: F401
-from .arg_parser import (
+from .proc_wrapper_params import (
+    CONFIG_MERGE_STRATEGY_SHALLOW,
     make_arg_parser,
     ConfigResolverParams,
     ProcWrapperParams  # noqa: F401

@@ -40,7 +40,7 @@ from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
 from .common_utils import string_to_bool, encode_int
-from .arg_parser import (
+from .proc_wrapper_params import (
     ProcWrapperParamValidationErrors,
     ProcWrapperParams
 )

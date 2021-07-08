@@ -6,7 +6,7 @@ import time
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
 
 from .common_utils import coalesce, strip_after
-from .arg_parser import (
+from .proc_wrapper_params import (
     DEFAULT_CONFIG_MERGE_STRATEGY,
     ConfigResolverParams
 )
