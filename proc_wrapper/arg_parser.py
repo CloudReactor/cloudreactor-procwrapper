@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, NamedTuple, Optional, cast
 
 import logging
 import argparse
@@ -54,6 +54,39 @@ UNSET_INT_VALUE = -1000000
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
+
+class ProcWrapperParamValidationErrors(NamedTuple):
+    process_errors: Dict[str, List[str]]
+    process_warnings: Dict[str, List[str]]
+    task_errors: Dict[str, List[str]]
+    task_warnings: Dict[str, List[str]]
+
+    def log(self):
+        if len(self.process_errors) > 0:
+            _logger.error(f'proc_wrapper param process errors = {self.process_errors}')
+        else:
+            _logger.debug(f'No proc_wrapper param process errors')
+
+        if len(self.process_warnings) > 0:
+            _logger.error(f'proc_wrapper param process warnings = {self.process_warnings}')
+        else:
+            _logger.debug(f'No proc_wrapper param process warnings')
+
+        if len(self.task_errors) > 0:
+            _logger.error(f'proc_wrapper param Task errors = {self.task_errors}')
+        else:
+            _logger.debug(f'No proc_wrapper param Task errors')
+
+        if len(self.task_warnings) > 0:
+            _logger.error(f'proc_wrapper param Task warnings = {self.task_warnings}')
+        else:
+            _logger.debug(f'No proc_wrapper param Task warnings')
+
+    def can_start_process(self) -> bool:
+        return len(self.process_errors) == 0
+
+    def can_start_task_execution(self) -> bool:
+        return len(self.task_errors) == 0
 
 
 class ConfigResolverParams:
@@ -251,12 +284,77 @@ class ProcWrapperParams(ConfigResolverParams):
             mutable_only: bool = False,
             runtime_metadata: Optional[RuntimeMetadata] = None) -> None:
         if not mutable_only:
-            self.override_immutable_from_env(env,
+            self._override_immutable_from_env(env,
                     runtime_metadata=runtime_metadata)
 
-        self.override_mutable_from_env(env)
+        self._override_mutable_from_env(env)
+
+    def validation_errors(self,
+            runtime_metadata: Optional[RuntimeMetadata] = None) \
+            -> ProcWrapperParamValidationErrors:
+        process_errors: Dict[str, List[str]] = {}
+        process_warnings: Dict[str, List[str]] = {}
+        task_errors: Dict[str, List[str]] = {}
+        task_warnings: Dict[str, List[str]] = {}
+
+        errors = ProcWrapperParamValidationErrors(process_errors=process_errors,
+                process_warnings=process_warnings,
+                task_errors=task_errors,
+                task_warnings=task_warnings)
+
+        if not self.embedded_mode:
+            if not self.command:
+                self._push_error(process_errors, 'command',
+                    'Command expected in wrapped mode, but not found')
+
+            if self.process_check_interval <= 0:
+                self._push_error(process_warnings, 'process_check_interval',
+                    f"Process check interval {self.process_check_interval} must be positive.")
+                self.process_check_interval = DEFAULT_PROCESS_CHECK_INTERVAL_SECONDS
+
+        if self.service:
+            if self.process_timeout is not None:
+                self._push_error(process_warnings, 'process_timeout',
+                    f"Ignoring process timeout {self.process_timeout} because Task is a service.")
+                self.process_timeout = None
+
+        if (self.process_timeout is not None) and (self.process_timeout <= 0):
+            self._push_error(process_warnings, 'process_timeout',
+                    f"Process timeout {self.process_timeout} must be positive or not specified.")
+            self.process_timeout = None
+
+        if self.offline_mode:
+            if self.prevent_offline_execution:
+                self._push_error(process_errors, 'prevent_offline_execution',
+                        'Offline mode and offline execution prevention cannot both be enabled.')
+        else:
+            if not self.api_key:
+                self._push_error(task_errors, 'api_key',
+                        'No API key specified, exiting.')
+
+            if (not self.task_uuid) and (not self.task_name):
+                self._push_error(task_errors, 'task_name',
+                        'No Task UUID or name specified.')
+
+            if self.auto_create_task:
+                if not (self.auto_create_task_run_environment_name or \
+                        self.auto_create_task_run_environment_uuid):
+                    self._push_error(task_errors, 'auto_create_task',
+                            'No Run Environment UUID or name for auto-created Task specified.')
+
+                if not self.task_is_passive and ((runtime_metadata is None) or \
+                              (runtime_metadata.execution_method_capability is None)):
+                    self._push_error(task_warnings, 'force_task_passive',
+                            'Task may not be active unless execution method capability can be determined.')
+                    self.task_is_passive = True
+
+        return errors
+
+    def run_mode_label(self) -> str:
+        return 'embedded' if self.embedded_mode else 'wrapped'
 
     def log_configuration(self) -> None:
+        _logger.info(f"Run mode = {self.run_mode_label()}")
         _logger.info(f"Task Execution UUID = {self.task_execution_uuid}")
         _logger.info(f"Task UUID = {self.task_uuid}")
         _logger.info(f"Task name = {self.task_name}")
@@ -330,7 +428,6 @@ class ProcWrapperParams(ConfigResolverParams):
 
         _logger.debug(f"Status update interval = {self.status_update_interval}")
 
-
     def populate_env(self, env: Dict[str, str]) -> None:
         if self.deployment:
             env['PROC_WRAPPER_DEPLOYMENT'] = self.deployment
@@ -398,8 +495,7 @@ class ProcWrapperParams(ConfigResolverParams):
         env['PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION'] = \
                 str(self.prevent_offline_execution).upper()
 
-
-    def override_immutable_from_env(self, env: Dict[str, str],
+    def _override_immutable_from_env(self, env: Dict[str, str],
             runtime_metadata: Optional[RuntimeMetadata]) -> None:
         self.offline_mode = string_to_bool(env.get('PROC_WRAPPER_OFFLINE_MODE'),
                 default_value=self.offline_mode) or False
@@ -407,10 +503,6 @@ class ProcWrapperParams(ConfigResolverParams):
         self.prevent_offline_execution = string_to_bool(
                 env.get('PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION'),
                 default_value=self.prevent_offline_execution) or False
-
-        if self.offline_mode and self.prevent_offline_execution:
-            _logger.critical('Offline mode and offline execution prevention cannot both be enabled.')
-            return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
         self.deployment = env.get('PROC_WRAPPER_DEPLOYMENT', self.deployment)
 
@@ -473,24 +565,12 @@ class ProcWrapperParams(ConfigResolverParams):
 
             if (not self.auto_create_task_run_environment_name) \
                     and (not self.auto_create_task_run_environment_uuid):
-                if self.deployment:
-                    self.auto_create_task_run_environment_name = self.deployment
-                else:
-                    _logger.critical('No Run Environment UUID or name for auto-created Task specified, exiting.')
-                    self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                    return None
+                self.auto_create_task_run_environment_name = self.deployment
 
             self.task_is_passive = coalesce(string_to_bool(
                     env.get('PROC_WRAPPER_TASK_IS_PASSIVE')),
                     auto_create_task_props.get('passive'),
                     args_forced_passive, True) or False
-
-            if not self.task_is_passive:
-                if (runtime_metadata is None) or \
-                        (runtime_metadata.execution_method_capability is None):
-                    _logger.critical('Task may not be active unless execution method capability can be determined.')
-                    self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                    return None
 
             em_overrides_str = env.get('PROC_WRAPPER_EXECUTION_METHOD_PROPS')
             if em_overrides_str:
@@ -510,11 +590,6 @@ class ProcWrapperParams(ConfigResolverParams):
                 auto_create_task_props.get('uuid', self.task_uuid))
         self.task_name = env.get('PROC_WRAPPER_TASK_NAME',
                 auto_create_task_props.get('name', self.task_name))
-
-        if (not self.task_uuid) and (not self.task_name):
-            _logger.critical('No Task UUID or name specified, exiting.')
-            self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-            return None
 
         count = auto_create_task_props.get('min_service_instance_count')
         override_is_service = None if count is None else (count > 0)
@@ -545,7 +620,7 @@ class ProcWrapperParams(ConfigResolverParams):
                     negative_value=DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES) \
                     or self.status_update_message_max_bytes
 
-    def override_mutable_from_env(self, env: Dict[str, str]) -> None:
+    def _override_mutable_from_env(self, env: Dict[str, str]) -> None:
         self.rollbar_access_token = env.get('PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN',
                 self.rollbar_access_token)
 
@@ -565,19 +640,8 @@ class ProcWrapperParams(ConfigResolverParams):
         env_process_timeout_seconds = env.get(
                 'PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS')
 
-        if self.service:
-            if (self.process_timeout is not None) \
-                    and ((string_to_int(self.process_timeout) or 0) > 0):
-                _logger.warning(
-                        'Ignoring argument --process-timeout since Task is a service')
-
-            if env_process_timeout_seconds \
-                    and ((string_to_int(env_process_timeout_seconds) or 0) > 0):
-                _logger.warning(
-                        'Ignoring environment variable PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS since Task is a service')
-        else:
-            self.process_timeout = string_to_int(env_process_timeout_seconds,
-                    default_value=self.process_timeout)
+        self.process_timeout = string_to_int(env_process_timeout_seconds,
+                default_value=self.process_timeout)
 
         self.process_max_retries = cast(int, coalesce(string_to_int(
                 env.get('PROC_WRAPPER_TASK_MAX_RETRIES'),
@@ -596,17 +660,6 @@ class ProcWrapperParams(ConfigResolverParams):
                     env.get('PROC_WRAPPER_PROCESS_CHECK_INTERVAL_SECONDS'),
                     default_value=self.process_check_interval,
                     negative_value=-1))
-
-            if self.process_check_interval <= 0:
-                _logger.critical(f"Process check interval {self.process_check_interval} must be positive.")
-                self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                return None
-
-            # TODO: allow command override if API key has developer permission
-            if not self.command:
-                _logger.critical('Command expected in wrapped mode, but not found')
-                self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                return None
 
             self.command = self.command
             self.work_dir = env.get('PROC_WRAPPER_WORK_DIR', self.work_dir)
@@ -646,11 +699,11 @@ class ProcWrapperParams(ConfigResolverParams):
 
         default_max_conflicting_age_seconds = None
 
-        if self.service and self.api_heartbeat_interval:
-            default_max_conflicting_age_seconds = self.api_heartbeat_interval + HEARTBEAT_DELAY_TOLERANCE_SECONDS
-
         if self.max_conflicting_age != UNSET_INT_VALUE:
             default_max_conflicting_age_seconds = self.max_conflicting_age
+        elif self.service and self.api_heartbeat_interval:
+            default_max_conflicting_age_seconds = self.api_heartbeat_interval \
+                    + HEARTBEAT_DELAY_TOLERANCE_SECONDS
 
         self.max_conflicting_age = string_to_int(
                 env.get('PROC_WRAPPER_MAX_CONFLICTING_AGE_SECONDS'),
@@ -662,11 +715,6 @@ class ProcWrapperParams(ConfigResolverParams):
                     default_value=self.status_update_interval)
 
         self.api_key = env.get('PROC_WRAPPER_API_KEY', self.api_key)
-
-        if not self.api_key:
-            _logger.critical('No API key specified, exiting.')
-            self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-            return None
 
         self.api_error_timeout = string_to_int(
                 env.get('PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS'),
@@ -730,6 +778,13 @@ class ProcWrapperParams(ConfigResolverParams):
                 env.get('PROC_WRAPPER_SEND_RUNTIME_METADATA'),
                 default_value=self.send_runtime_metadata) or False
 
+    @staticmethod
+    def _push_error(errors: Dict[str, List[str]], name: str, error: str) -> None:
+        error_list = errors.get(name)
+        if error_list is None:
+            errors[name] = [error]
+        else:
+            error_list.append(error)
 
 def json_encoded(s: str):
     return json.loads(s)

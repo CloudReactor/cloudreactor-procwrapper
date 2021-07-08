@@ -34,13 +34,14 @@ import time
 from http import HTTPStatus
 from io import RawIOBase
 from subprocess import Popen, TimeoutExpired
-from typing import Any, Dict, List, Mapping, Optional, cast
+from typing import Any, Dict, Mapping, Optional, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
 from .common_utils import string_to_bool, encode_int
 from .arg_parser import (
+    ProcWrapperParamValidationErrors,
     ProcWrapperParams
 )
 
@@ -112,8 +113,14 @@ class ProcWrapper:
         else:
             self.env = os.environ.copy()
 
+        self.param_errors: Optional[ProcWrapperParamValidationErrors] = None
+        self.offline_mode = False
+        self.task_uuid: Optional[str] = None
+        self.task_name: Optional[str] = None
+        self.task_execution_uuid: Optional[str] = None
         self.was_conflict = False
         self.called_exit = False
+        self.reported_final_status = False
         self.attempt_count = 0
         self.failed_count = 0
         self.timeout_count = 0
@@ -152,20 +159,18 @@ class ProcWrapper:
                     runtime_metadata=runtime_metadata,
                     env_override=self.env)
 
-        self.resolved_env, self.failed_env_names = \
-                self.config_resolver.fetch_and_resolve_env()
+        self.resolved_env, self.failed_env_names, \
+                self.resolved_config, self.failed_config_props = \
+                        self.config_resolver.fetch_and_resolve_env_and_config(
+                                want_env=True,
+                                want_config=self.params.embedded_mode)
+
+        self.config_resolver.fetch_and_resolve_env()
 
         if params is None:
             self.params.override_proc_wrapper_params_from_env(
                 env=self.resolved_env, mutable_only=False,
                 runtime_metadata=runtime_metadata)
-
-        self.task_execution_uuid: Optional[str] = \
-                self.params.task_execution_uuid
-
-        if self.params.enable_status_update_listener:
-            self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
-            self._status_message_so_far = bytearray()
 
         self.in_pytest = string_to_bool(os.environ.get('IN_PYTEST')) or False
 
@@ -182,14 +187,6 @@ class ProcWrapper:
 
             self.exit_handler_installed = True
 
-        if not self.params.embedded_mode:
-            # TODO: allow command override if API key has developer permission
-            if not self.params.command:
-                _logger.critical('Command expected in wrapped mode, but not found')
-                self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-                return None
-
-        self.log_configuration()
         return None
 
     def log_configuration(self) -> None:
@@ -211,7 +208,7 @@ class ProcWrapper:
         elif self.timed_out:
             action = 'timed out'
 
-        task_name = self.params.task_name or self.params.task_uuid or '[Unnamed]'
+        task_name = self.task_name or self.task_uuid or '[Unnamed]'
         now = datetime.now()
         now_ts = now.timestamp()
         max_attempts_str = 'infinity' if self.params.process_max_retries is None \
@@ -242,14 +239,14 @@ class ProcWrapper:
 
         return self.params.process_max_retries + 1
 
-    def request_task_execution_start(self) -> None:
+    def _create_or_update_task_execution(self) -> None:
         """
         Make a request to the API server to create a Task Execution
         for this Task. Retry and wait between requests if so configured
         and the maximum concurrency has already been reached.
         """
 
-        if self.params.offline_mode:
+        if self.offline_mode:
             return
 
         if self.params.send_hostname and (self.hostname is None):
@@ -265,8 +262,18 @@ class ProcWrapper:
             runtime_metadata = self.runtime_metadata_fetcher.fetch(
                 env=self.resolved_env)
 
+        status = ProcWrapper.STATUS_RUNNING
+        stop_reason: Optional[str] = None
+
+        if self.param_errors:
+            if not (self.param_errors.can_start_task_execution() \
+                    and self.param_errors.can_start_process()):
+                status = ProcWrapper.STATUS_ABORTED
+                # TODO: use a reason that indicate misconfiguration
+                stop_reason = 'FAILED_TO_START'
+
         try:
-            url = f"{self.params.api_base_url}/api/v1/task_executions/"
+            url = f'{self.params.api_base_url}/api/v1/task_executions/'
             http_method = 'POST'
             headers = self._make_headers()
 
@@ -278,7 +285,7 @@ class ProcWrapper:
             }
 
             body = {
-                'status': ProcWrapper.STATUS_RUNNING,
+                'status': status,
                 'task_version_number': self.params.task_version_number,
                 'task_version_text': self.params.task_version_text,
                 'task_version_signature': self.params.task_version_signature,
@@ -305,16 +312,22 @@ class ProcWrapper:
                         self.params.api_task_execution_creation_conflict_retry_delay),
                 'api_final_update_timeout_seconds': encode_int(
                         self.params.api_final_update_timeout, empty_value=-1),
-                'api_request_timeout_seconds': encode_int(self.params.api_request_timeout, empty_value=-1),
-                'status_update_interval_seconds': encode_int(self.params.status_update_interval,
+                'api_request_timeout_seconds': encode_int(
+                        self.params.api_request_timeout, empty_value=-1),
+                'status_update_interval_seconds': encode_int(
+                        self.params.status_update_interval,
                         empty_value=-1),
                 'status_update_port': encode_int(self.params.status_update_socket_port,
                         empty_value=-1),
-                'status_update_message_max_bytes': encode_int(self.params.status_update_message_max_bytes,
+                'status_update_message_max_bytes': encode_int(
+                        self.params.status_update_message_max_bytes,
                         empty_value=-1),
                 'embedded_mode': self.params.embedded_mode
             }
             body.update(common_body)
+
+            if stop_reason is not None:
+                body['stop_reason'] = stop_reason
 
             if self.task_execution_uuid:
                 # Manually started
@@ -327,10 +340,10 @@ class ProcWrapper:
                 else:
                     task_dict = common_body.copy()
 
-                if self.params.task_uuid:
-                    task_dict['uuid'] = self.params.task_uuid
-                elif self.params.task_name:
-                    task_dict['name'] = self.params.task_name
+                if self.task_uuid:
+                    task_dict['uuid'] = self.task_uuid
+                elif self.task_name:
+                    task_dict['name'] = self.task_name
                 else:
                     # This method should not have been called at all.
                     raise RuntimeError('Neither Task UUID or Task name were set.')
@@ -402,6 +415,9 @@ class ProcWrapper:
                 with f:
                     _logger.info("Task Execution creation request was successful.")
 
+                    if status != self.STATUS_RUNNING:
+                        self.reported_final_status = True
+
                     fd = f.read()
 
                     if not fd:
@@ -415,8 +431,8 @@ class ProcWrapper:
                     if not self.task_execution_uuid:
                         self.task_execution_uuid = response_dict.get('uuid')
 
-                    self.params.task_uuid = self.params.task_uuid or response_dict['task']['uuid']
-                    self.params.task_name = self.params.task_name or response_dict['task'].get('name')
+                    self.task_uuid = self.task_uuid or response_dict['task']['uuid']
+                    self.task_name = self.task_name or response_dict['task']['name']
 
         except Exception as ex:
             _logger.exception('request_process_start_if_max_concurrency_ok() failed with exception')
@@ -434,7 +450,7 @@ class ProcWrapper:
            seconds ago.
         """
 
-        if not self.params.offline_mode:
+        if not self.offline_mode:
             return
 
         if success_count is not None:
@@ -474,7 +490,7 @@ class ProcWrapper:
                         pid: Optional[int] = None) -> None:
         """Send the final result to the API Server."""
 
-        if self.params.offline_mode:
+        if self.offline_mode:
             return
 
         if status not in self._ALLOWED_FINAL_STATUSES:
@@ -504,12 +520,13 @@ class ProcWrapper:
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
             return
 
-        self.request_task_execution_start()
+        if self.failed_config_props:
+            _logger.critical(f'Failed to resolve one or more config props: {self.failed_config_props}')
+            self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+            return
 
-        config, failed_var_names = self.config_resolver.fetch_and_resolve_config()
-
-        self.attempt_count = 0
-        self.failed_count = 0
+        self._reload_params()
+        self._setup_task_execution()
 
         rv = None
         success = False
@@ -520,7 +537,7 @@ class ProcWrapper:
             _logger.info(f"Calling managed function (attempt {self.attempt_count}/{self.max_execution_attempts}) ...")
 
             try:
-                rv = fun(self, data, config)
+                rv = fun(self, data, self.resolved_config)
                 success = True
             except Exception as ex:
                 saved_ex = ex
@@ -536,15 +553,7 @@ class ProcWrapper:
                         _logger.debug('Done sleeping after managed function failed.')
 
                     if self.params.config_ttl is not None:
-                        config, _failed_var_names = \
-                                self.config_resolver.fetch_and_resolve_config()
-
-                        # In case API key(s) change
-                        runtime_metadata = self.runtime_metadata_fetcher.fetch(
-                                self.resolved_env)
-                        self.params.override_proc_wrapper_params_from_env(
-                                env=self.resolved_env, mutable_only=True,
-                                runtime_metadata=runtime_metadata)
+                        self._reload_params()
 
             if success:
                 self.send_completion(status=ProcWrapper.STATUS_SUCCEEDED,
@@ -556,6 +565,59 @@ class ProcWrapper:
 
         raise saved_ex
 
+    def _reload_params(self) -> None:
+        self.resolved_env, self.failed_env_names, \
+            self.resolved_config, self.failed_config_props = \
+                self.config_resolver.fetch_and_resolve_env_and_config(
+                        want_env=True,
+                        want_config=self.params.embedded_mode)
+
+        runtime_metadata = self.runtime_metadata_fetcher.fetch(
+                env=self.resolved_env)
+
+        # In case API key(s) change
+        self.params.override_proc_wrapper_params_from_env(
+                env=self.resolved_env, mutable_only=True,
+                runtime_metadata=runtime_metadata)
+
+        self.param_errors = self.params.validation_errors(
+                runtime_metadata=runtime_metadata)
+
+    def _setup_task_execution(self) -> bool:
+        self._reload_params()
+
+        self.log_configuration()
+
+        if self.param_errors:
+            self.param_errors.log()
+        else:
+            _logger.warning('No validated parameters?!')
+
+        self.task_uuid = self.params.task_uuid
+        self.task_name = self.params.task_name
+        self.task_execution_uuid = self.params.task_execution_uuid
+        self.offline_mode = self.params.offline_mode or ((self.param_errors is not None) \
+                and not self.param_errors.can_start_task_execution())
+        self.attempt_count = 0
+        self.timeout_count = 0
+
+        if self.offline_mode:
+            _logger.info('Starting in offline mode ...')
+        else:
+            self._create_or_update_task_execution()
+
+            if self.param_errors and (not self.param_errors.can_start_process()):
+                _logger.info(f"Created Task Execution {self.task_execution_uuid} with ABORTED status, not starting process.")
+                return False
+            else:
+                _logger.info(f"Created Task Execution {self.task_execution_uuid}, starting now.")
+
+                if self.params.enable_status_update_listener:
+                    self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
+                    self._status_message_so_far = bytearray()
+
+        return True
+
     def run(self) -> None:
         """
         Run the wrapped process, first requesting to start, then executing
@@ -563,29 +625,25 @@ class ProcWrapper:
         """
         self._ensure_non_embedded_mode()
 
-        if self.params.command is None:
-            _logger.critical('Command is required to run in wrapped mode.')
+        should_run = self._setup_task_execution()
+
+        if not self.params.command:
+            _logger.error('No command found in wrapped mode')
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
             return
 
-        if self.failed_env_names:
-            _logger.critical(f'Failed to resolve one or more environment variables: {self.failed_env_names}')
-            self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-            return
+        if not should_run:
+            self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
 
-        if self.params.offline_mode:
-            _logger.info('Starting in offline mode ...')
-        else:
-            self.request_task_execution_start()
-            _logger.info(f"Created Task Execution {self.task_execution_uuid}, starting now.")
+        if (not self.offline_mode) and self.params.enable_status_update_listener:
+            self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
+            self._status_message_so_far = bytearray()
 
         process_env = self.make_process_env()
 
         if self.params.log_secrets:
             _logger.debug(f"Process environment = {process_env}")
 
-        self.attempt_count = 0
-        self.timeout_count = 0
         first_attempt_started_at: Optional[float] = None
         latest_attempt_started_at: Optional[float] = None
         exit_code: Optional[int] = None
@@ -712,17 +770,7 @@ class ProcWrapper:
                         _logger.debug('Done sleeping after process failed.')
 
                     if self.params.config_ttl is not None:
-                        self.resolved_env, self.failed_env_names = \
-                                  self.config_resolver.fetch_and_resolve_env()
-
-                        runtime_metadata = self.runtime_metadata_fetcher.fetch(
-                                self.resolved_env)
-
-                        # In case API key(s) change
-                        self.params.override_proc_wrapper_params_from_env(
-                                env=self.resolved_env, mutable_only=True,
-                                runtime_metadata=runtime_metadata)
-
+                        self._reload_params()
                         process_env = self.make_process_env()
 
         if self.attempt_count >= self.max_execution_attempts:
@@ -765,13 +813,13 @@ class ProcWrapper:
             _logger.exception('Exception in process termination')
         finally:
             try:
-                if self.task_execution_uuid:
+                if self.task_execution_uuid and (not self.reported_final_status):
                     if self.was_conflict:
                         _logger.debug('Task execution update conflict detected, not notifying because server-side should have notified already.')
                         notification_required = False
                         status = self.STATUS_ABORTED
 
-                    if not self.params.offline_mode and not self.api_server_retries_exhausted:
+                    if not self.offline_mode and not self.api_server_retries_exhausted:
                         self.send_completion(status=status,
                                              failed_attempts=self.failed_count,
                                              timed_out_attempts=self.timeout_count,
@@ -831,7 +879,7 @@ class ProcWrapper:
             raise RuntimeError('Called method is only for wrapped process (non-embedded) mode')
 
     def _open_status_socket(self) -> Optional[socket.socket]:
-        if self.params.offline_mode or (not self.params.enable_status_update_listener):
+        if self.offline_mode or (not self.params.enable_status_update_listener):
             _logger.info('Not opening status socket.')
             return None
 
@@ -944,7 +992,7 @@ class ProcWrapper:
         when running in embedded mode.
         """
 
-        if self.params.offline_mode:
+        if self.offline_mode:
             return
 
         if not self.task_execution_uuid:
@@ -992,6 +1040,7 @@ class ProcWrapper:
                 _logger.debug('Update sent successfully.')
                 self.last_update_sent_at = time.time()
                 self.status_dict = {}
+                self.reported_final_status = is_final_update
 
     def _compute_successful_request_deadline(self,
             first_attempt_at: float,
@@ -1220,8 +1269,8 @@ class ProcWrapper:
                     'message': {
                         'body': message,
                         'task': {
-                            'uuid': self.params.task_uuid,
-                            'name': self.params.task_name,
+                            'uuid': self.task_uuid,
+                            'name': self.task_name,
                             'version_number': self.params.task_version_number,
                             'version_text': self.params.task_version_text,
                             'version_signature': self.params.task_version_signature,

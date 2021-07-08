@@ -88,7 +88,11 @@ def test_wrapped_mode_with_server(httpserver: HTTPServer):
 
     creation_handler, fetch_creation_request_data = make_capturing_handler(
             response_data={
-                'uuid': DEFAULT_TASK_EXECUTION_UUID
+                'uuid': DEFAULT_TASK_EXECUTION_UUID,
+                'task': {
+                    'name': 'atask',
+                    'uuid': DEFAULT_TASK_UUID
+                }
             }, status=201)
 
     httpserver.expect_ordered_request('/api/v1/task_executions/',

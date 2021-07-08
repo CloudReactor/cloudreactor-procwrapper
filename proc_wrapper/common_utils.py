@@ -37,8 +37,8 @@ def string_to_int(s: Optional[Any],
 
         return x
 
-def encode_int(x: Optional[int], empty_value: Optional[int] = None) -> \
-        Optional[int]:
+def encode_int(x: Optional[int], empty_value: Optional[int] = None) \
+        -> Optional[int]:
     if x is None:
         return empty_value
     else:
