@@ -3,10 +3,14 @@ import os
 import sys
 from typing import Optional
 
-from proc_wrapper import ProcWrapper, ProcWrapperParams, make_arg_parser
-
-from .config_resolver import ConfigResolver
-from .runtime_metadata import RuntimeMetadata, RuntimeMetadataFetcher
+from proc_wrapper import (
+    ConfigResolver,
+    ProcWrapper,
+    ProcWrapperParams,
+    RuntimeMetadata,
+    RuntimeMetadataFetcher,
+    make_arg_parser,
+)
 
 _DEFAULT_LOG_LEVEL = "WARNING"
 
