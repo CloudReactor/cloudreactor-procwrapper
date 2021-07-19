@@ -205,7 +205,7 @@ be available to import in your python environment.
 
 You can get the tested versions of both dependencies in
 [proc_wrapper-requirements.in](https://github.com/CloudReactor/cloudreactor-procwrapper/blob/main/proc_wrapper-requirements.in)
-(suitable for use by [https://github.com/jazzband/pip-tools/](pip-tools)) or the resolved requirements in
+(suitable for use by [pip-tools](https://github.com/jazzband/pip-tools/)) or the resolved requirements in
 [proc_wrapper-requirements.txt](https://github.com/CloudReactor/cloudreactor-procwrapper/blob/main/proc_wrapper-requirements.txt).
 
 ## Usage
@@ -780,7 +780,7 @@ you may want to populate the environment variable `DB_USERNAME` with
 To facilitate this, dictionary fragments can be extracted to individual
 environment variables using [jsonpath-ng](https://github.com/h2non/jsonpath-ng).
 To specify that a variable be extracted from a dictionary using
-a JSON Path expression, append "|JP:" followed by the JSON Path expression
+a JSON Path expression, append `|JP:` followed by the JSON Path expression
 to the secret location string. For example, if the AWS Secrets Manager
 ARN
 
@@ -984,7 +984,7 @@ can control this with the environment variable
 or by setting the `max_config_resolution_iterations` property of
 `ProcWrapperParams` in wrapped mode.
 
-### Environment projection
+### Environment Projection
 
 During secret fetching and secret resolution, proc_wrapper internally maintains
 the computed environment as a dictionary which may have embedded lists and
