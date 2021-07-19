@@ -37,9 +37,12 @@ Available as a standalone executable or as a python module.
 * Runs either processes started with a command line or a python function you
 supply
 * Implements retries and time limits on wrapped processes
-* Injects secrets from AWS Secrets Manager and extracts them into the
-process environment
+* Injects secrets from AWS Secrets Manager, AWS S3, or local files and extracts
+them into the process environment (for command-lines) or configuration (for
+functions)
 * When used with the CloudReactor service:
+  * Reports when a process/function starts and when it exits, along with the
+  exit code
   * Sends heartbeats, optionally with status information like the number of
   items processed
   * Prevents too many concurrent executions
@@ -47,7 +50,10 @@ process environment
 
 ## How it works
 
-Before your code runs, the module requests the API server to create a
+First, secrets and other configuration are fetched and resolved from
+providers like AWS Secrets Manager, AWS S3, or the local filesystem.
+
+Just before your code runs, the module requests the API server to create a
 Task Execution associated with the Task name or UUID which you pass to the
 module.
 The API server may reject the request if too many instances of the Task are
@@ -239,7 +245,9 @@ Here are all the options:
                         [--task-version-text TASK_VERSION_TEXT]
                         [--task-version-signature TASK_VERSION_SIGNATURE]
                         [--execution-method-props EXECUTION_METHOD_PROPS]
-                        [--task-instance-metadata TASK_INSTANCE_METADATA]
+                        [--task-instance-metadata TASK_INSTANCE_METADATA] [-s]
+                        [--schedule SCHEDULE] [--max-concurrency MAX_CONCURRENCY]
+                        [--max-conflicting-age MAX_CONFLICTING_AGE]
                         [--api-base-url API_BASE_URL] [-k API_KEY]
                         [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
                         [--api-error-timeout API_ERROR_TIMEOUT]
@@ -249,11 +257,12 @@ Here are all the options:
                         [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT]
                         [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
                         [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY]
-                        [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-s]
-                        [--max-concurrency MAX_CONCURRENCY]
-                        [--max-conflicting-age MAX_CONFLICTING_AGE] [-p]
-                        [-l LOG_LEVEL] [--log-secrets] [-w WORK_DIR]
-                        [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES]
+                        [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-p]
+                        [-d DEPLOYMENT] [--send-pid] [--send-hostname]
+                        [--no-send-runtime-metadata]
+                        [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets]
+                        [-w WORK_DIR] [-t PROCESS_TIMEOUT]
+                        [-r PROCESS_MAX_RETRIES]
                         [--process-retry-delay PROCESS_RETRY_DELAY]
                         [--process-check-interval PROCESS_CHECK_INTERVAL]
                         [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD]
@@ -261,10 +270,17 @@ Here are all the options:
                         [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
                         [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
                         [--status-update-interval STATUS_UPDATE_INTERVAL]
-                        [--send-pid] [--send-hostname]
-                        [--no-send-runtime-metadata] [-d DEPLOYMENT]
-                        [--schedule SCHEDULE]
-                        [--resolved-env-ttl RESOLVED_ENV_TTL]
+                        [-e ENV_LOCATIONS] [-c CONFIG_LOCATIONS]
+                        [--config-merge-strategy {SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}]
+                        [--overwrite_env_during_resolution]
+                        [--config-ttl CONFIG_TTL]
+                        [--no-fail-fast-config-resolution]
+                        [--resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX]
+                        [--resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX]
+                        [--resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX]
+                        [--resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX]
+                        [--env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG]
+                        [--config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV]
                         [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
                         [--rollbar-retries ROLLBAR_RETRIES]
                         [--rollbar-retry-delay ROLLBAR_RETRY_DELAY]
@@ -281,6 +297,10 @@ Here are all the options:
     optional arguments:
       -h, --help            show this help message and exit
       -v, --version         Print the version and exit
+
+    task:
+      Task settings
+
       -n TASK_NAME, --task-name TASK_NAME
                             Name of Task (either the Task Name or the Task UUID
                             must be specified
@@ -315,13 +335,30 @@ Here are all the options:
       --task-version-text TASK_VERSION_TEXT
                             Human readable version of the Task's source code
       --task-version-signature TASK_VERSION_SIGNATURE
-                            Version signature of the Task's source code
+                            Version signature of the Task's source code (such as a
+                            git commit hash)
       --execution-method-props EXECUTION_METHOD_PROPS
                             Additional properties of the execution method, in JSON
-                            format
+                            format. See https://apidocs.cloudreactor.io/#operation
+                            /api_v1_task_executions_create for the schema.
       --task-instance-metadata TASK_INSTANCE_METADATA
                             Additional metadata about the Task instance, in JSON
                             format
+      -s, --service         Indicate that this is a Task that should run
+                            indefinitely
+      --schedule SCHEDULE   Run schedule reported to the API server
+      --max-concurrency MAX_CONCURRENCY
+                            Maximum number of concurrent Task Executions allowed
+                            with the same Task UUID. Defaults to 1.
+      --max-conflicting-age MAX_CONFLICTING_AGE
+                            Maximum age of conflicting Tasks to consider, in
+                            seconds. -1 means no limit. Defaults to the heartbeat
+                            interval, plus 60 seconds for services that send
+                            heartbeats. Otherwise, defaults to no limit.
+
+    api:
+      API client settings
+
       --api-base-url API_BASE_URL
                             Base URL of API server. Defaults to
                             https://api.cloudreactor.io
@@ -366,29 +403,31 @@ Here are all the options:
                             Timeout for contacting API server, in seconds.
                             Defaults to 30.
       -o, --offline-mode    Do not communicate with or rely on an API server
-      -s, --service         Indicate that this is a Task that should run
-                            indefinitely
-      --max-concurrency MAX_CONCURRENCY
-                            Maximum number of concurrent Task Executions allowed
-                            with the same Task UUID. Defaults to 1.
-      --max-conflicting-age MAX_CONFLICTING_AGE
-                            Maximum age of conflicting Tasks to consider, in
-                            seconds. -1 means no limit. Defaults to the heartbeat
-                            interval, plus 60 seconds for services that send
-                            heartbeats. Otherwise, defaults to no limit.
       -p, --prevent-offline-execution
                             Do not start processes if the API server is
                             unavailable.
-      -l LOG_LEVEL, --log-level LOG_LEVEL
-                            Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-                            Defaults to WARNING.
+      -d DEPLOYMENT, --deployment DEPLOYMENT
+                            Deployment name (production, staging, etc.)
+      --send-pid            Send the process ID to the API server
+      --send-hostname       Send the hostname to the API server
+      --no-send-runtime-metadata
+                            Do not send metadata about the runtime environment
+
+    log:
+      Logging settings
+
+      -l {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                            Log level
       --log-secrets         Log sensitive information
+
+    process:
+      Process settings
+
       -w WORK_DIR, --work-dir WORK_DIR
                             Working directory. Defaults to the current directory.
       -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
-                            Timeout for process, in seconds. Defaults to None for
-                            non-services, infinite for services. -1 means no
-                            timeout.
+                            Timeout for process, in seconds. -1 means no timeout,
+                            which is the default.
       -r PROCESS_MAX_RETRIES, --process-max-retries PROCESS_MAX_RETRIES
                             Maximum number of times to retry failed processes. -1
                             means to retry forever. Defaults to 0.
@@ -402,6 +441,10 @@ Here are all the options:
                             Number of seconds to wait after sending SIGTERM to a
                             process, but before killing it with SIGKILL. Defaults
                             to 30.
+
+    updates:
+      Status update settings
+
       --enable-status-update-listener
                             Listen for status updates from the process, sent on
                             the status socket port via UDP. If not specified,
@@ -416,17 +459,69 @@ Here are all the options:
                             Minimum of seconds to wait between sending status
                             updates to the API server. -1 means to not send status
                             updates except with heartbeats. Defaults to -1.
-      --send-pid            Send the process ID to the API server
-      --send-hostname       Send the hostname to the API server
-      --no-send-runtime-metadata
-                            Do not send metadata about the runtime environment
-      -d DEPLOYMENT, --deployment DEPLOYMENT
-                            Deployment name (production, staging, etc.)
-      --schedule SCHEDULE   Run schedule reported to the API server
-      --resolved-env-ttl RESOLVED_ENV_TTL
+
+    configuration:
+      Environment/configuration resolution settings
+
+      -e ENV_LOCATIONS, --env ENV_LOCATIONS
+                            Location of either local file, AWS S3 ARN, or AWS
+                            Secrets Manager ARN containing properties used to
+                            populate the environment for embedded mode, or the
+                            process environment for wrapped mode. By default, the
+                            file format is assumed to be dotenv. Specify multiple
+                            times to include multiple locations.
+      -c CONFIG_LOCATIONS, --config CONFIG_LOCATIONS
+                            Location of either local file, AWS S3 ARN, or AWS
+                            Secrets Manager ARN containing properties used to
+                            populate the configuration for embedded mode. By
+                            default, the file format is assumed to be in JSON.
+                            Specify multiple times to include multiple locations.
+      --config-merge-strategy {SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
+                            Merge strategy for merging config files with
+                            mergedeep. Defaults to SHALLOW, which does not require
+                            mergedeep. All other strategies require the mergedeep
+                            python package to be installed.
+      --overwrite_env_during_resolution
+                            Do not overwrite existing environment variables when
+                            resolving them
+      --config-ttl CONFIG_TTL
                             Number of seconds to cache resolved environment
-                            variables instead of refreshing them when a process
-                            restarts. -1 means to never refresh. Defaults to -1.
+                            variables and configuration properties instead of
+                            refreshing them when a process restarts. -1 means to
+                            never refresh. Defaults to -1.
+      --no-fail-fast-config-resolution
+                            Exit immediately if an error occurs resolving the
+                            configuration
+      --resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX
+                            Required prefix for names of environment variables
+                            that should resolved. The prefix will be removed in
+                            the resolved variable name. Defaults to ''.
+      --resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX
+                            Required suffix for names of environment variables
+                            that should resolved. The suffix will be removed in
+                            the resolved variable name. Defaults to
+                            '_FOR_PROC_WRAPPER_TO_RESOLVE'.
+      --resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX
+                            Required prefix for names of configuration properties
+                            that should resolved. The prefix will be removed in
+                            the resolved property name. Defaults to ''.
+      --resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX
+                            Required suffix for names of configuration properties
+                            that should resolved. The suffix will be removed in
+                            the resolved property name. Defaults to
+                            '__to_resolve'.
+      --env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG
+                            The name of the environment variable used to set to
+                            the value of the JSON encoded configuration. Defaults
+                            to not setting any environment variable.
+      --config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV
+                            The name of the configuration property used to set to
+                            the value of the JSON encoded environment. Defaults to
+                            not setting any property.
+
+    rollbar:
+      Rollbar settings
+
       --rollbar-access-token ROLLBAR_ACCESS_TOKEN
                             Access token for Rollbar (used to report error when
                             communicating with API server)
@@ -458,6 +553,7 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_TASK_VERSION_SIGNATURE
 * PROC_WRAPPER_TASK_INSTANCE_METADATA
 * PROC_WRAPPER_LOG_LEVEL
+* PROC_WRAPPER_LOG_SECRETS
 * PROC_WRAPPER_DEPLOYMENT
 * PROC_WRAPPER_API_BASE_URL
 * PROC_WRAPPER_API_KEY
@@ -470,6 +566,20 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
+* PROC_WRAPPER_ENV_LOCATIONS
+* PROC_WRAPPER_CONFIG_LOCATIONS
+* PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS
+* PROC_WRAPPER_RESOLVE_SECRETS
+* PROC_WRAPPER_MAX_CONFIG_RESOLUTION_DEPTH
+* PROC_WRAPPER_MAX_CONFIG_RESOLUTION_ITERATIONS
+* PROC_WRAPPER_MAX_CONFIG_TTL_SECONDS
+* PROC_WRAPPER_FAIL_FAST_CONFIG_RESOLUTION
+* PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_PREFIX
+* PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_SUFFIX
+* PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX
+* PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX
+* PROC_WRAPPER_ENV_VAR_NAME_FOR_CONFIG
+* PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
 * PROC_WRAPPER_SEND_PID (TRUE or FALSE)
 * PROC_WRAPPER_SEND_HOSTNAME (TRUE or FALSE)
 * PROC_WRAPPER_SEND_RUNTIME_METADATA (TRUE or FALSE)
@@ -486,6 +596,10 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS
 * PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT
 * PROC_WRAPPER_STATUS_UPDATE_MESSAGE_MAX_BYTES
+
+With the exception of the settings for Secret Fetching and Resolution,
+these environment variables are read after Secret Fetching so that they can
+come from secret values.
 
 The command is executed with the same environment that the wrapper script gets,
 except that these properties are copied/overridden:
@@ -526,12 +640,11 @@ runs at the same time as the command it wraps.
 ### Embedded mode
 
 Embedded mode works for executing python code in the same process.
-You include this package in your python project's
+You include the `proc_wrapper` package in your python project's
 dependencies. To run a task you want to be monitored:
 
     from typing import Any, Dict, Mapping
 
-    import proc_wrapper
     from proc_wrapper import ProcWrapper, ProcWrapperParams
 
 
@@ -544,6 +657,9 @@ dependencies. To run a task you want to be monitored:
     params.auto_create_task = True
     params.auto_create_run_environment_name = 'production'
     params.task_name = 'embedded_test'
+
+    # For example only, in the real world you would use Secret Fetching;
+    # see below.
     params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
     proc_wrapper = ProcWrapper(params=params)
     x = proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
@@ -560,90 +676,134 @@ passive Tasks, as the execution method is Unknown. In the near future,
 CloudReactor will support running and managing Tasks that run as
 Lambdas.
 
-## Secrets Resolution
+## Secret Fetching and Resolution
 
-### Fetching from AWS Secrets Manager
+A common requirement is that deployed code / images do not contain secrets
+internally which could be decompiled. Instead, programs should fetch secrets
+from an external source in a secure manner. If your program runs in AWS, it
+can make use of AWS's roles that have permission to access data in
+Secrets Manager or S3. However, in many scenarios, having your program access
+AWS directly has the following disadvantages:
 
-Both usage modes can fetch secrets from
+1) Your program becomes coupled to AWS, so it is difficult to run locally or
+switch to another infrastructure provider
+2) You need to write code or use a library for each programming language you
+use, so secret fetching is done in a non-uniform way
+3) Writing code to merge and parse secrets from different sources is tedious
+
+Therefore, proc_wrapper implements Secret Fetching and Resolution to solve
+these problems so your programs don't have to. Both usage modes can fetch secrets from
 [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/),
-optionally extract embedded data, then inject them into the environment
-(in the case of wrapped mode)
-or a configuration dictionary (in the case of embedded mode).
+AWS S3, or the local filesystem, and optionally extract embedded data
+into the environment or a configuration dictionary. The environment is used to
+pass values to processes run in wrapped mode,
+while the configuration dictionary is passed to the callback function in
+embedded mode.
 
-To enable secret resolution, set environment variable `PROC_WRAPPER_RESOLVE_SECRETS`
-to `TRUE`.
+proc_wrapper parses secret location strings that specify the how to resolve
+a secret value. Each secret location string has the format:
 
-Then to resolve the target environment variable `MY_SECRET`
-by fetching from AWS Secrets Manager, define the environment variable
-`AWS_SM_MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE`
-set to the ARN of the secret, for example:
+`[PROVIDER_CODE:]<Provider specific address>[!FORMAT][|JP:<JSON Path expression>]`
 
-    arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY
+### Secret Providers
 
-Then when the wrapped process is run, it will see the environment variable
-MY_SECRET resolved to the value of the secret in Secrets Manager. Or, if
-running in embedded mode, the `config` dict argument will have the key
-`MY_SECRET` mapped to the value of the secret.
+Providers indicate the raw source of the secret data. The table below lists the
+supported providers:
 
-If the secret was stored in Secrets Manager as binary, the
-corresponding environment variable will be set to the Base-64 encoded value.
+| Provider Code 	| Value Prefix              	| Provider                     	| Example Address                                             	| Required libs                                                               	| Notes                                                         	|
+|---------------	|---------------------------	|------------------------------	|-------------------------------------------------------------	|-----------------------------------------------------------------------------	|---------------------------------------------------------------	|
+| `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-2:1234567890:secret:config` 	| [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) 	| Can also include version suffix like `-PPrpY`                 	|
+| `AWS_S3`      	| `arn:aws:s3:::`           	| AWS S3 Object                	| `arn:aws:s3:::examplebucket/staging/app1/config.json`       	| [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) 	|                                                               	|
+| `FILE`        	| `file://`                 	| Local file                   	| `file:///home/appuser/app/.env`                                    	|                                                                             	| The default provider if no provider is auto-detected          	|
+| `ENV`         	|                           	| The process environment      	| `SOME_TOKEN`                                                	|                                                                             	| The name of another environment variable                      	|
+| `CONFIG`      	|                           	| The configuration dictionary 	| `$.db`                                                      	| [jsonpath-ng](https://github.com/h2non/jsonpath-ng)                         	| JSON path expression to extract the data in the configuration 	|
+| `PLAIN`       	|                           	| Plaintext                    	| `{"user": "postgres", "password": "badpassword"}`           	|                                                                             	|                                                               	|
 
-boto3 is used to fetch secrets. It will try to access to AWS Secrets Manager
-using environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY if they
-are set, or use the EC2 instance role, ECS task role, or Lambda execution role
+If you don't specify an explicit provider prefix in a secret location
+(e.g. `AWS_SM:`), the provider can be auto-detected from the address portion
+using the Value Prefix. For example the secret location
+`arn:aws:s3:::examplebucket/staging/app1/config.json` will be auto-detected
+to with the AWS_S3 provider because it starts with `arn:aws:s3:::`.
+
+### Secret Formats
+
+Formats indicate how the raw string data is parsed into a secret value (which may be
+a string, number, boolean, dictionary, or array). The table below lists the
+supported formats:
+
+| Format Code 	| Extensions      	| MIME types                                                                            	| Required libs                                        	| Notes                                            	|
+|-------------	|-----------------	|---------------------------------------------------------------------------------------	|------------------------------------------------------	|--------------------------------------------------	|
+| `dotenv`    	| `.env`          	| None                                                                                  	| [dotenv](https://github.com/theskumar/python-dotenv) 	| Also auto-detected if location includes `.env.`  	|
+| `json`      	| `.json`         	| `application/json`, `text/x-json`                                                     	|                                               	|  	|
+| `yaml`      	| `.yaml`, `.yml` 	| `application/x-yaml`, `application/yaml`, `text/vnd.yaml`, `text/yaml`, `text/x-yaml` 	| [pyyaml](https://pyyaml.org/)                        	| `safe_load()` is used for security               	|
+
+The format of a secret value can be auto-detected from the extension or by the
+MIME type if available. Otherwise, you may need to an explicit format code
+(e.g. `!yaml`).
+
+#### AWS Secrets Manager / S3 Notes
+
+[boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
+is used to fetch secrets. It will try to access to AWS Secrets Manager
+or S3 using environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+if they are set, or use the EC2 instance role, ECS task role, or Lambda execution role
 if available.
 
-You can also use "partial ARNs" (without the hyphened suffix) as keys.
+For Secrets Manager, you can also use "partial ARNs"
+(without the hyphened suffix) as keys.
 In the example above
 
     arn:aws:secretsmanager:us-east-2:1234567890:secret:config
 
 could be used to fetch the same secret, provided there are no conflicting secret ARNs.
+This allows you to get the latest version of the secret.
+
+If the secret was stored in Secrets Manager as binary, the
+corresponding value will be set to the Base-64 encoded value.
 
 ### Secret Tranformation
 
 Fetching secrets can be relatively expensive and it makes sense to group related
-secrets together. Therefore it is common to store JSON values as secrets.
-To facilitate this, pieces of JSON values can be extracted to individual
-environment variables using [jsonpath-ng](https://github.com/h2non/jsonpath-ng).
-To specify that a variable be extracted from a JSON value using
-a JSON Path expression, append "|JP:" followed by the JSON Path expression
-in the environment variable value. For example, if the AWS Secrets Manager
-ARN is
-
-    arn:aws:secretsmanager:us-east-2:1234567890:secret:dbconfig-PPrpY
-
-and the value is
+secrets together. Therefore it is common to store dictionaries (formatted
+as JSON or YAML) as secrets. However, each desired environment variable
+or configuration property may only consist of a fragment of the dictionary.
+For example, given the JSON-formatted dictionary
 
     {
       "username": "postgres",
       "password": "badpassword"
     }
 
-Then you can populate the environment variable `DB_USERNAME` by setting the
-environment variable
+you may want to populate the environment variable `DB_USERNAME` with
+`postgres`.
 
-    AWS_SM_DB_USERNAME_FOR_PROC_WRAPPER_TO_RESOLVE
+To facilitate this, dictionary fragments can be extracted to individual
+environment variables using [jsonpath-ng](https://github.com/h2non/jsonpath-ng).
+To specify that a variable be extracted from a dictionary using
+a JSON Path expression, append "|JP:" followed by the JSON Path expression
+to the secret location string. For example, if the AWS Secrets Manager
+ARN
 
-to
+    arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY
 
-    arn:aws:secretsmanager:us-east-2:1234567890:secret:dbconfig-PPrpY|JP:$.username
+contains the dictionary above, then the secret location string
 
-If you do something similar to get the password from the same JSON value, proc_wrapper is
-smart enough to cache the JSON value, so that the secret is only fetched once.
+    arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY|JP:$.username
 
-Since JSON path expressions yield a list of results, we implement the following rules to
-transform the list to the environment variable value:
+will resolve to `postgres` as desired.
 
-1. If the list of results has a single value, that value is used as the environment variable value,
-unless `[*]` is appended to the JSON path expression. If the value is boolean, the value
-will be converted to either "TRUE" or "FALSE". If the value is a string or
-number, it will be simply left/converted to a string. Otherwise, the value is
-serialized to a JSON string and set to the environment variable value.
-2. Otherwise, the list of results is serialized to a JSON string and set to the
-environment variable value.
+If you do something similar to get the password from the same JSON value,
+proc_wrapper is smart enough to cache the fetched dictionary, so that the
+raw data is only fetched once.
 
-### Fetching from another environment variable
+Since JSON path expressions yield a list of results, the secrets fetcher
+implements the following rules to transform the list to the final value:
+
+1. If the list of results has a single value, that value is used as the
+final value, unless `[*]` is appended to the JSON path expression.
+2. Otherwise, the final value is the list of results
+
+#### Fetching from another environment variable
 
 In some deployment scenarios, multiple secrets can be injected into a
 single environment variable as a JSON encoded object. In that case,
@@ -654,25 +814,212 @@ with the JSON encoded value:
     { "username": "postgres", "password": "nohackme" }
 
 Then to extract the username to the environment variable DB_USERNAME you
-you would add the environment variable ENV_DB_USER_FOR_PROC_WRAPPER_TO_RESOLVE
+you would add the environment variable DB_USER_FOR_PROC_WRAPPER_TO_RESOLVE
 set to
 
-    DB_CONFIG|JP:$.username
+    ENV:DB_CONFIG|JP:$.username
+
+### Secret injection into environment and configuration
+
+Now let's use secret location strings to
+inject the values into the environment (for wrapped mode)
+and/or the the configuration dictionary (for embedded mode). proc_wrapper
+supports two methods of secret injection which can be combined together:
+
+* Top-level fetching
+* Secrets Resolution
+
+### Top-level fetching
+
+Top-level fetching refers to fetching a dictionary that contains multiple secrets
+and populating the environment / configuration dictionary with it.
+To use top-level fetching, you specify the secret locations
+from which you want to fetch the secrets and the corresponding values are
+merged together into the environment / configuration.
+
+To use top-level fetching in wrapped mode, populate the
+environment variables `PROC_WRAPPER_ENV_LOCATIONS` with a comma-separated
+list of secret locations, or use the command-line option
+`--env-locations <secret_location>` one or more times. Secret location
+strings passed in via `PROC_WRAPPER_ENV_LOCATIONS` or `--env-locations`
+will be parsed as `dotenv` files unless format is auto-detected or
+explicitly specified.
+
+To use top-level fetching in embedded mode, set the `ProcWrapperParams` property
+`config_locations` to a list of secret locations. Secret location values
+will be parsed as JSON unless the format is auto-detected or explicitly
+specified. The `config` argument
+passed to the your callback function will contain a merged dictionary of all
+fetched and parsed dictionary values. For example:
+
+    def callback(wrapper: ProcWrapper, cbdata: str,
+            config: Dict[str, str]) -> str:
+        return 'super' + cbdata + config['username']
+
+
+    def main():
+        params = ProcWrapperParams()
+        params.config_locations = [
+            'arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY',
+            # More secret locations can be added here, and their values will
+            # be merged
+        ]
+
+        wrapper = ProcWrapper(params=params)
+
+        # Returns 'superduperpostgres'
+        return wrapper.managed_call(callback, 'duper')
+
+#### Merging Secrets
+
+Top-level fetching can potentially fetch multiple dictionaries which are
+merged together in the final environment / configuration dictionary.
+The default merge strategy (`SHALLOW`) is just to overwrite top-level keys, with later
+secret locations taking precedence. However, if you include the
+[mergedeep](https://github.com/clarketm/mergedeep) library, you can also
+set the merge strategy to one of:
+
+* `REPLACE`
+* `ADDITIVE`
+* `TYPESAFE_REPLACE`
+* `TYPESAFE_ADDITIVE`
+
+so that nested dictionaries / lists will be merged as well. In wrapped mode,
+the merge strategy can be set with the `--config-merge-strategy` command-line
+argument or `PROC_WRAPPER_CONFIG_MERGE_STRATEGY` environment variable. In
+embedded mode, the merge strategy can be set in the
+`config_merge_strategy` string property of `ProcWrapperParams`.
+
+### Secret Resolution
+
+Secret Resolution substitutes configuration or environment values that are
+secret location strings with the computed values of those strings. Compared
+to Secret Fetching, Secret Resolution is more useful when you want more
+control over the names of variables or when you have secret values deep
+inside your configuration.
+
+In wrapped mode, if you want to set the environment variable `MY_SECRET` with
+a value fetched
+from AWS Secrets Manager, you would set the environment variable
+`MY_SECRET_FOR_PROC_WRAPPER_TO_RESOLVE` to a secret location string
+which is ARN of the secret, for example:
+
+    arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY
+
+(The `_FOR_PROC_WRAPPER_TO_RESOLVE` suffix of environment variable names is
+removed during resolution. It can also be configured with the `PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_SUFFIX` environment variable.)
+
+In embedded mode, if you want the final configuration dictionary to look like:
+
+    {
+      "db_username": "postgres",
+      "db_password": "badpassword",
+      ...
+    }
+
+
+The initial configuration dictionary would look like:
+
+    {
+      "db_username__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY|JP:$.username",
+      "db_password__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY|JP:$.password",
+
+      ...
+    }
+
+(The `__to_resolve` suffix (with 2 underscores!) of keys is removed during
+resolution. It can also be configured with the `resolved_config_property_name_suffix`
+property of `ProcWrapperParams`.)
+
+proc_wrapper can also resolve keys in embedded dictionaries, like:
+
+    {
+      "db": {
+        "username__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY|JP:$.username",
+        "password__to_resolve":
+        "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY|JP:$.password",
+        ...
+      },
+      ...
+    }
+
+up to a maximum depth that you can control with `ProcWrapperParams.max_config_resolution_depth` (which defaults to 5). That would resolve to
+
+    {
+      "db": {
+        "username": "postgres",
+        "password": "badpassword"
+        ...
+      },
+      ...
+    }
+
+You can also inject entire dictionaries, like:
+
+    {
+      "db__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY",
+      ...
+    }
+
+which would resolve to
+
+    {
+      "db": {
+        "username": "postgres",
+        "password": "badpassword"
+      },
+      ...
+    }
+
+To enable secret resolution in wrapped mode, set environment variable `PROC_WRAPPER_RESOLVE_SECRETS` to `TRUE`. In embedded mode, secret
+resolution is enabled by default; set the
+`max_config_resolution_iterations` property of `ProcWrapperParams` to `0`
+to disable resolution.
+
+Secret resolution is run multiple times so that if a resolved value contains
+a secret location string, it will be resolved on the next pass. By default,
+proc_wrapper limits the maximum number of resolution passes to 3 but you
+can control this with the environment variable
+`PROC_WRAPPER_MAX_CONFIG_RESOLUTION_ITERATIONS` in embedded mode,
+or by setting the `max_config_resolution_iterations` property of
+`ProcWrapperParams` in wrapped mode.
+
+### Environment projection
+
+During secret fetching and secret resolution, proc_wrapper internally maintains
+the computed environment as a dictionary which may have embedded lists and
+dictionaries. However, the final environment passed to process is a flat
+dictionary containing only string values. So proc_wrapper converts
+all top-level values to strings using these rules:
+
+* Lists and dictionaries are converted to their JSON-encoded string value
+* Boolean values are converted to their upper-cased string representation
+(e.g. the string `FALSE` for the boolean value `false`)
+* The `None` value is converted to the empty string
+* All other values are converted using python's `str()` function
 
 ### Secrets Refreshing
 
 You can set a Time to Live (TTL) on the duration that secrets are cached,
-using the --resolved-env-ttl command argument or PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS environment variable.
+using the `--resolved-env-ttl` command argument or
+`PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS` environment variable.
 
-If your process exits, you have configured the script to retry, and the TTL has expired since the last fetch, proc_wrapper will re-fetch the secrets
+In wrapped mode, if the process exits, you have configured the script to retry,
+and the TTL has expired since the last fetch,
+proc_wrapper will re-fetch the secrets
 and resolve them again, for the environment passed to the next invocation of
 your process.
+
+In embedded mode, if the callback function raises an exception, you have configured the script to retry, and the TTL has expired since the last fetch,
+proc_wrapper will re-fetch the secrets
+and resolve them again, for the configuration passed to the next invocation of
+the callback function.
 
 ## Status Updates
 
 ### Status Updates in Wrapped Mode
 
-As your process or function runs, you can send status updates to
+While your process in running, you can send status updates to
 CloudReactor by using the StatusUpdater class. Status updates are shown in
 the CloudReactor dashboard and allow you to track the current progress of a
 Task and also how many items are being processed in multiple executions

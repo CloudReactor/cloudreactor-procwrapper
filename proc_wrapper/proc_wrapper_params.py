@@ -110,7 +110,7 @@ class ConfigResolverParams:
 
     def override_resolver_params_from_env(self, env: Dict[str, str]) -> None:
         self.log_secrets = string_to_bool(
-                env.get('PROC_WRAPPER_API_LOG_SECRETS'),
+                env.get('PROC_WRAPPER_LOG_SECRETS'),
                 default_value=self.log_secrets) or False
 
         env_locations_in_env = env.get('PROC_WRAPPER_ENV_LOCATIONS')
@@ -132,7 +132,8 @@ class ConfigResolverParams:
                 default_value=self.overwrite_env_during_resolution) or False
 
         should_resolve_secrets = string_to_bool(
-                env.get('PROC_WRAPPER_RESOLVE_SECRETS'), False)
+                env.get('PROC_WRAPPER_RESOLVE_SECRETS'),
+                (self.max_config_resolution_depth > 0))
 
         if not should_resolve_secrets:
             _logger.debug('Secrets resolution is disabled.')
@@ -170,10 +171,6 @@ class ConfigResolverParams:
         self.resolved_config_property_name_suffix = coalesce(
                 env.get('PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX'),
                 self.resolved_config_property_name_suffix) or ''
-
-        self.fail_fast_config_resolution = coalesce(string_to_bool(
-                env.get('PROC_WRAPPER_FAIL_FAST_CONFIG_RESOLUTION')),
-                self.fail_fast_config_resolution)
 
         self.env_var_name_for_config = coalesce(
                 env.get('PROC_WRAPPER_ENV_VAR_NAME_FOR_CONFIG'),
@@ -1060,7 +1057,7 @@ Defaults to '{DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX}'.""")
             help=f"""
 Required suffix for names of configuration properties that should resolved.
 The suffix will be removed in the resolved property name.
-Defaults to '{DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX}'.""")
+Defaults to '{DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX}'.""")
 
     config_group.add_argument('--env-var-name-for-config',
             help=f"""

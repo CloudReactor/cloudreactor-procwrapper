@@ -102,7 +102,7 @@ class ProcWrapper:
 
     _STATUS_BUFFER_SIZE = 4096
 
-    def __init__(self, params: Optional[ProcWrapperParams]=None,
+    def __init__(self, params: Optional[ProcWrapperParams] = None,
             runtime_metadata_fetcher: Optional[RuntimeMetadataFetcher] = None,
             config_resolver: Optional[ConfigResolver] = None,
             env_override: Optional[Mapping[str, Any]] = None) -> None:
