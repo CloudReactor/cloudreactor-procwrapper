@@ -419,9 +419,7 @@ class ProcWrapperParams(ConfigResolverParams):
                 )
         else:
             if not self.api_key:
-                self._push_error(
-                    task_errors, "api_key", "No API key specified, exiting."
-                )
+                self._push_error(task_errors, "api_key", "No API key specified.")
 
             if (not self.task_uuid) and (not self.task_name):
                 self._push_error(
