@@ -1,4 +1,4 @@
-__version__ = "3.0.0-alpha1"
+__version__ = "3.0.0"
 
 
 from .config_resolver import ConfigResolver  # noqa: F401

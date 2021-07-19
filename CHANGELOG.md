@@ -34,3 +34,11 @@ can be used to extract individual secrets
 * No changes
 ## v2.1.1 (2021-04-07)
 * Fix an issue with Rollbar configuration
+## v3.0.0 (2021-07-18)
+* Support fetching top-level secrets
+* Support fetching secrets from AWS S3
+* Support fetching secrets from the local filesystem
+* Don't require a provider prefix like "AWS_SM_" in environment variable names
+* Support .env and yaml encoded secrets
+* Factor out parameters into ProcWrapperParams
+* Group related settings in arg parser
