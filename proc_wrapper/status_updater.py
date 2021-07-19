@@ -42,17 +42,23 @@ class StatusUpdater:
 
         self.socket: Optional[socket.socket] = None
         self.port = None
-        self.enabled = os.environ.get(
-                'PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER', 'FALSE') \
-                .upper() == 'TRUE'
+        self.enabled = (
+            os.environ.get(
+                "PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER", "FALSE"
+            ).upper()
+            == "TRUE"
+        )
 
         if self.enabled:
-            self._logger.info('StatusUpdater is enabled')
+            self._logger.info("StatusUpdater is enabled")
         else:
-            self._logger.info('StatusUpdater is disabled')
+            self._logger.info("StatusUpdater is disabled")
             return
 
-        self.port = int(os.environ.get('PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT') or StatusUpdater.DEFAULT_STATUS_UPDATE_PORT)
+        self.port = int(
+            os.environ.get("PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT")
+            or StatusUpdater.DEFAULT_STATUS_UPDATE_PORT
+        )
 
         self.incremental_count_mode = incremental_count_mode
         self.success_count = 0
@@ -70,12 +76,15 @@ class StatusUpdater:
         """Implement exit point for python with statement."""
         self.shutdown()
 
-    def send_update(self, success_count: Optional[int] = None,
-            error_count: Optional[int] = None,
-            skipped_count: Optional[int] = None,
-            expected_count: Optional[int] = None,
-            last_status_message: Optional[str] = None,
-            extra_props: Optional[Dict[str, Any]] = None) -> None:
+    def send_update(
+        self,
+        success_count: Optional[int] = None,
+        error_count: Optional[int] = None,
+        skipped_count: Optional[int] = None,
+        expected_count: Optional[int] = None,
+        last_status_message: Optional[str] = None,
+        extra_props: Optional[Dict[str, Any]] = None,
+    ) -> None:
         if not self.enabled:
             return
 
@@ -100,7 +109,7 @@ class StatusUpdater:
             else:
                 self.success_count = success_count
 
-            status_hash['success_count'] = self.success_count
+            status_hash["success_count"] = self.success_count
 
         if error_count is not None:
             if self.incremental_count_mode:
@@ -108,7 +117,7 @@ class StatusUpdater:
             else:
                 self.error_count = error_count
 
-            status_hash['error_count'] = self.error_count
+            status_hash["error_count"] = self.error_count
 
         if skipped_count is not None:
             if self.incremental_count_mode:
@@ -116,7 +125,7 @@ class StatusUpdater:
             else:
                 self.skipped_count = skipped_count
 
-            status_hash['skipped_count'] = self.skipped_count
+            status_hash["skipped_count"] = self.skipped_count
 
         if expected_count is not None:
             if self.incremental_count_mode:
@@ -124,31 +133,31 @@ class StatusUpdater:
             else:
                 self.expected_count = expected_count
 
-            status_hash['expected_count'] = self.expected_count
+            status_hash["expected_count"] = self.expected_count
 
         if last_status_message:
-            status_hash['last_status_message'] = last_status_message
+            status_hash["last_status_message"] = last_status_message
 
         if extra_props:
-            status_hash['other_runtime_metadata'] = extra_props
+            status_hash["other_runtime_metadata"] = extra_props
 
         if not status_hash:
             return
 
-        message = (json.dumps(status_hash) + "\n").encode('UTF-8')
+        message = (json.dumps(status_hash) + "\n").encode("UTF-8")
 
         try:
-            self.reuse_or_create_socket().sendto(message, ('127.0.0.1', self.port))
+            self.reuse_or_create_socket().sendto(message, ("127.0.0.1", self.port))
         except Exception:
             self._logger.debug("Can't send status update, resetting socket")
             self.socket = None
 
     def shutdown(self) -> None:
         if self.socket:
-            self._logger.info('Closing status update socket ...')
+            self._logger.info("Closing status update socket ...")
             try:
                 self.socket.close()
-                self._logger.info('Done closing status update socket.')
+                self._logger.info("Done closing status update socket.")
             finally:
                 self.socket = None
 

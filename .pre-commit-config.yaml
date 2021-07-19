@@ -13,12 +13,19 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: debug-statements
+
+  - repo: https://github.com/ambv/black
+    rev: 21.7b0
+    hooks:
+      - id: black
+        language_version: python3.9
+
   - repo: https://gitlab.com/pycqa/flake8
     rev: 3.9.0
     hooks:
       - id: flake8
-  - repo: https://github.com/commitizen-tools/commitizen
-    rev: v2.16.0
-    hooks:
-      - id: commitizen
-        stages: [commit-msg]
+  # - repo: https://github.com/commitizen-tools/commitizen
+  #   rev: v2.16.0
+  #   hooks:
+  #     - id: commitizen
+  #       stages: [commit-msg]
