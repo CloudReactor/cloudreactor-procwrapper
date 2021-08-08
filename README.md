@@ -572,14 +572,14 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_RESOLVE_SECRETS
 * PROC_WRAPPER_MAX_CONFIG_RESOLUTION_DEPTH
 * PROC_WRAPPER_MAX_CONFIG_RESOLUTION_ITERATIONS
-* PROC_WRAPPER_MAX_CONFIG_TTL_SECONDS
+* PROC_WRAPPER_CONFIG_TTL_SECONDS
 * PROC_WRAPPER_FAIL_FAST_CONFIG_RESOLUTION
 * PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_PREFIX
 * PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_SUFFIX
 * PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX
 * PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX
 * PROC_WRAPPER_ENV_VAR_NAME_FOR_CONFIG
-* PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
+* PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_ENV
 * PROC_WRAPPER_SEND_PID (TRUE or FALSE)
 * PROC_WRAPPER_SEND_HOSTNAME (TRUE or FALSE)
 * PROC_WRAPPER_SEND_RUNTIME_METADATA (TRUE or FALSE)
@@ -1000,17 +1000,22 @@ all top-level values to strings using these rules:
 
 ### Secrets Refreshing
 
-You can set a Time to Live (TTL) on the duration that secrets are cached,
-using the `--resolved-env-ttl` command argument or
-`PROC_WRAPPER_RESOLVED_ENV_TTL_SECONDS` environment variable.
+You can set a Time to Live (TTL) on the duration that secret values are cached.
+Caching helps reduce expensive lookups of secrets and bandwidth usage.
 
-In wrapped mode, if the process exits, you have configured the script to retry,
+In wrapped mode, set the TTL of environment variables set from secret locations
+using the `--config-ttl` command-line argument or
+`PROC_WRAPPER_CONFIG_TTL_SECONDS` environment variable.
+If the process exits, you have configured the script to retry,
 and the TTL has expired since the last fetch,
 proc_wrapper will re-fetch the secrets
 and resolve them again, for the environment passed to the next invocation of
 your process.
 
-In embedded mode, if the callback function raises an exception, you have configured the script to retry, and the TTL has expired since the last fetch,
+In embedded mode, set the TTL of configuration dictionary values set from
+secret locations by setting the `config_ttl` property of
+`ProcWrapperParams`. If 1) your callback function raises an exception, 2) you have
+configured the script to retry; and 3) the TTL has expired since the last fetch,
 proc_wrapper will re-fetch the secrets
 and resolve them again, for the configuration passed to the next invocation of
 the callback function.

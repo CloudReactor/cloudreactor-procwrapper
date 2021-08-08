@@ -225,7 +225,7 @@ class ConfigResolverParams:
         )
 
         self.config_property_name_for_env = coalesce(
-            env.get("PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR"),
+            env.get("PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_ENV"),
             self.config_property_name_for_env,
         )
 
