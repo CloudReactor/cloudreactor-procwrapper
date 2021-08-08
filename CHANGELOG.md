@@ -42,3 +42,6 @@ can be used to extract individual secrets
 * Support .env and yaml encoded secrets
 * Factor out parameters into ProcWrapperParams
 * Group related settings in arg parser
+## v3.0.1 (2021-08-07)
+* Use environment variable PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_ENV instead of
+PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
