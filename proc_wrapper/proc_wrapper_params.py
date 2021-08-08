@@ -166,6 +166,7 @@ class ConfigResolverParams:
                 )
                 or 0
             )
+
             self.max_config_resolution_iterations = (
                 string_to_int(
                     env.get("PROC_WRAPPER_MAX_CONFIG_RESOLUTION_ITERATIONS"),
