@@ -655,7 +655,7 @@ dependencies. To run a task you want to be monitored:
 
     params = ProcWrapperParams()
     params.auto_create_task = True
-    params.auto_create_run_environment_name = 'production'
+    params.auto_create_task_run_environment_name = 'production'
     params.task_name = 'embedded_test'
 
     # For example only, in the real world you would use Secret Fetching;
