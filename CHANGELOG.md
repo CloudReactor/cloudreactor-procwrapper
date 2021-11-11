@@ -45,3 +45,7 @@ can be used to extract individual secrets
 ## v3.0.1 (2021-08-07)
 * Use environment variable PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_ENV instead of
 PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
+## v3.1.0 (2021-11-11)
+* Fix CONFIG secret provider fetching
+* Override config resolver parameters from environment by default
+* Allow injection of initial configuration

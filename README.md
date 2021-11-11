@@ -846,7 +846,9 @@ will be parsed as `dotenv` files unless format is auto-detected or
 explicitly specified.
 
 To use top-level fetching in embedded mode, set the `ProcWrapperParams` property
-`config_locations` to a list of secret locations. Secret location values
+`config_locations` to a list of secret locations. Alternatively, you can set
+the environment variable `PROC_WRAPPER_CONFIG_LOCATIONS` to a comma-separated
+list, and this will be picked up automatically. Secret location values
 will be parsed as JSON unless the format is auto-detected or explicitly
 specified. The `config` argument
 passed to the your callback function will contain a merged dictionary of all
@@ -859,6 +861,15 @@ fetched and parsed dictionary values. For example:
 
     def main():
         params = ProcWrapperParams()
+
+        # Optional: you can set an initial configuration dictionary which will
+        # have its values included in the final configuration unless overridden.
+        params.initial_config = {
+          'log_level': 'DEBUG'
+        }
+
+        # You can omit this if you set PROC_WRAPPER_CONFIG_LOCATIONS environment
+        # variable to the same ARN
         params.config_locations = [
             'arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY',
             # More secret locations can be added here, and their values will
