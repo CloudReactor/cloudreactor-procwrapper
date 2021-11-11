@@ -506,7 +506,7 @@ class ProcWrapper:
         seconds ago.
         """
 
-        if not self.offline_mode:
+        if self.offline_mode:
             return
 
         if success_count is not None:
