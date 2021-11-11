@@ -50,6 +50,18 @@ def test_resolve_env_from_plaintext_with_json_path(format: str):
     assert bad_vars == []
 
 
+def test_resolve_env_from_config():
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+
+    env_override["SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE"] = "CONFIG:$.a"
+    params = ConfigResolverParams()
+    params.initial_config = {"a": "bug"}
+    resolver = ConfigResolver(params=params, env_override=env_override)
+    resolved_env, bad_vars = resolver.fetch_and_resolve_env()
+    assert resolved_env["SOME_ENV"] == "bug"
+    assert bad_vars == []
+
+
 def put_aws_sm_secret(sm_client, name: str, value: str) -> str:
     return sm_client.create_secret(
         Name=name,

@@ -92,7 +92,8 @@ class ProcWrapperParamValidationErrors(NamedTuple):
 
 
 class ConfigResolverParams:
-    def __init__(self):
+    def __init__(self, override_from_env: bool = True):
+        self.initial_config: Dict[str, Any] = {}
         self.log_secrets: bool = False
         self.env_locations: List[str] = []
         self.config_locations: List[str] = []
@@ -118,7 +119,15 @@ class ConfigResolverParams:
             str
         ] = DEFAULT_CONFIG_VAR_NAME_FOR_ENV
 
-    def override_resolver_params_from_env(self, env: Dict[str, str]) -> None:
+        if override_from_env:
+            self.override_resolver_params_from_env()
+
+    def override_resolver_params_from_env(
+        self, env: Optional[Dict[str, str]] = None
+    ) -> None:
+        if env is None:
+            env = dict(os.environ)
+
         self.log_secrets = (
             string_to_bool(
                 env.get("PROC_WRAPPER_LOG_SECRETS"), default_value=self.log_secrets
@@ -277,8 +286,8 @@ class ConfigResolverParams:
 
 
 class ProcWrapperParams(ConfigResolverParams):
-    def __init__(self, embedded_mode: bool = True):
-        super().__init__()
+    def __init__(self, embedded_mode: bool = True, override_from_env: bool = True):
+        super().__init__(override_from_env=override_from_env)
 
         self.embedded_mode = embedded_mode
 

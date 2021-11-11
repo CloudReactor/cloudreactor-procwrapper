@@ -275,7 +275,7 @@ class ConfigSecretProvider(SecretProvider):
         transformed = transform_value(
             parsed_value=config,
             string_value="<config>",
-            transform_expr_str=location,
+            transform_expr_str=JSON_PATH_TRANSFORM_PREFIX + location,
             log_secrets=self.log_secrets,
         )
 
@@ -681,7 +681,7 @@ class ConfigResolver:
         # Merge the current environment last
         merged_env.update(self.env)
 
-        merged_config: Dict[str, Any] = {}
+        merged_config: Dict[str, Any] = self.params.initial_config.copy()
         for config_location in self.params.config_locations:
             config = self.fetch_config_from_location(
                 config_location, default_format=FORMAT_JSON
