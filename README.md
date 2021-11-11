@@ -101,7 +101,7 @@ or manually in the CloudReactor dashboard.
 You can also specify more Task properties, such as Alert Methods and
 external links in the dashboard, by setting the environment variable
 `PROC_WRAPPER_AUTO_CREATE_TASK_PROPS` set to a JSON-encoded object that has the
-[CloudReactor Task schema](https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create).
+[CloudReactor Task schema](https://apidocs.cloudreactor.io/#operation/tasks_create).
 
 ### Execution Methods
 
@@ -1083,7 +1083,7 @@ In embedded mode, your callback in python code can use the wrapper instance to s
 
     params = ProcWrapperParams()
     params.auto_create_task = True
-    params.auto_create_run_environment_name = 'production'
+    params.auto_create_task_run_environment_name = 'production'
     params.task_name = 'embedded_test'
     params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
     proc_wrapper = ProcWrapper(params=params)
