@@ -50,8 +50,6 @@ try:
 except Exception:
     logging.exception("Failed to fetch runtime metadata")
 
-main_args.override_resolver_params_from_env(os.environ)
-
 config_resolver = ConfigResolver(params=main_args, runtime_metadata=runtime_metadata)
 
 resolved_env, failed_var_names = config_resolver.fetch_and_resolve_env()
