@@ -1074,21 +1074,21 @@ In embedded mode, your callback in python code can use the wrapper instance to s
 
     def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
             config: Mapping[str, Any]) -> int:
-        wrapper.send_update(status_message='Starting the fun ...')
+        wrapper.update_status(last_status_message='Starting the fun ...')
 
+        success_count = 0
+        error_count = 0
         for i in range(100):
             try:
                 do_work()
                 success_count += 1
             except Exception:
-                failed_count += 1
 
-            # Coalesce updates to avoid using too much bandwidth / API credits
-            if (success_count + failed_count) % 10 == 0:
-                wrapper.send_update(success_count=success_count,
-                        failed_count=failed_count)
+                error_count += 1
+            wrapper.update_status(success_count=success_count,
+                    error_count=error_count)
 
-        wrapper.send_update(status_message='The fun is over.')
+        wrapper.update_status(last_status_message='The fun is over.')
 
         return cbdata['a']
 
