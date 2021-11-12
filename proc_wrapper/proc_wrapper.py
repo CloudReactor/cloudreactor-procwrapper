@@ -162,7 +162,7 @@ class ProcWrapper:
         if params:
             self.params = params
         else:
-            self.params = ProcWrapperParams()
+            self.params = ProcWrapperParams(override_from_env=False)
             self.params.override_resolver_params_from_env(env=self.env)
 
         if config_resolver:
