@@ -112,6 +112,7 @@ class ProcWrapper:
         runtime_metadata_fetcher: Optional[RuntimeMetadataFetcher] = None,
         config_resolver: Optional[ConfigResolver] = None,
         env_override: Optional[Mapping[str, Any]] = None,
+        override_params_from_env: bool = True,
     ) -> None:
         _logger.info("Creating ProcWrapper instance ...")
 
@@ -152,7 +153,11 @@ class ProcWrapper:
             runtime_metadata_fetcher or RuntimeMetadataFetcher()
         )
 
-        runtime_metadata = self.runtime_metadata_fetcher.fetch(env=self.env)
+        runtime_metadata: Optional[RuntimeMetadata] = None
+        try:
+            runtime_metadata = runtime_metadata_fetcher.fetch(env=self.env)
+        except Exception:
+            _logger.exception("Failed to fetch runtime metadata")
 
         if params:
             self.params = params
@@ -180,7 +185,7 @@ class ProcWrapper:
 
         self.config_resolver.fetch_and_resolve_env()
 
-        if params is None:
+        if override_params_from_env:
             self.params.override_proc_wrapper_params_from_env(
                 env=self.resolved_env,
                 mutable_only=False,
@@ -491,15 +496,15 @@ class ProcWrapper:
 
     def update_status(
         self,
-        failed_attempts=None,
-        timed_out_attempts=None,
-        pid=None,
-        success_count=None,
-        error_count=None,
-        skipped_count=None,
-        expected_count=None,
-        last_status_message=None,
-        extra_status_props=None,
+        failed_attempts: Optional[int] = None,
+        timed_out_attempts: Optional[int] = None,
+        pid: Optional[int] = None,
+        success_count: Optional[int] = None,
+        error_count: Optional[int] = None,
+        skipped_count: Optional[int] = None,
+        expected_count: Optional[int] = None,
+        last_status_message: Optional[str] = None,
+        extra_status_props: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Update the status of the process. Send to the process management
         server if the last status was sent more than status_update_interval
@@ -573,7 +578,7 @@ class ProcWrapper:
             pid=pid,
         )
 
-    def managed_call(self, fun, data=None):
+    def managed_call(self, fun, data: Any = None):
         """
         Call the argument object, which must be callable, doing retries as necessary,
         and wrapping with calls to the API server.
