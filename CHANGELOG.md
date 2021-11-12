@@ -52,3 +52,5 @@ PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
 ## v3.1.1 (2021-11-11)
 * Fix update_status() to actually work
 * Override proc_wrapper parameters from environment by default
+## v3.1.2 (2021-11-11)
+* Fix regression of failing to fetch runtime metadata

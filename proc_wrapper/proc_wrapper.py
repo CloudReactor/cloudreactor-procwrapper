@@ -155,7 +155,7 @@ class ProcWrapper:
 
         runtime_metadata: Optional[RuntimeMetadata] = None
         try:
-            runtime_metadata = runtime_metadata_fetcher.fetch(env=self.env)
+            runtime_metadata = self.runtime_metadata_fetcher.fetch(env=self.env)
         except Exception:
             _logger.exception("Failed to fetch runtime metadata")
 
