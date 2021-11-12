@@ -49,3 +49,6 @@ PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
 * Fix CONFIG secret provider fetching
 * Override config resolver parameters from environment by default
 * Allow injection of initial configuration
+## v3.1.1 (2021-11-11)
+* Fix update_status() to actually work
+* Override proc_wrapper parameters from environment by default
