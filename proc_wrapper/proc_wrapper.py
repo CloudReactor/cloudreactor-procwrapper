@@ -605,7 +605,7 @@ class ProcWrapper:
 
         rv = None
         success = False
-        saved_ex = None
+        saved_ex: Exception = RuntimeError()
         while self.attempt_count < self.max_execution_attempts:
             self.attempt_count += 1
 
@@ -633,10 +633,16 @@ class ProcWrapper:
                         self._reload_params()
 
             if success:
-                self.send_completion(
-                    status=ProcWrapper.STATUS_SUCCEEDED,
-                    failed_attempts=self.failed_count,
-                )
+                try:
+                    self.send_completion(
+                        status=ProcWrapper.STATUS_SUCCEEDED,
+                        failed_attempts=self.failed_count,
+                    )
+                except Exception:
+                    _logger.warning(
+                        "Failed to send completion to the API server", exc_info=True
+                    )
+
                 return rv
 
         self.send_completion(
