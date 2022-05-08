@@ -27,7 +27,7 @@ DEFAULT_TASK_VERSION_SIGNATURE = "43cfd2b905d5cb4f2e8fc941c7a1289002be9f7f"
 CLIENT_HEADERS = {
     **ACCEPT_JSON_HEADERS,
     **{
-        "Authorization": f"Token {TEST_API_KEY}",
+        "Authorization": f"Bearer {TEST_API_KEY}",
         "Content-Type": "application/json",
     },
 }
