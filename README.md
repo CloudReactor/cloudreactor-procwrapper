@@ -999,7 +999,7 @@ or by setting the `max_config_resolution_iterations` property of
 
 During secret fetching and secret resolution, proc_wrapper internally maintains
 the computed environment as a dictionary which may have embedded lists and
-dictionaries. However, the final environment passed to process is a flat
+dictionaries. However, the final environment passed to the process is a flat
 dictionary containing only string values. So proc_wrapper converts
 all top-level values to strings using these rules:
 

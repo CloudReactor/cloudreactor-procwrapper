@@ -25,7 +25,7 @@ for making this possible!
 
 ## When python is available
 
-The package is published on [PyPI](https://pypi.org/project/deezer-python/)
+The package is published on [PyPI](https://pypi.org/)
 and can be installed with `pip` (or any equivalent):
 
 ```bash
