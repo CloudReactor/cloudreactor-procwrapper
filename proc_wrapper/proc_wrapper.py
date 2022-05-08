@@ -1123,7 +1123,7 @@ class ProcWrapper:
 
     def _make_headers(self) -> Dict[str, str]:
         headers = {
-            "Authorization": f"Token {self.params.api_key}",
+            "Authorization": f"Bearer {self.params.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
