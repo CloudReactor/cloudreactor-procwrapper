@@ -14,7 +14,7 @@ repos:
     rev: v0.950
     hooks:
       - id: mypy
-        args: [-p proc_wrapper]
+        additional_dependencies: [types-PyYAML==5.4.12]
 
   - repo: https://github.com/PyCQA/isort
     rev: 5.10.1

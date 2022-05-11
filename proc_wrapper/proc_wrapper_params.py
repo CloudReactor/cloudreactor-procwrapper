@@ -3,7 +3,8 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, NamedTuple, Optional, cast
+import shlex
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union, cast
 
 from .common_utils import coalesce, encode_int, string_to_bool, string_to_int
 from .runtime_metadata import RuntimeMetadata
@@ -36,6 +37,10 @@ DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX = "_FOR_PROC_WRAPPER_TO_RESOLVE"
 DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX = ""
 DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX = "__to_resolve"
 
+SHELL_MODE_AUTO = "auto"
+SHELL_MODE_FORCE_ENABLE = "enable"
+SHELL_MODE_FORCE_DISABLE = "disable"
+DEFAULT_SHELL_MODE = SHELL_MODE_AUTO
 
 DEFAULT_STATUS_UPDATE_SOCKET_PORT = 2373
 DEFAULT_STATUS_UPDATE_MESSAGE_MAX_BYTES = 64 * 1024
@@ -50,6 +55,10 @@ DEFAULT_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS = 30
 
 UNSET_INT_VALUE = -1000000
 
+SHELL_COMMAND_REGEX = re.compile(r"[^\w\-/. ]")
+
+# Detects sh, bash, csh, zsh, ash, dash, and fish shells
+SHELL_WRAPPER_REGEX = re.compile(r"^\s*(/\w+)*/(ba|c|z|fi|d?a)?sh\s+-c\s+")
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
@@ -123,7 +132,7 @@ class ConfigResolverParams:
             self.override_resolver_params_from_env()
 
     def override_resolver_params_from_env(
-        self, env: Optional[Dict[str, str]] = None
+        self, env: Optional[Mapping[str, str]] = None
     ) -> None:
         if env is None:
             env = dict(os.environ)
@@ -340,7 +349,12 @@ class ProcWrapperParams(ConfigResolverParams):
         self.send_runtime_metadata: bool = True
 
         self.command: Optional[List[str]] = None
+        self.command_line: Optional[str] = None
+        self.shell_mode = SHELL_MODE_AUTO
+        self.strip_shell_wrapping = True
+        self.process_group_termination = True
         self.work_dir: str = "."
+
         self.process_timeout: Optional[int] = None
         self.process_max_retries: int = 0
         self.process_retry_delay: int = 0
@@ -388,7 +402,7 @@ class ProcWrapperParams(ConfigResolverParams):
         )
 
         if not self.embedded_mode:
-            if not self.command:
+            if (not self.command) and (not self.command_line):
                 self._push_error(
                     process_errors,
                     "command",
@@ -462,6 +476,53 @@ class ProcWrapperParams(ConfigResolverParams):
 
     def run_mode_label(self) -> str:
         return "embedded" if self.embedded_mode else "wrapped"
+
+    def resolve_command_and_shell_flag(self) -> Tuple[Union[str, List[str]], bool]:
+        resolved_command: Union[str, List[str]] = (
+            self.command_line or self.command or ""
+        )
+
+        command_line = (
+            self.command_line if self.command_line else " ".join(self.command or "")
+        )
+
+        found_shell_wrapping = False
+
+        if self.strip_shell_wrapping:
+            done = False
+            while not done:
+                done = True
+                command_line_remainder, n = SHELL_WRAPPER_REGEX.subn("", command_line)
+
+                if n > 0:
+                    try:
+                        # Unquote
+                        command_remainder = shlex.split(command_line_remainder)
+
+                        # Only handle a single shell expression
+                        if len(command_remainder) == 1:
+                            # Switch to single string form
+                            resolved_command = command_remainder[0]
+
+                            _logger.info(
+                                f"Stripped shell wrapping from '{command_line}' to '{resolved_command}'"
+                            )
+
+                            command_line = resolved_command
+                            found_shell_wrapping = True
+                            done = False
+                    except Exception:
+                        _logger.exception(
+                            f"Error unquoting shell command '{command_line}'"
+                        )
+
+        shell_flag = True
+        if self.shell_mode == SHELL_MODE_FORCE_DISABLE:
+            shell_flag = False
+        elif (not found_shell_wrapping) and (self.shell_mode == SHELL_MODE_AUTO):
+            shell_flag = SHELL_COMMAND_REGEX.search(command_line) is not None
+
+        return (resolved_command, shell_flag)
 
     def log_configuration(self) -> None:
         _logger.info(f"Run mode = {self.run_mode_label()}")
@@ -540,7 +601,9 @@ class ProcWrapperParams(ConfigResolverParams):
             _logger.debug("Rollbar is disabled")
 
         if not self.embedded_mode:
-            _logger.info(f"Command = {self.command}")
+            command, shell = self.resolve_command_and_shell_flag()
+            _logger.info(f"Command = {command}")
+            _logger.info(f"Use shell = {shell} (shell mode = {self.shell_mode})")
             _logger.info(f"Work dir = '{self.work_dir}'")
 
             enable_status_update_listener = self.enable_status_update_listener
@@ -868,7 +931,24 @@ class ProcWrapperParams(ConfigResolverParams):
                 ),
             )
 
-            self.command = self.command
+            self.command_line = env.get("PROC_WRAPPER_TASK_COMMAND", self.command_line)
+
+            self.shell_mode = env.get("PROC_WRAPPER_SHELL_MODE", self.shell_mode)
+
+            self.strip_shell_wrapping = (
+                string_to_bool(
+                    env.get("PROC_WRAPPER_STRIP_SHELL_WRAPPING"),
+                    default_value=self.strip_shell_wrapping,
+                )
+                or False
+            )
+
+            self.process_group_termination = coalesce(
+                string_to_bool(env.get("PROC_WRAPPER_TERMINATE_PROCESS_GROUP")),
+                self.process_group_termination,
+                True,
+            )
+
             self.work_dir = env.get("PROC_WRAPPER_WORK_DIR", self.work_dir)
 
         task_instance_metadata_str = env.get("PROC_WRAPPER_TASK_INSTANCE_METADATA")
@@ -1295,6 +1375,52 @@ Timeout for contacting API server, in seconds. Defaults to
         help="Working directory. Defaults to the current directory.",
     )
     process_group.add_argument(
+        "-c",
+        "--command-line",
+        default=".",
+        help="Command line to execute",
+    )
+    process_group.add_argument(
+        "--shell-mode",
+        choices=[
+            SHELL_MODE_AUTO,
+            SHELL_MODE_FORCE_ENABLE,
+            SHELL_MODE_FORCE_DISABLE,
+        ],
+        default=SHELL_MODE_AUTO,
+        help=f"""
+Indicates if the process command should be executed in a shell.
+Executing in a shell allows shell scripts, commands, and expressions to be used,
+with the disadvantage that termination signals may not be propagated to
+child processes.
+
+Options are:
+{SHELL_MODE_FORCE_ENABLE} -- Force the command to be executed in a shell;
+{SHELL_MODE_FORCE_DISABLE} -- Force the command to be executed without a shell;
+{SHELL_MODE_AUTO} -- Auto-detect the shell mode by analyzing the command.
+""",
+    )
+    process_group.add_argument(
+        "--no-strip-shell-wrapping",
+        action="store_false",
+        dest="strip_shell_wrapping",
+        help="""
+Strip the command-line of shell wrapping like "/bin/sh -c" that can be
+introduced by Docker when using shell form of ENTRYPOINT and CMD.
+""",
+    )
+    process_group.add_argument(
+        "--no-process-group-termination",
+        action="store_false",
+        dest="process_group_termination",
+        help="""
+Send termination and kill signals to the wrapped process only, instead of its
+process group. Sending to the process group allows all child processes to
+receive the signals, even if the wrapped process does not forward signals.
+""",
+    )
+
+    process_group.add_argument(
         "-t",
         "--process-timeout",
         help="""
@@ -1377,7 +1503,6 @@ Minimum of seconds to wait between sending status updates to the API server.
     )
 
     config_group.add_argument(
-        "-c",
         "--config",
         action="append",
         dest="config_locations",

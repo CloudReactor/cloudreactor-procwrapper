@@ -261,7 +261,10 @@ Here are all the options:
                         [-d DEPLOYMENT] [--send-pid] [--send-hostname]
                         [--no-send-runtime-metadata]
                         [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets]
-                        [-w WORK_DIR] [-t PROCESS_TIMEOUT]
+                        [-w WORK_DIR] [-c COMMAND_LINE]
+                        [--shell-mode {auto,enable,disable}]
+                        [--no-strip-shell-wrapping]
+                        [--no-process-group-termination] [-t PROCESS_TIMEOUT]
                         [-r PROCESS_MAX_RETRIES]
                         [--process-retry-delay PROCESS_RETRY_DELAY]
                         [--process-check-interval PROCESS_CHECK_INTERVAL]
@@ -270,7 +273,7 @@ Here are all the options:
                         [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
                         [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
                         [--status-update-interval STATUS_UPDATE_INTERVAL]
-                        [-e ENV_LOCATIONS] [-c CONFIG_LOCATIONS]
+                        [-e ENV_LOCATIONS] [--config CONFIG_LOCATIONS]
                         [--config-merge-strategy {SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}]
                         [--overwrite_env_during_resolution]
                         [--config-ttl CONFIG_TTL]
@@ -425,6 +428,28 @@ Here are all the options:
 
       -w WORK_DIR, --work-dir WORK_DIR
                             Working directory. Defaults to the current directory.
+      -c COMMAND_LINE, --command-line COMMAND_LINE
+                            Command line to execute
+      --shell-mode {auto,enable,disable}
+                            Indicates if the process command should be executed in
+                            a shell. Executing in a shell allows shell scripts,
+                            commands, and expressions to be used, with the
+                            disadvantage that termination signals may not be
+                            propagated to child processes. Options are: enable --
+                            Force the command to be executed in a shell; disable
+                            -- Force the command to be executed without a shell;
+                            auto -- Auto-detect the shell mode by analyzing the
+                            command.
+      --no-strip-shell-wrapping
+                            Strip the command-line of shell wrapping like "/bin/sh
+                            -c" that can be introduced by Docker when using shell
+                            form of ENTRYPOINT and CMD.
+      --no-process-group-termination
+                            Send termination and kill signals to the wrapped
+                            process only, instead of its process group. Sending to
+                            the process group allows all child processes to
+                            receive the signals, even if the wrapped process does
+                            not forward signals.
       -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
                             Timeout for process, in seconds. -1 means no timeout,
                             which is the default.
@@ -470,7 +495,7 @@ Here are all the options:
                             process environment for wrapped mode. By default, the
                             file format is assumed to be dotenv. Specify multiple
                             times to include multiple locations.
-      -c CONFIG_LOCATIONS, --config CONFIG_LOCATIONS
+      --config CONFIG_LOCATIONS
                             Location of either local file, AWS S3 ARN, or AWS
                             Secrets Manager ARN containing properties used to
                             populate the configuration for embedded mode. By
@@ -588,12 +613,16 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_ROLLBAR_RETRIES
 * PROC_WRAPPER_ROLLBAR_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_MAX_CONFLICTING_AGE_SECONDS
+* PROC_WRAPPER_TASK_COMMAND
+* PROC_WRAPPER_SHELL_MODE
+* PROC_WRAPPER_STRIP_SHELL_WRAPPING (TRUE or FALSE)
 * PROC_WRAPPER_WORK_DIR
 * PROC_WRAPPER_PROCESS_MAX_RETRIES
 * PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS
 * PROC_WRAPPER_PROCESS_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_PROCESS_CHECK_INTERVAL_SECONDS
 * PROC_WRAPPER_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS
+* PROC_WRAPPER_PROCESS_GROUP_TERMINATION (TRUE or FALSE)
 * PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT
 * PROC_WRAPPER_STATUS_UPDATE_MESSAGE_MAX_BYTES
 

@@ -212,9 +212,16 @@ class ProcWrapper:
 
         return None
 
-    def log_configuration(self) -> None:
-        _logger.debug(f"Wrapper version = {ProcWrapper.VERSION}")
+    def log_configuration(self, initial: bool = False) -> None:
+        if initial:
+            _logger.info(f"Wrapper version = {ProcWrapper.VERSION}")
+
         self.params.log_configuration()
+
+        if self.param_errors:
+            self.param_errors.log()
+        else:
+            _logger.warning("No validated parameters?!")
 
     def print_final_status(
         self,
@@ -601,6 +608,7 @@ class ProcWrapper:
             return
 
         self._reload_params()
+        self.log_configuration(initial=True)
         self._setup_task_execution()
 
         rv = None
@@ -631,6 +639,7 @@ class ProcWrapper:
 
                     if self.params.config_ttl is not None:
                         self._reload_params()
+                        self.log_configuration()
 
             if success:
                 try:
@@ -673,15 +682,6 @@ class ProcWrapper:
         )
 
     def _setup_task_execution(self) -> bool:
-        self._reload_params()
-
-        self.log_configuration()
-
-        if self.param_errors:
-            self.param_errors.log()
-        else:
-            _logger.warning("No validated parameters?!")
-
         self.task_uuid = self.params.task_uuid
         self.task_name = self.params.task_name
         self.task_execution_uuid = self.params.task_execution_uuid
@@ -720,12 +720,13 @@ class ProcWrapper:
         """
         self._ensure_non_embedded_mode()
 
-        should_run = self._setup_task_execution()
+        self._reload_params()
 
-        if not self.params.command:
-            _logger.error("No command found in wrapped mode")
-            self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-            return
+        self.log_configuration(initial=True)
+
+        command, shell = self.params.resolve_command_and_shell_flag()
+
+        should_run = self._setup_task_execution()
 
         if not should_run:
             self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
@@ -769,10 +770,6 @@ class ProcWrapper:
                     current_time + self.params.process_check_interval
                 )
 
-            _logger.debug(
-                f"command = {self.params.command}, cwd={self.params.work_dir}"
-            )
-
             if self.params.log_secrets:
                 _logger.debug(f"process_env={process_env}")
 
@@ -783,10 +780,9 @@ class ProcWrapper:
             # Set the session ID so we can kill the process as a group, so we kill
             # all subprocesses. See https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true
             # On Windows, os does not have setsid function.
-            # TODO: allow non-shell mode
             self.process = Popen(
-                " ".join(self.params.command),
-                shell=True,
+                command,
+                shell=shell,
                 stdout=None,
                 stderr=None,
                 env=process_env,
@@ -902,7 +898,9 @@ class ProcWrapper:
 
                     if self.params.config_ttl is not None:
                         self._reload_params()
+                        self.log_configuration()
                         process_env = self.make_process_env()
+                        command, shell = self.params.resolve_command_and_shell_flag()
 
         if self.attempt_count >= self.max_execution_attempts:
             self.print_final_status(
@@ -994,9 +992,12 @@ class ProcWrapper:
             )
             return exit_code
 
-        _logger.warning("Sending SIGTERM ...")
+        _logger.info("Sending SIGTERM ...")
 
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
+        if self.params.process_group_termination:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
 
         try:
             self.process.communicate(
@@ -1007,7 +1008,11 @@ class ProcWrapper:
         except TimeoutExpired:
             _logger.info("Timeout after SIGTERM expired, killing with SIGKILL ...")
             try:
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
+                if self.params.process_group_termination:
+                    os.killpg(os.getpgid(pid), signal.SIGKILL)
+                else:
+                    os.kill(pid, signal.SIGKILL)
+
                 self.process.communicate()
             except Exception:
                 _logger.exception(f"Could not kill process with pid {pid}")
