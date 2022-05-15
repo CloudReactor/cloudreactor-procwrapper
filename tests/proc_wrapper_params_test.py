@@ -78,7 +78,7 @@ def make_proc_wrapper_params(
             "java -jar app.jar",
             SHELL_MODE_AUTO,
             True,
-            "java -jar app.jar",
+            ["java", "-jar", "app.jar"],
             False,
         ),
         (
@@ -94,7 +94,7 @@ def make_proc_wrapper_params(
             "java -jar app.jar",
             SHELL_MODE_FORCE_DISABLE,
             True,
-            "java -jar app.jar",
+            ["java", "-jar", "app.jar"],
             False,
         ),
         (
@@ -110,7 +110,7 @@ def make_proc_wrapper_params(
             'echo "hello dude"',
             SHELL_MODE_FORCE_DISABLE,
             True,
-            'echo "hello dude"',
+            ["echo", '"hello', 'dude"'],
             False,
         ),
         (
@@ -150,7 +150,7 @@ def make_proc_wrapper_params(
             None,
             SHELL_MODE_FORCE_DISABLE,
             True,
-            "ls -la",
+            ["ls", "-la"],
             False,
         ),
         (
@@ -174,7 +174,7 @@ def make_proc_wrapper_params(
             '/bin/sh -c "ls -la"',
             SHELL_MODE_FORCE_DISABLE,
             True,
-            "ls -la",
+            ["ls", "-la"],
             False,
         ),
         (

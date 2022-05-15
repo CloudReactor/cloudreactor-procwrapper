@@ -522,6 +522,9 @@ class ProcWrapperParams(ConfigResolverParams):
         elif (not found_shell_wrapping) and (self.shell_mode == SHELL_MODE_AUTO):
             shell_flag = SHELL_COMMAND_REGEX.search(command_line) is not None
 
+        if (not shell_flag) and isinstance(resolved_command, str):
+            resolved_command = re.split(r"\s+", resolved_command)
+
         return (resolved_command, shell_flag)
 
     def log_configuration(self) -> None:
@@ -1405,7 +1408,7 @@ Options are:
         action="store_false",
         dest="strip_shell_wrapping",
         help="""
-Strip the command-line of shell wrapping like "/bin/sh -c" that can be
+Do not strip the command-line of shell wrapping like "/bin/sh -c" that can be
 introduced by Docker when using shell form of ENTRYPOINT and CMD.
 """,
     )
@@ -1415,8 +1418,10 @@ introduced by Docker when using shell form of ENTRYPOINT and CMD.
         dest="process_group_termination",
         help="""
 Send termination and kill signals to the wrapped process only, instead of its
-process group. Sending to the process group allows all child processes to
-receive the signals, even if the wrapped process does not forward signals.
+process group (which is the default). Sending to the process group allows all
+child processes to receive the signals, even if the wrapped process does not
+forward signals. However, if your wrapped process manually handles and forward
+signals to its child processes,
 """,
     )
 
