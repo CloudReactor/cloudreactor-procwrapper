@@ -54,3 +54,9 @@ PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
 * Override proc_wrapper parameters from environment by default
 ## v3.1.2 (2021-11-11)
 * Fix regression of failing to fetch runtime metadata
+## v4.0.0-alpha1 (unreleased)
+* Send last_app_heartbeat_at set to the time when the wrapped process or
+function sent a status update
+* Do not send exit code in embedded mode
+* Include wrapper family in Task creation request
+* Remove parameters on publish update_status() method, have it return a bool.

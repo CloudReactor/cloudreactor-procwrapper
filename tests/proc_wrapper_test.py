@@ -1,7 +1,9 @@
-from typing import Dict, Mapping
+from datetime import datetime
+from typing import Any, Dict, Mapping, Optional
 from urllib.parse import quote_plus
 
 import pytest
+from dateutil.relativedelta import relativedelta
 from pytest_httpserver import HTTPServer
 
 from proc_wrapper import (
@@ -82,6 +84,24 @@ def make_online_base_env(port: int) -> Dict[str, str]:
     }
 
 
+def make_online_params(port: int) -> ProcWrapperParams:
+    params = ProcWrapperParams()
+    params.task_uuid = DEFAULT_TASK_UUID
+    params.task_version_signature = DEFAULT_TASK_VERSION_SIGNATURE
+    params.api_base_url = f"http://localhost:{port}"
+    params.api_key = TEST_API_KEY
+    params.auto_create_task = True
+    params.auto_create_task_run_environment_name = "myenv"
+    params.process_max_retries = 2
+    params.process_retry_delay = 1
+    params.api_request_timeout = 5
+    params.api_final_update_timeout = 5
+    params.api_retry_delay = 1
+    params.api_resume_delay = 1
+
+    return params
+
+
 def test_wrapped_offline_mode():
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
@@ -92,30 +112,54 @@ def test_wrapped_offline_mode():
     wrapper.run()
 
 
+def expect_task_execution_request(
+    httpserver: HTTPServer,
+    response_data: Optional[Dict[str, Any]] = None,
+    status: Optional[int] = None,
+    update: bool = True,
+):
+    method = "PATCH" if update else "POST"
+    url = "/api/v1/task_executions/"
+
+    if response_data is None:
+        if update:
+            response_data = {}
+        else:
+            response_data = {
+                "uuid": DEFAULT_TASK_EXECUTION_UUID,
+                "task": {
+                    "uuid": DEFAULT_TASK_UUID,
+                    "name": "A Task",
+                },
+            }
+
+    if status is None:
+        expected_status = 200 if update else 201
+    else:
+        expected_status = status
+
+    if update:
+        url += quote_plus(DEFAULT_TASK_EXECUTION_UUID) + "/"
+
+    handler, fetch_captured_request_data = make_capturing_handler(
+        response_data=response_data, status=expected_status
+    )
+
+    httpserver.expect_ordered_request(
+        url, method=method, headers=CLIENT_HEADERS
+    ).respond_with_handler(handler)
+
+    return fetch_captured_request_data
+
+
 def test_wrapped_mode_with_server(httpserver: HTTPServer):
     env_override = make_online_base_env(httpserver.port)
 
-    creation_handler, fetch_creation_request_data = make_capturing_handler(
-        response_data={
-            "uuid": DEFAULT_TASK_EXECUTION_UUID,
-            "task": {"name": "atask", "uuid": DEFAULT_TASK_UUID},
-        },
-        status=201,
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
     )
 
-    httpserver.expect_ordered_request(
-        "/api/v1/task_executions/", method="POST", headers=CLIENT_HEADERS
-    ).respond_with_handler(creation_handler)
-
-    update_handler, fetch_update_request_data = make_capturing_handler(
-        response_data={}, status=200
-    )
-
-    httpserver.expect_ordered_request(
-        "/api/v1/task_executions/" + quote_plus(DEFAULT_TASK_EXECUTION_UUID) + "/",
-        method="PATCH",
-        headers=CLIENT_HEADERS,
-    ).respond_with_handler(update_handler)
+    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
 
     wrapper = make_wrapped_mode_proc_wrapper(env=env_override)
     wrapper.run()
@@ -126,15 +170,15 @@ def test_wrapped_mode_with_server(httpserver: HTTPServer):
     assert crd["status"] == ProcWrapper.STATUS_RUNNING
     assert crd["is_service"] is False
     assert crd["wrapper_version"] == ProcWrapper.VERSION
+    assert crd["wrapper_family"] == ProcWrapper.WRAPPER_FAMILY
     assert crd["embedded_mode"] is False
     task = crd["task"]
     assert task["uuid"] == DEFAULT_TASK_UUID
 
     urd = fetch_update_request_data()
     assert urd["status"] == ProcWrapper.STATUS_SUCCEEDED
-    assert urd["exit_code"] == 0
-    assert urd["failed_attempts"] == 0
-    assert urd["timed_out_attempts"] == 0
+    assert urd.get("failed_attempts") is None
+    assert urd.get("timed_out_attempts") is None
 
 
 def callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
@@ -167,8 +211,142 @@ def test_embedded_offline_mode_failure():
         assert False
 
 
+def callback_with_update(
+    wrapper: ProcWrapper, cbdata: Dict[str, Any], config: Dict[str, str]
+) -> str:
+    failed_attempts = cbdata["failed_attempts"]
+    last_app_heartbeat_at_override = cbdata["last_app_heartbeat_at_override"]
+
+    if wrapper.failed_count < failed_attempts:
+        raise RuntimeError("you failed this test")
+
+    wrapper.update_status(
+        success_count=4,
+        error_count=5,
+        skipped_count=6,
+        expected_count=7,
+        last_status_message="hello baby!",
+        extra_status_props={"extra": "yo"},
+        last_app_heartbeat_at=last_app_heartbeat_at_override,
+    )
+
+    return "noice!"
+
+
+@pytest.mark.parametrize(
+    """
+    failed_attempts, last_app_heartbeat_at_override
+    """,
+    [
+        (0, None),
+        (1, None),
+        (2, None),
+        (0, datetime.utcnow() - relativedelta(minutes=3)),
+        (1, datetime.utcnow() - relativedelta(minutes=10)),
+    ],
+)
+def test_embedded_mode_with_server(
+    failed_attempts: int,
+    last_app_heartbeat_at_override: Optional[datetime],
+    httpserver: HTTPServer,
+):
+    params = make_online_params(httpserver.port)
+    wrapper = ProcWrapper(params=params)
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
+    )
+
+    reported_failures = failed_attempts
+
+    failed_fetchers = []
+
+    for i in range(reported_failures):
+        fetch_failed_update_request_data = expect_task_execution_request(
+            httpserver=httpserver
+        )
+        failed_fetchers.append(fetch_failed_update_request_data)
+
+    should_succeed = failed_attempts <= params.process_max_retries
+
+    fetch_update_request_data = None
+    if failed_attempts == 0:
+        fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+
+    fetch_final_update_request_data = expect_task_execution_request(
+        httpserver=httpserver
+    )
+
+    cbdata = {
+        "failed_attempts": failed_attempts,
+        "last_app_heartbeat_at_override": last_app_heartbeat_at_override,
+    }
+
+    try:
+        wrapper.managed_call(callback_with_update, cbdata) == "noice"
+        assert should_succeed
+    except RuntimeError as err:
+        assert not should_succeed
+        assert str(err).find("you failed") >= 0
+    except Exception as ex:
+        print(ex)
+        assert False
+
+    httpserver.check_assertions()
+
+    crd = fetch_creation_request_data()
+    assert crd["status"] == ProcWrapper.STATUS_RUNNING
+    assert crd["is_service"] is False
+    assert crd["wrapper_version"] == ProcWrapper.VERSION
+    assert crd["wrapper_family"] == ProcWrapper.WRAPPER_FAMILY
+    assert crd["embedded_mode"] is True
+    task = crd["task"]
+    assert task["uuid"] == DEFAULT_TASK_UUID
+
+    for i, fetcher in enumerate(failed_fetchers):
+        furd = fetcher()
+        assert furd["failed_attempts"] == i + 1
+
+    urd = {}
+    if fetch_update_request_data:
+        urd = fetch_update_request_data()
+
+    furd = fetch_final_update_request_data()
+
+    if not fetch_update_request_data:
+        urd = furd
+
+    assert (
+        furd["status"] == ProcWrapper.STATUS_SUCCEEDED
+        if should_succeed
+        else ProcWrapper.STATUS_FAILED
+    )
+
+    assert urd["success_count"] == 4
+    assert urd["error_count"] == 5
+    assert urd["skipped_count"] == 6
+    assert urd["expected_count"] == 7
+    assert urd["last_status_message"] == "hello baby!"
+    assert urd["extra"] == "yo"
+
+    if should_succeed:
+        assert furd.get("failed_attempts") is None
+    else:
+        assert furd["failed_attempts"] == failed_attempts
+
+    last_app_heartbeat_at_str = urd[
+        ProcWrapper._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
+    ]
+    last_app_heartbeat_at = datetime.fromisoformat(last_app_heartbeat_at_str)
+
+    if last_app_heartbeat_at_override:
+        assert (last_app_heartbeat_at_override - last_app_heartbeat_at).seconds <= 1
+    else:
+        assert (datetime.now() - last_app_heartbeat_at).seconds < 10
+
+
 def callback_with_config(
-    wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]
+    wrapper: ProcWrapper, cbdata: str, config: Dict[str, Any]
 ) -> str:
     return "super" + cbdata + config["ENV"]["ANOTHER_ENV"]
 
@@ -210,27 +388,11 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         "/aws/ecs/task", method="GET", headers=ACCEPT_JSON_HEADERS
     ).respond_with_handler(ecs_metadata_handler)
 
-    creation_handler, fetch_creation_request_data = make_capturing_handler(
-        response_data={
-            "uuid": DEFAULT_TASK_EXECUTION_UUID,
-            "task": {"name": "A Task"},
-        },
-        status=201,
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
     )
 
-    httpserver.expect_ordered_request(
-        "/api/v1/task_executions/", method="POST", headers=CLIENT_HEADERS
-    ).respond_with_handler(creation_handler)
-
-    update_handler, fetch_update_request_data = make_capturing_handler(
-        response_data={}, status=200
-    )
-
-    httpserver.expect_ordered_request(
-        "/api/v1/task_executions/" + quote_plus(DEFAULT_TASK_EXECUTION_UUID) + "/",
-        method="PATCH",
-        headers=CLIENT_HEADERS,
-    ).respond_with_handler(update_handler)
+    expect_task_execution_request(httpserver=httpserver)
 
     wrapper = make_wrapped_mode_proc_wrapper(env_override)
     wrapper.run()
@@ -274,23 +436,11 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
     env_override["PROC_WRAPPER_AUTO_CREATE_TASK"] = "TRUE"
     env_override["PROC_WRAPPER_AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME"] = "myenv"
 
-    creation_handler, fetch_creation_request_data = make_capturing_handler(
-        response_data={"uuid": DEFAULT_TASK_EXECUTION_UUID}, status=201
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
     )
 
-    httpserver.expect_ordered_request(
-        "/api/v1/task_executions/", method="POST", headers=CLIENT_HEADERS
-    ).respond_with_handler(creation_handler)
-
-    update_handler, fetch_update_request_data = make_capturing_handler(
-        response_data={}, status=200
-    )
-
-    httpserver.expect_ordered_request(
-        "/api/v1/task_executions/" + quote_plus(DEFAULT_TASK_EXECUTION_UUID) + "/",
-        method="PATCH",
-        headers=CLIENT_HEADERS,
-    ).respond_with_handler(update_handler)
+    expect_task_execution_request(httpserver=httpserver)
 
     wrapper = make_wrapped_mode_proc_wrapper(env_override)
     wrapper.run()

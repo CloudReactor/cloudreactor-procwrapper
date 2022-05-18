@@ -59,14 +59,15 @@ def _exit_handler(wrapper: "ProcWrapper"):
 def _signal_handler(signum, frame):
     global caught_sigterm
     caught_sigterm = True
-    # This will cause the exit handler to be executed, if it is registered.
     _logger.info(f"Caught signal {signum}, exiting")
 
+    # This will cause the exit handler to be executed, if it is registered.
     # TODO: use different exit code if configured
     sys.exit(0)
 
 
 class ProcWrapper:
+    WRAPPER_FAMILY = "CloudReactor python proc_wrapper"
     VERSION = getattr(sys.modules[__package__], "__version__")
 
     STATUS_RUNNING = "RUNNING"
@@ -106,6 +107,8 @@ class ProcWrapper:
 
     _STATUS_BUFFER_SIZE = 4096
 
+    _STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT = "last_app_heartbeat_at"
+
     def __init__(
         self,
         params: Optional[ProcWrapperParams] = None,
@@ -144,6 +147,7 @@ class ProcWrapper:
         self._status_buffer: Optional[bytearray] = None
         self._status_message_so_far: Optional[bytearray] = None
         self.last_update_sent_at: Optional[float] = None
+        self.last_app_heartbeat_at: Optional[datetime] = None
 
         self.rollbar_retries_exhausted = False
         self.exit_handler_installed = False
@@ -276,6 +280,33 @@ class ProcWrapper:
 
         return self.params.process_max_retries + 1
 
+    def update_status(
+        self,
+        success_count: Optional[int] = None,
+        error_count: Optional[int] = None,
+        skipped_count: Optional[int] = None,
+        expected_count: Optional[int] = None,
+        last_status_message: Optional[str] = None,
+        extra_status_props: Optional[Dict[str, Any]] = None,
+        last_app_heartbeat_at: Optional[datetime] = None,
+    ) -> bool:
+        """
+        Update the status of the process. Send to the Task management
+        server if the last status was sent more than status_update_interval
+        seconds ago. Return true if the update was actually sent, instead of
+        buffered.
+        """
+        return self._update_status(
+            success_count=success_count,
+            error_count=error_count,
+            skipped_count=skipped_count,
+            expected_count=expected_count,
+            last_status_message=last_status_message,
+            extra_status_props=extra_status_props,
+            is_app_update=True,
+            last_app_heartbeat_at=last_app_heartbeat_at,
+        )
+
     def _create_or_update_task_execution(self) -> None:
         """
         Make a request to the API server to create a Task Execution
@@ -339,6 +370,7 @@ class ProcWrapper:
                 "prevent_offline_execution": self.params.prevent_offline_execution,
                 "process_termination_grace_period_seconds": self.params.process_termination_grace_period,
                 "wrapper_log_level": logging.getLevelName(_logger.getEffectiveLevel()),
+                "wrapper_family": ProcWrapper.WRAPPER_FAMILY,
                 "wrapper_version": ProcWrapper.VERSION,
                 "api_error_timeout_seconds": encode_int(
                     self.params.api_error_timeout, empty_value=-1
@@ -501,10 +533,11 @@ class ProcWrapper:
 
             _logger.info("Not preventing offline execution, so continuing")
 
-    def update_status(
+    def _update_status(
         self,
         failed_attempts: Optional[int] = None,
         timed_out_attempts: Optional[int] = None,
+        exit_code: Optional[int] = None,
         pid: Optional[int] = None,
         success_count: Optional[int] = None,
         error_count: Optional[int] = None,
@@ -512,14 +545,21 @@ class ProcWrapper:
         expected_count: Optional[int] = None,
         last_status_message: Optional[str] = None,
         extra_status_props: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Update the status of the process. Send to the process management
-        server if the last status was sent more than status_update_interval
-        seconds ago.
-        """
+        is_app_update: bool = False,
+        last_app_heartbeat_at: Optional[datetime] = None,
+    ) -> bool:
+        _logger.debug(f"_update_status(), is_app_update = {is_app_update}")
+
+        if is_app_update:
+            self.last_app_heartbeat_at = last_app_heartbeat_at or datetime.now()
 
         if self.offline_mode:
-            return
+            return False
+
+        if is_app_update:
+            self.status_dict[
+                self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
+            ] = self.last_app_heartbeat_at
 
         if success_count is not None:
             self.status_dict["success_count"] = int(success_count)
@@ -539,20 +579,26 @@ class ProcWrapper:
         if extra_status_props:
             self.status_dict.update(extra_status_props)
 
-        should_send = self.is_status_update_due()
-
         # These are important updates that should be sent no matter what.
         if not (
-            (failed_attempts is None) and (timed_out_attempts is None) and (pid is None)
-        ) and (last_status_message is None):
+            (failed_attempts is None)
+            and (timed_out_attempts is None)
+            and (pid is None)
+            and (exit_code is None)
+        ):
             should_send = True
+        else:
+            should_send = self.is_status_update_due()
 
         if should_send:
-            self.send_update(
+            return self.send_update(
                 failed_attempts=failed_attempts,
                 timed_out_attempts=timed_out_attempts,
+                exit_code=exit_code,
                 pid=pid,
             )
+
+        return False
 
     def send_completion(
         self,
@@ -571,7 +617,7 @@ class ProcWrapper:
             self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
             return
 
-        if exit_code is None:
+        if (exit_code is None) and (not self.params.embedded_mode):
             if status == self.STATUS_SUCCEEDED:
                 exit_code = self._EXIT_CODE_SUCCESS
             else:
@@ -623,6 +669,11 @@ class ProcWrapper:
 
             try:
                 rv = fun(self, data, self.resolved_config)
+
+                _logger.info("Managed function succeeded")
+
+                # TODO: log and send return value back to server
+
                 success = True
             except Exception as ex:
                 saved_ex = ex
@@ -630,7 +681,9 @@ class ProcWrapper:
                 _logger.exception("Managed function failed")
 
                 if self.attempt_count < self.max_execution_attempts:
-                    self.send_update(failed_attempts=self.failed_count)
+                    self._update_status(failed_attempts=self.failed_count)
+
+                    # TODO: check timeout
 
                     if self.params.process_retry_delay:
                         _logger.debug("Sleeping after managed function failed ...")
@@ -645,7 +698,6 @@ class ProcWrapper:
                 try:
                     self.send_completion(
                         status=ProcWrapper.STATUS_SUCCEEDED,
-                        failed_attempts=self.failed_count,
                     )
                 except Exception:
                     _logger.warning(
@@ -800,7 +852,7 @@ class ProcWrapper:
             _logger.info(f"pid = {pid}")
 
             if pid and self.params.send_pid:
-                self.send_update(pid=pid)
+                self._update_status(pid=pid)
 
             done_polling = False
             while not done_polling:
@@ -818,8 +870,8 @@ class ProcWrapper:
                         self.timeout_count += 1
 
                         if self.attempt_count < self.max_execution_attempts:
-                            self.send_update(
-                                failed_attempts=self.failed_count,
+                            # FIXME: clear exit code
+                            self._update_status(
                                 timed_out_attempts=self.timeout_count,
                             )
 
@@ -891,7 +943,7 @@ class ProcWrapper:
                         self._exit_or_raise(exit_code)
                         return
 
-                    self.send_update(
+                    self._update_status(
                         failed_attempts=self.failed_count, exit_code=exit_code
                     )
 
@@ -917,7 +969,10 @@ class ProcWrapper:
 
             self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
         else:
-            self.send_update(failed_attempts=self.attempt_count)
+            self.send_update(
+                failed_attempts=self.attempt_count,
+                timed_out_attempts=self.timeout_count,
+            )
 
         # Exit handler will send update to API server
 
@@ -1114,11 +1169,11 @@ class ProcWrapper:
                     self.send_update()
             except json.JSONDecodeError:
                 _logger.debug(
-                    "Error decoding JSON, this can happen due to missing out of order messages"
+                    "Error decoding JSON, this can happen due to missing or out of order messages"
                 )
         except UnicodeDecodeError:
             _logger.debug(
-                "Error decoding message as UTF-8, this can happen due to missing out of order messages"
+                "Error decoding message as UTF-8, this can happen due to missing or out of order messages"
             )
         finally:
             self._status_message_so_far.clear()
@@ -1153,26 +1208,25 @@ class ProcWrapper:
         exit_code: Optional[int] = None,
         pid: Optional[int] = None,
         extra_props: Optional[Mapping[str, Any]] = None,
-    ) -> None:
+    ) -> bool:
         """
-        Send an update to the API server. If status is omitted, it will
-        default to STATUS_RUNNING.
+        Send an update to the API server immediately. If status is omitted, it
+        will default to STATUS_RUNNING.
 
         The caller may want to coalesce multiple updates together in order to
         save bandwidth / API usage.
 
-        This method is meant to be called directly in the callback function
-        when running in embedded mode.
+        This method is NOT meant to be called directly.
         """
 
         if self.offline_mode:
-            return
+            return False
 
         if not self.task_execution_uuid:
             _logger.debug(
                 "_send_update() skipping update since no Task Execution UUID was available"
             )
-            return
+            return False
 
         if status is None:
             status = self.STATUS_RUNNING
@@ -1181,10 +1235,10 @@ class ProcWrapper:
 
         body.update(self.status_dict)
 
-        if failed_attempts is not None:
+        if failed_attempts:
             body["failed_attempts"] = failed_attempts
 
-        if timed_out_attempts is not None:
+        if timed_out_attempts:
             body["timed_out_attempts"] = timed_out_attempts
 
         if exit_code is not None:
@@ -1195,6 +1249,15 @@ class ProcWrapper:
 
         if extra_props:
             body["other_runtime_metadata"] = extra_props
+
+        unsent_last_app_heartbeat_at = self.status_dict.get(
+            self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
+        )
+
+        if unsent_last_app_heartbeat_at:
+            body[
+                self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
+            ] = unsent_last_app_heartbeat_at.isoformat()
 
         url = f"{self.params.api_base_url}/api/v1/task_executions/{quote_plus(str(self.task_execution_uuid))}/"
         headers = self._make_headers()
@@ -1208,12 +1271,15 @@ class ProcWrapper:
         f = self._send_api_request(req, is_final_update=is_final_update)
         if f is None:
             _logger.debug("Update request failed non-fatally")
-        else:
-            with f:
-                _logger.debug("Update sent successfully.")
-                self.last_update_sent_at = time.time()
-                self.status_dict = {}
-                self.reported_final_status = is_final_update
+            return False
+
+        with f:
+            _logger.debug("Update sent successfully.")
+            self.last_update_sent_at = time.time()
+            self.status_dict = {}
+            self.reported_final_status = is_final_update
+
+        return True
 
     def _compute_successful_request_deadline(
         self,
@@ -1425,7 +1491,7 @@ class ProcWrapper:
 
         return self.api_server_retries_exhausted
 
-    def _exit_or_raise(self, exit_code) -> None:
+    def _exit_or_raise(self, exit_code: int) -> None:
         if self.params.embedded_mode:
             raise RuntimeError(
                 f"Raising an error in embedded mode, exit code {exit_code}"
