@@ -1,0 +1,41 @@
+# Not working due to Fuse in Docker issues:
+# https://github.com/AppImage/AppImageKit/issues/405#issuecomment-305989062
+
+FROM python:3.9.12-buster
+
+LABEL maintainer="jeff@cloudreactor.io"
+
+RUN \
+    set -x \
+    # update system
+    && apt-get update \
+    # install requirements
+    && apt-get install -y --no-install-recommends \
+    patchelf \
+    fuse
+
+
+WORKDIR /root/app
+RUN pip install --no-input --no-cache-dir --upgrade pip==22.1
+
+RUN pip install pip-tools==6.6.1
+
+COPY nuitka_builder/nuitka-requirements.in .
+COPY proc_wrapper-requirements.txt .
+
+RUN pip-compile --generate-hashes nuitka-requirements.in --output-file nuikta-requirements.txt
+COPY proc_wrapper-requirements.txt .
+
+RUN pip-sync proc_wrapper-requirements.txt nuikta-requirements.txt
+
+COPY proc_wrapper ./proc_wrapper
+
+# Works but creates a bunch of files
+#ENTRYPOINT ["python", "-m", "nuitka", "--standalone",  \
+#  "--assume-yes-for-downloads", \
+#  "proc_wrapper/__main__.py"]
+
+ENTRYPOINT ["python", "-m", "nuitka", "--standalone", "--onefile", \
+  "--assume-yes-for-downloads", \
+  "-o", "proc_wrapper.bin", \
+  "proc_wrapper/__main__.py"]

@@ -1,0 +1,2 @@
+-c proc_wrapper-requirements.txt
+nuitka>=0.7.6
