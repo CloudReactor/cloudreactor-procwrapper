@@ -7,8 +7,7 @@ from proc_wrapper import ProcWrapper, ProcWrapperParams, make_arg_parser
 _DEFAULT_LOG_LEVEL = "WARNING"
 
 
-# TODO Don't fail immediately if command is not present
-main_parser = make_arg_parser(require_command=True)
+main_parser = make_arg_parser()
 main_args = main_parser.parse_args(namespace=ProcWrapperParams(embedded_mode=False))
 
 if main_args.version:

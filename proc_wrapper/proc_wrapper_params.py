@@ -1127,7 +1127,7 @@ def json_encoded(s: str):
     return json.loads(s)
 
 
-def make_arg_parser(require_command=True):
+def make_arg_parser():
     parser = argparse.ArgumentParser(
         prog="proc_wrapper",
         description="""
@@ -1138,8 +1138,7 @@ environment.
     """,
     )
 
-    if require_command:
-        parser.add_argument("command", nargs=argparse.REMAINDER)
+    parser.add_argument("command", nargs=argparse.REMAINDER)
 
     parser.add_argument(
         "-v", "--version", action="store_true", help="Print the version and exit"

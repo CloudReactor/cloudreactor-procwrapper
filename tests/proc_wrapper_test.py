@@ -43,9 +43,9 @@ RESOLVE_ENV_BASE_ENV = {
 
 
 def make_wrapped_mode_proc_wrapper(env: Mapping[str, str]) -> ProcWrapper:
-    main_parser = make_arg_parser(require_command=True)
+    main_parser = make_arg_parser()
     params = main_parser.parse_args(
-        args=["echo"], namespace=ProcWrapperParams(embedded_mode=False)
+        args=[], namespace=ProcWrapperParams(embedded_mode=False)
     )
     runtime_metadata_fetcher = RuntimeMetadataFetcher()
     runtime_metadata = runtime_metadata_fetcher.fetch(env=env)
@@ -68,8 +68,8 @@ def make_wrapped_mode_proc_wrapper(env: Mapping[str, str]) -> ProcWrapper:
     )
 
 
-def make_online_base_env(port: int) -> Dict[str, str]:
-    return {
+def make_online_base_env(port: int, command: Optional[str] = "echo") -> Dict[str, str]:
+    env = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_TASK_UUID": DEFAULT_TASK_UUID,
         "PROC_WRAPPER_TASK_VERSION_SIGNATURE": DEFAULT_TASK_VERSION_SIGNATURE,
@@ -82,6 +82,11 @@ def make_online_base_env(port: int) -> Dict[str, str]:
         "PROC_WRAPPER_API_RETRY_DELAY_SECONDS": "1",
         "PROC_WRAPPER_API_RESUME_DELAY_SECONDS": "-1",
     }
+
+    if command:
+        env["PROC_WRAPPER_TASK_COMMAND"] = command
+
+    return env
 
 
 def make_online_params(port: int) -> ProcWrapperParams:
@@ -98,7 +103,6 @@ def make_online_params(port: int) -> ProcWrapperParams:
     params.api_final_update_timeout = 5
     params.api_retry_delay = 1
     params.api_resume_delay = 1
-
     return params
 
 
@@ -106,10 +110,11 @@ def test_wrapped_offline_mode():
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
+        "PROC_WRAPPER_TASK_COMMAND": "echo",
     }
 
     wrapper = make_wrapped_mode_proc_wrapper(env=env_override)
-    wrapper.run()
+    assert wrapper.run() == 0
 
 
 def expect_task_execution_request(
@@ -152,33 +157,52 @@ def expect_task_execution_request(
     return fetch_captured_request_data
 
 
-def test_wrapped_mode_with_server(httpserver: HTTPServer):
-    env_override = make_online_base_env(httpserver.port)
+@pytest.mark.parametrize(
+    """
+    env_override, command, expected_exit_code, expect_api_server_use
+    """,
+    [
+        ({}, "echo", 0, True),
+        ({}, None, ProcWrapper._EXIT_CODE_CONFIGURATION_ERROR, False),
+    ],
+)
+def test_wrapped_mode_with_server(
+    httpserver: HTTPServer,
+    env_override: Dict[str, str],
+    command: Optional[str],
+    expected_exit_code: int,
+    expect_api_server_use: bool,
+):
+    env = make_online_base_env(httpserver.port, command=command)
+    env.update(env_override)
 
-    fetch_creation_request_data = expect_task_execution_request(
-        httpserver=httpserver, update=False
-    )
+    wrapper = make_wrapped_mode_proc_wrapper(env=env)
 
-    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+    if expect_api_server_use:
+        fetch_creation_request_data = expect_task_execution_request(
+            httpserver=httpserver, update=False
+        )
 
-    wrapper = make_wrapped_mode_proc_wrapper(env=env_override)
-    wrapper.run()
+        fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
 
-    httpserver.check_assertions()
+    assert wrapper.run() == expected_exit_code
 
-    crd = fetch_creation_request_data()
-    assert crd["status"] == ProcWrapper.STATUS_RUNNING
-    assert crd["is_service"] is False
-    assert crd["wrapper_version"] == ProcWrapper.VERSION
-    assert crd["wrapper_family"] == ProcWrapper.WRAPPER_FAMILY
-    assert crd["embedded_mode"] is False
-    task = crd["task"]
-    assert task["uuid"] == DEFAULT_TASK_UUID
+    if expect_api_server_use:
+        httpserver.check_assertions()
 
-    urd = fetch_update_request_data()
-    assert urd["status"] == ProcWrapper.STATUS_SUCCEEDED
-    assert urd.get("failed_attempts") is None
-    assert urd.get("timed_out_attempts") is None
+        crd = fetch_creation_request_data()
+        assert crd["status"] == ProcWrapper.STATUS_RUNNING
+        assert crd["is_service"] is False
+        assert crd["wrapper_version"] == ProcWrapper.VERSION
+        assert crd["wrapper_family"] == ProcWrapper.WRAPPER_FAMILY
+        assert crd["embedded_mode"] is False
+        task = crd["task"]
+        assert task["uuid"] == DEFAULT_TASK_UUID
+
+        urd = fetch_update_request_data()
+        assert urd["status"] == ProcWrapper.STATUS_SUCCEEDED
+        assert urd.get("failed_attempts") is None
+        assert urd.get("timed_out_attempts") is None
 
 
 def callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
@@ -380,7 +404,7 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         "ECS_CONTAINER_METADATA_URI"
     ] = f"http://localhost:{httpserver.port}/aws/ecs"
 
-    ecs_metadata_handler, fetch_ecs_metadata_request_data = make_capturing_handler(
+    ecs_metadata_handler, _fetch_ecs_metadata_request_data = make_capturing_handler(
         response_data=TEST_ECS_TASK_METADATA, status=200
     )
 

@@ -765,10 +765,12 @@ class ProcWrapper:
 
         return True
 
-    def run(self) -> None:
+    def run(self) -> int:
         """
         Run the wrapped process, first requesting to start, then executing
         the process command line, retying for errors and timeouts.
+        The return value is the exit code, but won't be actually returned
+        except in testing.
         """
         self._ensure_non_embedded_mode()
 
@@ -776,12 +778,16 @@ class ProcWrapper:
 
         self.log_configuration(initial=True)
 
+        if self.param_errors and not self.param_errors.can_start_process():
+            _logger.error("Exiting due to process configuration error")
+            return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
+
         command, shell = self.params.resolve_command_and_shell_flag()
 
         should_run = self._setup_task_execution()
 
         if not should_run:
-            self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
+            return self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
 
         if (not self.offline_mode) and self.params.enable_status_update_listener:
             self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
@@ -929,8 +935,7 @@ class ProcWrapper:
                             first_attempt_started_at=first_attempt_started_at,
                             latest_attempt_started_at=latest_attempt_started_at,
                         )
-                        self._exit_or_raise(0)
-                        return
+                        return self._exit_or_raise(0)
 
                     self.failed_count += 1
 
@@ -940,8 +945,7 @@ class ProcWrapper:
                             first_attempt_started_at=first_attempt_started_at,
                             latest_attempt_started_at=latest_attempt_started_at,
                         )
-                        self._exit_or_raise(exit_code)
-                        return
+                        return self._exit_or_raise(exit_code)
 
                     self._update_status(
                         failed_attempts=self.failed_count, exit_code=exit_code
@@ -967,7 +971,7 @@ class ProcWrapper:
                 latest_attempt_started_at=latest_attempt_started_at,
             )
 
-            self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
+            return self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
         else:
             self.send_update(
                 failed_attempts=self.attempt_count,
@@ -975,6 +979,7 @@ class ProcWrapper:
             )
 
         # Exit handler will send update to API server
+        return 0
 
     def handle_exit(self) -> None:
         _logger.debug(f"Exit handler, Task Execution UUID = {self.task_execution_uuid}")
@@ -1033,7 +1038,7 @@ class ProcWrapper:
             if self.api_server_retries_exhausted:
                 error_message = "API Server not responding properly"
             elif not self.task_execution_uuid:
-                error_message = "Task Execution ID not assigned"
+                error_message = "Task Execution UUID not assigned"
 
             self._report_error(error_message, self.last_api_request_data)
 
@@ -1491,7 +1496,7 @@ class ProcWrapper:
 
         return self.api_server_retries_exhausted
 
-    def _exit_or_raise(self, exit_code: int) -> None:
+    def _exit_or_raise(self, exit_code: int) -> int:
         if self.params.embedded_mode:
             raise RuntimeError(
                 f"Raising an error in embedded mode, exit code {exit_code}"
@@ -1506,6 +1511,8 @@ class ProcWrapper:
                 )
 
             sys.exit(exit_code)
+
+        return exit_code
 
     def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> int:
         num_sinks_successful = 0

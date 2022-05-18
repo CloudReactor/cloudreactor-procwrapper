@@ -23,7 +23,7 @@ def make_proc_wrapper_params(
     if embedded_mode:
         params.offline_mode = True
     else:
-        main_parser = make_arg_parser(require_command=True)
+        main_parser = make_arg_parser()
         params = main_parser.parse_args(args=["echo"], namespace=params)
 
     runtime_metadata_fetcher = RuntimeMetadataFetcher()
