@@ -14,7 +14,7 @@ main_args = main_parser.parse_args(namespace=ProcWrapperParams(embedded_mode=Fal
 if main_args.version:
     print(
         f"""
-proc_wrapper version {ProcWrapper.VERSION}.
+{ProcWrapper.WRAPPER_FAMILY} v{ProcWrapper.VERSION}.
 See https://cloudreactor.io for more info.
 """
     )
