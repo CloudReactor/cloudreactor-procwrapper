@@ -145,11 +145,11 @@ class ConfigResolverParams:
         )
 
         env_locations_in_env = env.get("PROC_WRAPPER_ENV_LOCATIONS")
-        if env_locations_in_env is not None:
+        if env_locations_in_env:
             self.env_locations = self.split_location_string(env_locations_in_env)
 
         config_locations_in_env = env.get("PROC_WRAPPER_CONFIG_LOCATIONS")
-        if config_locations_in_env is not None:
+        if config_locations_in_env:
             self.config_locations = self.split_location_string(config_locations_in_env)
 
         self.config_merge_strategy = env.get(
@@ -288,9 +288,21 @@ class ConfigResolverParams:
         # backslashes. Any occurrence of , or ; in a location string
         # must be backslash escaped. This doesn't handle the weird case
         # when a location contains "\," or "\;".
+        locations = locations.strip()
+
+        if not locations:
+            return []
+
         return [
-            location.replace(r"\,", ",").replace(r"\;", ";").replace(r"\\\\", r"\\")
-            for location in re.split(r"\s*(?<!(?<!\\)\\)[,;]\s*", locations)
+            x
+            for x in [
+                location.replace(r"\,", ",")
+                .replace(r"\;", ";")
+                .replace(r"\\\\", r"\\")
+                .strip()
+                for location in re.split(r"\s*(?<!(?<!\\)\\)[,;]\s*", locations)
+            ]
+            if x
         ]
 
 

@@ -150,6 +150,9 @@ class SecretProvider:
         self.format_separator = format_separator
         self.transform_separator = transform_separator
 
+    def supports_value(self, value: str) -> bool:
+        return value.startswith(self.value_prefix)
+
     def cache_key_for_value(self, value: str):
         _logger.debug(f"Cache key for input value '{value}'")
 
@@ -351,6 +354,9 @@ class FileSecretProvider(SecretProvider):
             name=SECRET_PROVIDER_FILE, value_prefix=value_prefix, should_cache=True
         )
 
+    def supports_value(self, value: str) -> bool:
+        return len(value.strip()) > 0
+
     def fetch_internal(
         self,
         location: str,
@@ -361,6 +367,7 @@ class FileSecretProvider(SecretProvider):
         if location.startswith(FILE_URL_PREFIX):
             location = location[FILE_URL_PREFIX_LENGTH:]
 
+        # TODO: encoding
         with open(location, "r") as f:
             return (f.read(), None, None)
 
@@ -952,7 +959,7 @@ class ConfigResolver:
                 secret_provider = sp
                 break
 
-            if value.startswith(sp.value_prefix):
+            if sp.supports_value(value):
                 secret_provider = sp
                 break
 
@@ -962,14 +969,21 @@ class ConfigResolver:
                     "No matching secret provider (file is supposed to be catch all)?!"
                 )
             else:
+                _logger.warning(
+                    f"""
+No secret provider found for name = '{name}', value = '{value}', \
+defaulting to plain"""
+                )
+
                 secret_provider = self.plain_secret_provider
 
         sp_name = secret_provider.name
 
+        msg = f"Found secret provider = '{sp_name}', name = '{name}'"
         if self.params.log_secrets:
-            _logger.debug(
-                f"Secret provider = '{sp_name}', name = '{name}', value = '{value}'"
-            )
+            msg += f", '{value}'"
+
+        _logger.debug(msg)
 
         value_to_lookup = value
         transform_expr_str: Optional[str] = None
@@ -1028,7 +1042,7 @@ class ConfigResolver:
                         data_string=string_value, format=format
                     )
                     is_value_config_dict = issubclass(type(config_data), dict)
-                    parsed_value = config_data or string_value
+                    parsed_value = coalesce(config_data, string_value)
 
         if self.params.log_secrets:
             _logger.debug(
@@ -1044,7 +1058,7 @@ class ConfigResolver:
             )
 
         if not transform_expr_str:
-            return (var_name, parsed_value or string_value)
+            return (var_name, coalesce(parsed_value, string_value))
 
         if parsed_value is None:
             if string_value is None:

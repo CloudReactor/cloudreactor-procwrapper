@@ -26,6 +26,7 @@ S3_FORMAT_METHODS = [
 ]
 
 RESOLVE_ENV_BASE_ENV = {
+    "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
     "PROC_WRAPPER_TASK_NAME": "Foo",
     "PROC_WRAPPER_API_KEY": "XXX",
     "PROC_WRAPPER_RESOLVE_SECRETS": "TRUE",
@@ -47,6 +48,28 @@ def test_resolve_env_from_plaintext_with_json_path(format: str):
     resolver = ConfigResolver(params=params, env_override=env_override)
     resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert resolved_env["SOME_ENV"] == "bug"
+    assert bad_vars == []
+
+
+@pytest.mark.parametrize(
+    ("locations"),
+    [
+        (""),
+        ("  "),
+        ("PLAIN:{}"),
+        ("PLAIN:{}!json"),
+        (","),
+    ],
+)
+def test_empty_env_locations_fetching(locations: str):
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+    env_override["PROC_WRAPPER_ENV_LOCATIONS"] = locations
+
+    params = ConfigResolverParams()
+    params.override_resolver_params_from_env(env=env_override)
+    resolver = ConfigResolver(params=params, env_override=env_override)
+
+    resolved_env, bad_vars = resolver.fetch_and_resolve_env()
     assert bad_vars == []
 
 
@@ -73,9 +96,12 @@ def put_aws_s3_file(
     s3_client,
     name: str,
     value: str,
-    content_type: str = "text/plain",
-    region_name="us-east-2",
+    content_type: Optional[str] = None,
+    region_name: Optional[str] = None,
 ) -> str:
+    content_type = content_type or "text/plain"
+    region_name = region_name or "us-east-2"
+
     try:
         s3_client.create_bucket(
             Bucket="bucket",
