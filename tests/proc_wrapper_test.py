@@ -6,18 +6,14 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from pytest_httpserver import HTTPServer
 
-from proc_wrapper import (
-    ConfigResolver,
-    ProcWrapper,
-    ProcWrapperParams,
-    RuntimeMetadataFetcher,
-    make_arg_parser,
-)
+from proc_wrapper import ProcWrapper, ProcWrapperParams, make_arg_parser
 
 from .test_commons import (
     ACCEPT_JSON_HEADERS,
     TEST_ECS_TASK_METADATA,
+    FakeAwsLambdaContext,
     make_capturing_handler,
+    make_fake_aws_lambda_env,
 )
 
 TEST_API_PORT = 6777
@@ -47,25 +43,7 @@ def make_wrapped_mode_proc_wrapper(env: Mapping[str, str]) -> ProcWrapper:
     params = main_parser.parse_args(
         args=[], namespace=ProcWrapperParams(embedded_mode=False)
     )
-    runtime_metadata_fetcher = RuntimeMetadataFetcher()
-    runtime_metadata = runtime_metadata_fetcher.fetch(env=env)
-    params.override_resolver_params_from_env(env=env)
-
-    config_resolver = ConfigResolver(
-        params=params, runtime_metadata=runtime_metadata, env_override=env
-    )
-
-    resolved_env, _failed_var_names = config_resolver.fetch_and_resolve_env()
-
-    params.override_proc_wrapper_params_from_env(
-        resolved_env, mutable_only=False, runtime_metadata=runtime_metadata
-    )
-
-    return ProcWrapper(
-        params=params,
-        runtime_metadata_fetcher=runtime_metadata_fetcher,
-        config_resolver=config_resolver,
-    )
+    return ProcWrapper(params=params, env_override=env, override_params_from_env=True)
 
 
 def make_online_base_env(port: int, command: Optional[str] = "echo") -> Dict[str, str]:
@@ -453,6 +431,50 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
     else:
         assert task_dict["was_auto_created"] is not True
         assert task_dict["passive"] is not True
+
+
+def test_aws_lambda_metadata(httpserver: HTTPServer):
+    params = make_online_params(httpserver.port)
+    params.auto_create_task = True
+    params.task_is_passive = True
+    params.auto_create_task_run_environment_name = "stage"
+
+    env = make_fake_aws_lambda_env()
+    context = FakeAwsLambdaContext()
+
+    wrapper = ProcWrapper(params=params, env_override=env, runtime_context=context)
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
+    )
+    fetch_final_update_request_data = expect_task_execution_request(
+        httpserver=httpserver
+    )
+
+    cbdata = "yo"
+
+    wrapper.managed_call(callback, cbdata) == "superyo"
+
+    httpserver.check_assertions()
+
+    crd = fetch_creation_request_data()
+    assert crd["status"] == ProcWrapper.STATUS_RUNNING
+    assert crd["is_service"] is False
+    assert crd["wrapper_version"] == ProcWrapper.VERSION
+    assert crd["wrapper_family"] == ProcWrapper.WRAPPER_FAMILY
+    assert crd["embedded_mode"] is True
+    task = crd["task"]
+    assert task["uuid"] == DEFAULT_TASK_UUID
+
+    em = crd.get("execution_method")
+    assert em["function_name"] == "do_it_now"
+    assert em["function_version"] == "3.3.7"
+    assert em["allocated_memory_mb"] == 4096
+    assert em["function_arn"] == "arn:aws:lambda:us-east-2:123456789012:function:funky"
+
+    furd = fetch_final_update_request_data()
+
+    assert furd["status"] == ProcWrapper.STATUS_SUCCEEDED
 
 
 def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):

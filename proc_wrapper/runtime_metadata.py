@@ -5,6 +5,8 @@ from typing import Any, Dict, Mapping, NamedTuple, Optional
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from .common_utils import safe_get, string_to_int
+
 AWS_ECS_METADATA_TIMEOUT_SECONDS = 60
 
 
@@ -20,11 +22,28 @@ class RuntimeMetadata(NamedTuple):
 
 
 class RuntimeMetadataFetcher:
+    def fetch(
+        self, env: Mapping[str, str], context: Optional[Any] = None
+    ) -> Optional[RuntimeMetadata]:
+        return None
+
+
+class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
+    AWS_LAMBDA_CLIENT_METADATA_PROPERTIES = [
+        "installation_id",
+        "app_title",
+        "app_version_name",
+        "app_version_code",
+        "app_package_name",
+    ]
+
     def __init__(self):
         self.runtime_metadata: Optional[RuntimeMetadata] = None
         self.fetched_at: Optional[float] = None
 
-    def fetch(self, env: Mapping[str, str]) -> Optional[RuntimeMetadata]:
+    def fetch(
+        self, env: Mapping[str, str], context: Optional[Any] = None
+    ) -> Optional[RuntimeMetadata]:
         _logger.debug("Entering fetch_runtime_metadata() ...")
 
         # Don't refetch if we have already attempted previously
@@ -35,6 +54,12 @@ class RuntimeMetadataFetcher:
             return self.runtime_metadata
 
         self.runtime_metadata = self.fetch_ecs_container_metadata(env=env)
+
+        if not self.runtime_metadata:
+            self.runtime_metadata = self.fetch_aws_lambda_metadata(
+                env=env, context=context
+            )
+
         self.fetched_at = time.time()
 
         _logger.debug(f"Done fetching runtime metadata, got {self.runtime_metadata}")
@@ -173,3 +198,109 @@ class RuntimeMetadataFetcher:
         return (
             task_arn[0:prefix_end_index] + ":task-definition/" + family + ":" + revision
         )
+
+    def fetch_aws_lambda_metadata(
+        self, env: Mapping[str, str], context: Optional[Any]
+    ) -> Optional[RuntimeMetadata]:
+        # https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+
+        if not env.get("LAMBDA_TASK_ROOT"):
+            return None
+
+        _logger.debug("AWS Lambda environment detected")
+
+        common_props: Dict[str, Any] = {
+            "type": "AWS Lambda",
+            "runtime_id": env.get("AWS_EXECUTION_ENV"),
+            "function_name": env.get("AWS_LAMBDA_FUNCTION_NAME"),
+            "function_version": env.get("AWS_LAMBDA_FUNCTION_VERSION"),
+            "init_type": env.get("AWS_LAMBDA_INITIALIZATION_TYPE"),
+            "dotnet_prejit": env.get("AWS_LAMBDA_DOTNET_PREJIT"),
+            "allocated_memory_mb": string_to_int(
+                env.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE")
+            ),
+            "time_zone_name": env.get("TZ"),
+        }
+
+        execution_method: Dict[str, Any] = {}
+        execution_method_capability: Dict[str, Any] = {}
+
+        # _HANDLER – The handler location configured on the function.
+        aws_region = env.get("AWS_REGION")
+
+        aws_props = {
+            "network": {
+                "region": aws_region,
+            },
+            "xray": {
+                "trace_id": env.get("_X_AMZN_TRACE_ID"),
+            },
+        }
+
+        log_group_name = env.get("AWS_LAMBDA_LOG_GROUP_NAME")
+
+        if log_group_name:
+            aws_props["logging"] = {
+                "group_name": log_group_name,
+                "stream_name": env.get("AWS_LAMBDA_LOG_STREAM_NAME"),
+            }
+
+        execution_method_capability["aws"] = aws_props.copy()
+
+        aws_props["xray"]["context_missing"] = env.get("AWS_XRAY_CONTEXT_MISSING")
+
+        execution_method["aws"] = aws_props
+
+        if context and hasattr(context, "invoked_function_arn"):
+            # https://docs.aws.amazon.com/lambda/latest/dg/python-context.html
+            common_props["function_arn"] = context.invoked_function_arn
+
+            execution_method["aws_request_id"] = safe_get(context, "aws_request_id")
+
+            identity = safe_get(context, "identity")
+            extracted_identity: Optional[Dict[str, Any]] = None
+
+            if identity:
+                extracted_identity = {
+                    "id": safe_get(identity, "cognito_identity_id"),
+                    "pool_id": safe_get(identity, "cognito_identity_pool_id"),
+                }
+
+            execution_method["cognito_identity"] = extracted_identity
+
+            client_context = safe_get(context, "client_context")
+            extracted_client_context: Optional[Dict[str, Any]] = None
+
+            if client_context:
+                client = safe_get(client_context, "client")
+                extracted_client: Optional[Dict[str, Any]] = None
+
+                if client:
+                    extracted_client = {}
+                    for p in self.AWS_LAMBDA_CLIENT_METADATA_PROPERTIES:
+                        extracted_client[p] = safe_get(client, p)
+
+                extracted_client_context = {"client": extracted_client}
+
+            execution_method["client_context"] = extracted_client_context
+
+            execution_method.update(common_props)
+            execution_method_capability.update(common_props)
+
+            derived = {"aws": aws_props}
+
+            return RuntimeMetadata(
+                execution_method=execution_method,
+                execution_method_capability=execution_method_capability,
+                raw={},
+                derived=derived,
+            )
+
+        _logger.warning(
+            """
+Detected AWS Lambda environment, but unexpected context found. \
+Ensure you pass it to the Lambda entrypoint to the constructor of \
+ProcWrapper.
+"""
+        )
+        return None

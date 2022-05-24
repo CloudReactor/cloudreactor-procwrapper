@@ -42,7 +42,11 @@ from urllib.request import Request, urlopen
 from .common_utils import encode_int, string_to_bool
 from .config_resolver import ConfigResolver
 from .proc_wrapper_params import ProcWrapperParams, ProcWrapperParamValidationErrors
-from .runtime_metadata import RuntimeMetadata, RuntimeMetadataFetcher
+from .runtime_metadata import (
+    DefaultRuntimeMetadataFetcher,
+    RuntimeMetadata,
+    RuntimeMetadataFetcher,
+)
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
@@ -116,6 +120,7 @@ class ProcWrapper:
         config_resolver: Optional[ConfigResolver] = None,
         env_override: Optional[Mapping[str, Any]] = None,
         override_params_from_env: bool = True,
+        runtime_context: Optional[Any] = None,
     ) -> None:
         _logger.info("Creating ProcWrapper instance ...")
 
@@ -154,12 +159,16 @@ class ProcWrapper:
         self.in_pytest = False
 
         self.runtime_metadata_fetcher: RuntimeMetadataFetcher = (
-            runtime_metadata_fetcher or RuntimeMetadataFetcher()
+            runtime_metadata_fetcher or DefaultRuntimeMetadataFetcher()
         )
+
+        self.runtime_context = runtime_context
 
         runtime_metadata: Optional[RuntimeMetadata] = None
         try:
-            runtime_metadata = self.runtime_metadata_fetcher.fetch(env=self.env)
+            runtime_metadata = self.runtime_metadata_fetcher.fetch(
+                env=self.env, context=self.runtime_context
+            )
         except Exception:
             _logger.exception("Failed to fetch runtime metadata")
 
@@ -327,7 +336,7 @@ class ProcWrapper:
         runtime_metadata: Optional[RuntimeMetadata] = None
         if self.params.send_runtime_metadata:
             runtime_metadata = self.runtime_metadata_fetcher.fetch(
-                env=self.resolved_env
+                env=self.resolved_env, context=self.runtime_context
             )
 
         status = ProcWrapper.STATUS_RUNNING
@@ -722,7 +731,9 @@ class ProcWrapper:
             want_env=True, want_config=self.params.embedded_mode
         )
 
-        runtime_metadata = self.runtime_metadata_fetcher.fetch(env=self.resolved_env)
+        runtime_metadata = self.runtime_metadata_fetcher.fetch(
+            env=self.resolved_env, context=self.runtime_context
+        )
 
         # In case API key(s) change
         self.params.override_proc_wrapper_params_from_env(

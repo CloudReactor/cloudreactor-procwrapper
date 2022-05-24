@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from werkzeug.wrappers import Request, Response
 
@@ -80,3 +80,56 @@ def make_capturing_handler(response_data: Dict[str, Any], status: int = 200):
         return captured_request_data[0]
 
     return handler, fetch_captured_request_data
+
+
+class FakeAwsCognitoIdentity:
+    def __init__(self):
+        self.cognito_identity_id = "cog ID"
+        self.cognito_identity_pool_id = "cog Piss ID"
+
+
+class FakeAwsMobileClient:
+    def __init__(self):
+        self.installation_id = "install ID 345"
+        self.app_title = "Disruptor"
+        self.app_version_name = "2.0"
+        self.app_version_code = "deadfeed"
+        self.app_package_name = "boxer-765"
+
+
+class FakeAwsClientContext:
+    def __init__(self):
+        self.client = FakeAwsMobileClient()
+        self.custom = {"a": "b"}
+        self.env = {"SOME_AWS_SDK_VAR": "d"}
+
+
+class FakeAwsLambdaContext:
+    def __init__(self):
+        self.function_name = "funky"
+        self.function_version = "1.0.3F"
+        self.invoked_function_arn = (
+            "arn:aws:lambda:us-east-2:123456789012:function:funky"
+        )
+        self.memory_limit_in_mb = 1024
+        self.aws_request_id = "SOME-REQ_ID"
+        self.log_group_name = "staging/stuff"
+        self.log_stream_name = "streamer"
+        self.identity = FakeAwsCognitoIdentity()
+        self.client_context = FakeAwsClientContext()
+
+
+def make_fake_aws_lambda_env() -> Mapping[str, str]:
+    return {
+        "LAMBDA_TASK_ROOT": "/root/lambda/task",
+        "AWS_REGION": "us-east-2",
+        "AWS_EXECUTION_ENV": "AWS_Lambda_python3.9",
+        "AWS_LAMBDA_FUNCTION_NAME": "do_it_now",
+        "AWS_LAMBDA_FUNCTION_MEMORY_SIZE": "4096",
+        "AWS_LAMBDA_FUNCTION_VERSION": "3.3.7",
+        "AWS_LAMBDA_INITIALIZATION_TYPE": "on-demand",
+        "AWS_LAMBDA_LOG_GROUP_NAME": "muh_log_group",
+        "AWS_LAMBDA_LOG_STREAM_NAME": "colorado-river",
+        "_X_AMZN_TRACE_ID": "894diemsggt",
+        "TZ": "America/Los_Angeles",
+    }

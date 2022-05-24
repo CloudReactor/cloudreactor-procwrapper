@@ -54,3 +54,12 @@ def strip_after(s: str, partial_suffix: str) -> Tuple[str, Optional[str]]:
         return (s[0:index], s[index + len(partial_suffix) :])
 
     return (s, None)
+
+
+def safe_get(
+    obj: Any, prop_name: str, default_value: Optional[Any] = None
+) -> Optional[Any]:
+    if hasattr(obj, prop_name):
+        return getattr(obj, prop_name)
+
+    return default_value

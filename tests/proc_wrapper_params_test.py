@@ -4,8 +4,8 @@ import pytest
 
 from proc_wrapper import (
     ConfigResolver,
+    DefaultRuntimeMetadataFetcher,
     ProcWrapperParams,
-    RuntimeMetadataFetcher,
     make_arg_parser,
 )
 from proc_wrapper.proc_wrapper_params import (
@@ -26,7 +26,7 @@ def make_proc_wrapper_params(
         main_parser = make_arg_parser()
         params = main_parser.parse_args(args=["echo"], namespace=params)
 
-    runtime_metadata_fetcher = RuntimeMetadataFetcher()
+    runtime_metadata_fetcher = DefaultRuntimeMetadataFetcher()
     runtime_metadata = runtime_metadata_fetcher.fetch(env=env)
     params.override_resolver_params_from_env(env=env)
 
