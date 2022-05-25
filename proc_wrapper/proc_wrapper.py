@@ -638,6 +638,7 @@ class ProcWrapper:
             timed_out_attempts=timed_out_attempts,
             exit_code=exit_code,
             pid=pid,
+            finished_at=datetime.now(),
         )
 
     def managed_call(self, fun, data: Any = None):
@@ -1223,6 +1224,7 @@ class ProcWrapper:
         timed_out_attempts: Optional[int] = None,
         exit_code: Optional[int] = None,
         pid: Optional[int] = None,
+        finished_at: Optional[datetime] = None,
         extra_props: Optional[Mapping[str, Any]] = None,
     ) -> bool:
         """
@@ -1262,6 +1264,9 @@ class ProcWrapper:
 
         if pid is not None:
             body["pid"] = pid
+
+        if finished_at:
+            body["finished_at"] = finished_at.isoformat()
 
         if extra_props:
             body["other_runtime_metadata"] = extra_props

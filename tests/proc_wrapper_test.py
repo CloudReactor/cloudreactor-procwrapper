@@ -182,6 +182,10 @@ def test_wrapped_mode_with_server(
         assert urd.get("failed_attempts") is None
         assert urd.get("timed_out_attempts") is None
 
+        finished_at_str = urd["finished_at"]
+        finished_at = datetime.fromisoformat(finished_at_str)
+        assert (datetime.now() - finished_at).seconds < 10
+
 
 def callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
     return "super" + cbdata
