@@ -1275,7 +1275,11 @@ class ProcWrapper:
                 self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
             ] = unsent_last_app_heartbeat_at.isoformat()
 
-        url = f"{self.params.api_base_url}/api/v1/task_executions/{quote_plus(str(self.task_execution_uuid))}/"
+        url = (
+            f"{self.params.api_base_url}/api/v1/task_executions/"
+            + quote_plus(str(self.task_execution_uuid))
+            + "/?content=false"
+        )
         headers = self._make_headers()
         text_data = json.dumps(body)
         data = text_data.encode("utf-8")
