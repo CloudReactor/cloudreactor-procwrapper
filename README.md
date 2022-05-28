@@ -351,8 +351,8 @@ Here are all the options:
                             indefinitely
       --schedule SCHEDULE   Run schedule reported to the API server
       --max-concurrency MAX_CONCURRENCY
-                            Maximum number of concurrent Task Executions allowed
-                            with the same Task UUID. Defaults to 1.
+                            Maximum number of concurrent Task Executions of the
+                            same Task. Defaults to 1.
       --max-conflicting-age MAX_CONFLICTING_AGE
                             Maximum age of conflicting Tasks to consider, in
                             seconds. -1 means no limit. Defaults to the heartbeat
@@ -386,7 +386,7 @@ Here are all the options:
       --api-resume-delay API_RESUME_DELAY
                             Number of seconds to wait before resuming API
                             requests, after retries are exhausted. Defaults to
-                            600. -1 means no resumption.
+                            600. -1 means to never resume.
       --api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT
                             Number of seconds to keep retrying Task Execution
                             creation while receiving error responses from the API
@@ -408,7 +408,7 @@ Here are all the options:
       -o, --offline-mode    Do not communicate with or rely on an API server
       -p, --prevent-offline-execution
                             Do not start processes if the API server is
-                            unavailable.
+                            unavailable or the wrapper is misconfigured.
       -d DEPLOYMENT, --deployment DEPLOYMENT
                             Deployment name (production, staging, etc.)
       --send-pid            Send the process ID to the API server
@@ -441,18 +441,20 @@ Here are all the options:
                             auto -- Auto-detect the shell mode by analyzing the
                             command.
       --no-strip-shell-wrapping
-                            Strip the command-line of shell wrapping like "/bin/sh
-                            -c" that can be introduced by Docker when using shell
-                            form of ENTRYPOINT and CMD.
+                            Do not strip the command-line of shell wrapping like
+                            "/bin/sh -c" that can be introduced by Docker when
+                            using shell form of ENTRYPOINT and CMD.
       --no-process-group-termination
                             Send termination and kill signals to the wrapped
-                            process only, instead of its process group. Sending to
-                            the process group allows all child processes to
-                            receive the signals, even if the wrapped process does
-                            not forward signals.
+                            process only, instead of its process group (which is
+                            the default). Sending to the process group allows all
+                            child processes to receive the signals, even if the
+                            wrapped process does not forward signals. However, if
+                            your wrapped process manually handles and forward
+                            signals to its child processes,
       -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
-                            Timeout for process, in seconds. -1 means no timeout,
-                            which is the default.
+                            Timeout for process completion, in seconds. -1 means
+                            no timeout, which is the default.
       -r PROCESS_MAX_RETRIES, --process-max-retries PROCESS_MAX_RETRIES
                             Maximum number of times to retry failed processes. -1
                             means to retry forever. Defaults to 0.
@@ -481,9 +483,9 @@ Here are all the options:
                             The maximum number of bytes status update messages can
                             be. Defaults to 65536.
       --status-update-interval STATUS_UPDATE_INTERVAL
-                            Minimum of seconds to wait between sending status
-                            updates to the API server. -1 means to not send status
-                            updates except with heartbeats. Defaults to -1.
+                            Minimum of number of seconds to wait between sending
+                            status updates to the API server. -1 means to not send
+                            status updates except with heartbeats. Defaults to -1.
 
     configuration:
       Environment/configuration resolution settings
@@ -571,14 +573,14 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_TASK_IS_PASSIVE (TRUE OR FALSE)
 * PROC_WRAPPER_TASK_IS_SERVICE (TRUE or FALSE)
 * PROC_WRAPPER_EXECUTION_METHOD_PROPS (JSON encoded property map)
-* PROC_WRAPPER_TASK_MAX_CONCURRENCY (can be set to -1 to indicate no limit)
+* PROC_WRAPPER_TASK_MAX_CONCURRENCY (set to -1 to indicate no limit)
 * PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION (TRUE or FALSE)
 * PROC_WRAPPER_TASK_VERSION_NUMBER
 * PROC_WRAPPER_TASK_VERSION_TEXT
 * PROC_WRAPPER_TASK_VERSION_SIGNATURE
-* PROC_WRAPPER_TASK_INSTANCE_METADATA
-* PROC_WRAPPER_LOG_LEVEL
-* PROC_WRAPPER_LOG_SECRETS
+* PROC_WRAPPER_TASK_INSTANCE_METADATA (JSON encoded property map)
+* PROC_WRAPPER_LOG_LEVEL (TRACE, DEBUG, INFO, WARNING, or ERROR)
+* PROC_WRAPPER_LOG_SECRETS (TRUE or FALSE)
 * PROC_WRAPPER_DEPLOYMENT
 * PROC_WRAPPER_API_BASE_URL
 * PROC_WRAPPER_API_KEY
@@ -593,12 +595,12 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
 * PROC_WRAPPER_ENV_LOCATIONS
 * PROC_WRAPPER_CONFIG_LOCATIONS
-* PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS
-* PROC_WRAPPER_RESOLVE_SECRETS
+* PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS (TRUE or FALSE)
+* PROC_WRAPPER_RESOLVE_SECRETS (TRUE or FALSE)
 * PROC_WRAPPER_MAX_CONFIG_RESOLUTION_DEPTH
 * PROC_WRAPPER_MAX_CONFIG_RESOLUTION_ITERATIONS
 * PROC_WRAPPER_CONFIG_TTL_SECONDS
-* PROC_WRAPPER_FAIL_FAST_CONFIG_RESOLUTION
+* PROC_WRAPPER_FAIL_FAST_CONFIG_RESOLUTION (TRUE or FALSE)
 * PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_PREFIX
 * PROC_WRAPPER_RESOLVABLE_ENV_VAR_NAME_SUFFIX
 * PROC_WRAPPER_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX
@@ -614,7 +616,7 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_ROLLBAR_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_MAX_CONFLICTING_AGE_SECONDS
 * PROC_WRAPPER_TASK_COMMAND
-* PROC_WRAPPER_SHELL_MODE
+* PROC_WRAPPER_SHELL_MODE (TRUE or FALSE)
 * PROC_WRAPPER_STRIP_SHELL_WRAPPING (TRUE or FALSE)
 * PROC_WRAPPER_WORK_DIR
 * PROC_WRAPPER_PROCESS_MAX_RETRIES

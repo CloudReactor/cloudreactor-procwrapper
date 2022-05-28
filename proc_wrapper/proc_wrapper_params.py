@@ -1240,7 +1240,7 @@ for the schema.""",
     task_group.add_argument(
         "--max-concurrency",
         help="""
-Maximum number of concurrent Task Executions allowed with the same Task UUID.
+Maximum number of concurrent Task Executions of the same Task.
 Defaults to 1.""",
     )
     task_group.add_argument(
@@ -1303,7 +1303,7 @@ Defaults to {DEFAULT_API_RETRY_DELAY_SECONDS}.""",
         help=f"""
 Number of seconds to wait before resuming API requests, after retries are
 exhausted. Defaults to {DEFAULT_API_RESUME_DELAY_SECONDS}.
--1 means no resumption.""",
+-1 means to never resume.""",
     )
     api_group.add_argument(
         "--api-task-execution-creation-error-timeout",
@@ -1349,7 +1349,9 @@ Timeout for contacting API server, in seconds. Defaults to
         "-p",
         "--prevent-offline-execution",
         action="store_true",
-        help="Do not start processes if the API server is unavailable.",
+        help="""
+Do not start processes if the API server is unavailable or the wrapper is
+misconfigured.""",
     )
     api_group.add_argument(
         "-d", "--deployment", help="Deployment name (production, staging, etc.)"
@@ -1440,7 +1442,8 @@ signals to its child processes,
         "-t",
         "--process-timeout",
         help="""
-Timeout for process, in seconds. -1 means no timeout, which is the default.""",
+Timeout for process completion, in seconds. -1 means no timeout, which is the
+default.""",
     )
     process_group.add_argument(
         "-r",
@@ -1497,8 +1500,9 @@ The maximum number of bytes status update messages can be. Defaults to
     update_group.add_argument(
         "--status-update-interval",
         help="""
-Minimum of seconds to wait between sending status updates to the API server.
--1 means to not send status updates except with heartbeats. Defaults to -1.""",
+Minimum of number of seconds to wait between sending status updates to the API
+server. -1 means to not send status updates except with heartbeats. Defaults to
+-1.""",
     )
 
     config_group = parser.add_argument_group(
