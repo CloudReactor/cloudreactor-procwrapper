@@ -261,8 +261,8 @@ Here are all the options:
                         [-d DEPLOYMENT] [--send-pid] [--send-hostname]
                         [--no-send-runtime-metadata]
                         [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets]
-                        [-w WORK_DIR] [-c COMMAND_LINE]
-                        [--shell-mode {auto,enable,disable}]
+                        [--exclude-timestamps-in-log] [-w WORK_DIR]
+                        [-c COMMAND_LINE] [--shell-mode {auto,enable,disable}]
                         [--no-strip-shell-wrapping]
                         [--no-process-group-termination] [-t PROCESS_TIMEOUT]
                         [-r PROCESS_MAX_RETRIES]
@@ -415,6 +415,10 @@ Here are all the options:
       --send-hostname       Send the hostname to the API server
       --no-send-runtime-metadata
                             Do not send metadata about the runtime environment
+      --exclude-timestamps-in-log
+                            Exclude timestamps in log (possibly because the log
+                            stream will be enriched by timestamps automatically by
+                            a logging service like AWS CloudWatch Logs)
 
     log:
       Logging settings
@@ -450,8 +454,9 @@ Here are all the options:
                             the default). Sending to the process group allows all
                             child processes to receive the signals, even if the
                             wrapped process does not forward signals. However, if
-                            your wrapped process manually handles and forward
-                            signals to its child processes,
+                            your wrapped process manually handles and forwards
+                            signals to its child processes, you probably want to
+                            send signals to only your wrapped process.
       -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
                             Timeout for process completion, in seconds. -1 means
                             no timeout, which is the default.
@@ -579,8 +584,9 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_TASK_VERSION_TEXT
 * PROC_WRAPPER_TASK_VERSION_SIGNATURE
 * PROC_WRAPPER_TASK_INSTANCE_METADATA (JSON encoded property map)
-* PROC_WRAPPER_LOG_LEVEL (TRACE, DEBUG, INFO, WARNING, or ERROR)
+* PROC_WRAPPER_LOG_LEVEL (TRACE, DEBUG, INFO, WARNING, ERROR, or CRITICAL)
 * PROC_WRAPPER_LOG_SECRETS (TRUE or FALSE)
+* PROC_WRAPPER_INCLUDE_TIMESTAMPS_IN_LOG (TRUE or FALSE)
 * PROC_WRAPPER_DEPLOYMENT
 * PROC_WRAPPER_API_BASE_URL
 * PROC_WRAPPER_API_KEY
@@ -593,8 +599,8 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
-* PROC_WRAPPER_ENV_LOCATIONS
-* PROC_WRAPPER_CONFIG_LOCATIONS
+* PROC_WRAPPER_ENV_LOCATIONS (comma-separated list of locations)
+* PROC_WRAPPER_CONFIG_LOCATIONS (comma-separated list of locations)
 * PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS (TRUE or FALSE)
 * PROC_WRAPPER_RESOLVE_SECRETS (TRUE or FALSE)
 * PROC_WRAPPER_MAX_CONFIG_RESOLUTION_DEPTH

@@ -382,6 +382,8 @@ class ProcWrapperParams(ConfigResolverParams):
         )
         self.status_update_interval: Optional[int] = None
 
+        self.include_timestamps_in_log: bool = True
+
         self.rollbar_access_token: Optional[str] = None
         self.rollbar_retries: Optional[int] = DEFAULT_ROLLBAR_RETRIES
         self.rollbar_retry_delay: int = DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS
@@ -715,6 +717,14 @@ class ProcWrapperParams(ConfigResolverParams):
     def _override_immutable_from_env(
         self, env: Dict[str, str], runtime_metadata: Optional[RuntimeMetadata]
     ) -> None:
+        self.include_timestamps_in_log = (
+            string_to_bool(
+                env.get("PROC_WRAPPER_INCLUDE_TIMESTAMPS_IN_LOG"),
+                default_value=self.include_timestamps_in_log,
+            )
+            or False
+        )
+
         self.offline_mode = (
             string_to_bool(
                 env.get("PROC_WRAPPER_OFFLINE_MODE"), default_value=self.offline_mode
@@ -1176,7 +1186,10 @@ UUID of Task (either the Task Name or the Task UUID must be specified)""",
     )
     task_group.add_argument(
         "--auto-create-task-run-environment-name",
-        help="Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run Environment UUID is not specified.",
+        help="""
+Name of the Run Environment to use if auto-creating the Task (either the name or
+UUID of the Run Environment must be specified if auto-creating the Task).
+Defaults to the deployment name if the Run Environment UUID is not specified.""",
     )
     task_group.add_argument(
         "--auto-create-task-run-environment-uuid",
@@ -1376,11 +1389,19 @@ misconfigured.""",
         "-l",
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default=os.environ.get("PROC_WRAPPER_LOG_LEVEL", _DEFAULT_LOG_LEVEL),
+        default=_DEFAULT_LOG_LEVEL,
         help="Log level",
     )
     log_group.add_argument(
         "--log-secrets", action="store_true", help="Log sensitive information"
+    )
+    api_group.add_argument(
+        "--exclude-timestamps-in-log",
+        action="store_false",
+        dest="include_timestamps_in_log",
+        help="""
+Exclude timestamps in log (possibly because the log stream will be enriched by
+timestamps automatically by a logging service like AWS CloudWatch Logs)""",
     )
 
     process_group = parser.add_argument_group("process", "Process settings")
@@ -1433,8 +1454,9 @@ introduced by Docker when using shell form of ENTRYPOINT and CMD.
 Send termination and kill signals to the wrapped process only, instead of its
 process group (which is the default). Sending to the process group allows all
 child processes to receive the signals, even if the wrapped process does not
-forward signals. However, if your wrapped process manually handles and forward
-signals to its child processes,
+forward signals. However, if your wrapped process manually handles and forwards
+signals to its child processes, you probably want to send signals to only
+your wrapped process.
 """,
     )
 

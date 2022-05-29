@@ -276,11 +276,11 @@ class ProcWrapper:
 
         if first_attempt_started_at is not None:
             total_duration = now_ts - first_attempt_started_at
-            msg += f", for a total duration of {round(total_duration)} seconds"
+            msg += f", for a total duration of {round(total_duration)} second(s)"
 
         msg += "."
 
-        print(msg)
+        _logger.info(msg)
 
     @property
     def max_execution_attempts(self) -> float:
@@ -529,6 +529,7 @@ class ProcWrapper:
 
                     if not self.task_execution_uuid:
                         self.task_execution_uuid = response_dict.get("uuid")
+                        self._reconfigure_logger()
 
                     self.task_uuid = self.task_uuid or response_dict["task"]["uuid"]
                     self.task_name = self.task_name or response_dict["task"]["name"]
@@ -755,6 +756,9 @@ class ProcWrapper:
         )
         self.attempt_count = 0
         self.timeout_count = 0
+
+        if self.task_execution_uuid:
+            self._reconfigure_logger()
 
         if self.offline_mode:
             _logger.info("Starting in offline mode ...")
@@ -1515,6 +1519,30 @@ class ProcWrapper:
                 self.api_server_retries_exhausted = False
 
         return self.api_server_retries_exhausted
+
+    def _reconfigure_logger(self) -> None:
+        format = "PROC_WRAPPER: "
+
+        if self.task_execution_uuid:
+            format += f"[{self.task_execution_uuid}] "
+
+        if self.params.include_timestamps_in_log:
+            format += "%(asctime)s "
+
+        format += "%(levelname)s: %(message)s"
+
+        formatter = logging.Formatter(format)
+        logger_to_configure = _logger
+
+        if not self.params.embedded_mode:
+            # Root logger
+            logger_to_configure = logging.getLogger()
+
+        for handler in logger_to_configure.handlers:
+            try:
+                handler.setFormatter(formatter)
+            except Exception:
+                _logger.warning("Can't set formatter on logger")
 
     def _exit_or_raise(self, exit_code: int) -> int:
         if self.params.embedded_mode:
