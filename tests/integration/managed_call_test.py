@@ -3,11 +3,10 @@ import logging
 import sys
 import time
 
-import proc_wrapper
-from proc_wrapper import ProcWrapper
+from proc_wrapper import ProcWrapper, ProcWrapperParams
 
 
-def fun(ew, data):
+def fun(ew, data, config):
     print(f"data = {data}")
     print("sleeping ...")
     ew.update_status(success_count=0)
@@ -25,7 +24,7 @@ logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s %(levelname)s: %(message)s"
 )
 
-args = proc_wrapper.make_default_args()
+args = ProcWrapperParams()
 args.offline_mode = True
 args.status_update_interval = 5
 args.task_name = "managed_call_test"
