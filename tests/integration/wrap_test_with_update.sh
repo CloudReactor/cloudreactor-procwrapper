@@ -1,6 +1,8 @@
 #!/bin/bash
 
-source test_env.sh;
+SCRIPT_DIR=`dirname "$0"`
+SCRIPT_ABS_DIR=`readlink -e $SCRIPT_DIR`
+BASE_DIR="$SCRIPT_DIR/../.."
 
 CMD="python sleep_with_update.py"
 
@@ -9,6 +11,5 @@ then
     CMD=$1
 fi
 
-export PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER=TRUE
-export PROC_WRAPPER_STATUS_UPDATE_INTERVAL_SECONDS=5
-python3 proc_wrapper.py $CMD
+export PROC_WRAPPER_TASK_COMMAND="$CMD"
+exec python3 -m proc_wrapper --log-secrets -e $SCRIPT_ABS_DIR/common.env -e $SCRIPT_ABS_DIR/secret.env

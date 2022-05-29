@@ -2,6 +2,4 @@
 
 set -e
 
-source ./common_env.sh;
-source ./secret_env.sh;
-./proc_wrapper "$@"
+exec ./proc_wrapper -e common.env -e secret.env "$@"
