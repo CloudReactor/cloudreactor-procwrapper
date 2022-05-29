@@ -1011,7 +1011,7 @@ class ProcWrapper:
 
         exit_code = None
         pid = None
-        notification_required = True
+        notification_required = not self.offline_mode
 
         try:
             if self.process:
@@ -1534,16 +1534,11 @@ class ProcWrapper:
 
         return exit_code
 
-    def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> int:
-        num_sinks_successful = 0
+    def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> None:
+        _logger.error(message)
+
         if self.params.rollbar_access_token:
-            if self._send_rollbar_error(message, data):
-                num_sinks_successful += 1
-
-        if num_sinks_successful == 0:
-            _logger.info("Can't notify any valid error sink!")
-
-        return num_sinks_successful
+            self._send_rollbar_error(message, data)
 
     def _send_rollbar_error(self, message: str, data=None, level="error") -> bool:
         if not self.params.rollbar_access_token:
