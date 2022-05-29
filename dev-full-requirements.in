@@ -1,2 +1,2 @@
 -c dev-base-requirements.txt
-moto==1.3.16
+moto>=1.3.16
