@@ -11,12 +11,7 @@ main_parser = make_arg_parser()
 main_args = main_parser.parse_args(namespace=ProcWrapperParams(embedded_mode=False))
 
 if main_args.version:
-    print(
-        f"""
-{ProcWrapper.WRAPPER_FAMILY} v{ProcWrapper.VERSION}.
-See https://cloudreactor.io for more info.
-"""
-    )
+    print(f"""{ProcWrapper.WRAPPER_FAMILY} v{ProcWrapper.VERSION}""")
     sys.exit(0)
 
 log_level = (
