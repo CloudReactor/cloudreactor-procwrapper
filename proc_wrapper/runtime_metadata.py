@@ -152,6 +152,9 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             },
         }
 
+        execution_method_capability["aws"] = aws_props
+        execution_method["aws"] = aws_props
+
         derived = {"aws": aws_props}
 
         return RuntimeMetadata(

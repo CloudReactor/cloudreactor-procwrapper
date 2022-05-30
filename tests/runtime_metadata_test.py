@@ -46,10 +46,11 @@ def test_aws_ecs_runtime_metadata(httpserver: HTTPServer):
     assert emc["allocated_cpu_units"] == 256
     assert emc["allocated_memory_mb"] == 512
 
-    aws = metadata.derived["aws"]
-    network = aws["network"]
-    assert network["availability_zone"] == "us-east-2b"
-    assert network["region"] == "us-east-2"
+    for h in [emc, emc, metadata.derived]:
+        aws = h["aws"]
+        network = aws["network"]
+        assert network["availability_zone"] == "us-east-2b"
+        assert network["region"] == "us-east-2"
 
 
 def test_aws_lambda_runtime_metadata():
