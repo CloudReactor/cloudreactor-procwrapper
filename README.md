@@ -927,7 +927,7 @@ fetched and parsed dictionary values. For example:
 
     def callback(wrapper: ProcWrapper, cbdata: str,
             config: Dict[str, str]) -> str:
-        return 'super' + cbdata + config['username']
+        return "super" + cbdata + config["username"]
 
 
     def main():
@@ -936,21 +936,21 @@ fetched and parsed dictionary values. For example:
         # Optional: you can set an initial configuration dictionary which will
         # have its values included in the final configuration unless overridden.
         params.initial_config = {
-          'log_level': 'DEBUG'
+            "log_level": "DEBUG"
         }
 
         # You can omit this if you set PROC_WRAPPER_CONFIG_LOCATIONS environment
         # variable to the same ARN
         params.config_locations = [
-            'arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY',
+            "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY",
             # More secret locations can be added here, and their values will
             # be merged
         ]
 
         wrapper = ProcWrapper(params=params)
 
-        # Returns 'superduperpostgres'
-        return wrapper.managed_call(callback, 'duper')
+        # Returns "superduperpostgres"
+        return wrapper.managed_call(callback, "duper")
 
 #### Merging Secrets
 
@@ -1120,7 +1120,7 @@ StatusUpdater class to do this:
     from proc_wrapper import StatusUpdater
 
     with StatusUpdater() as updater:
-        updater.send_update(last_status_message='Starting ...')
+        updater.send_update(last_status_message="Starting ...")
         success_count = 0
 
         for i in range(100):
@@ -1132,7 +1132,7 @@ StatusUpdater class to do this:
                 failed_count += 1
                 updater.send_update(failed_count=failed_count)
 
-        updater.send_update(last_status_message='Finished!')
+        updater.send_update(last_status_message="Finished!")
 
 ### Status Updates in Embedded Mode
 
@@ -1146,7 +1146,7 @@ send updates:
 
     def fun(wrapper: ProcWrapper, cbdata: dict[str, int],
             config: Mapping[str, Any]) -> int:
-        wrapper.update_status(last_status_message='Starting the fun ...')
+        wrapper.update_status(last_status_message="Starting the fun ...")
 
         success_count = 0
         error_count = 0
@@ -1160,23 +1160,23 @@ send updates:
             wrapper.update_status(success_count=success_count,
                     error_count=error_count)
 
-        wrapper.update_status(last_status_message='The fun is over.')
+        wrapper.update_status(last_status_message="The fun is over.")
 
-        return cbdata['a']
+        return cbdata["a"]
 
     params = ProcWrapperParams()
     params.auto_create_task = True
-    params.auto_create_task_run_environment_name = 'production'
-    params.task_name = 'embedded_test'
-    params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+    params.auto_create_task_run_environment_name = "production"
+    params.task_name = "embedded_test"
+    params.api_key = "YOUR_CLOUDREACTOR_API_KEY"
 
     proc_wrapper = ProcWrapper(params=params)
-    proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
+    proc_wrapper.managed_call(fun, {"a": 1, "b": 2})
 
 ## Example Projects
 
 These projects contain sample Tasks that use this library to report their
-execution status and results to CloudReactor, when deployed AWS ECS Fargate:
+execution status and results to CloudReactor, when deployed to AWS ECS Fargate:
 
 * [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
 * [cloudreactor-java-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-java-ecs-quickstart)
