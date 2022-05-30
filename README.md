@@ -168,28 +168,56 @@ an auto-created Task, it must have at least the Developer access level.
 
 ## Installation
 
-### In a Linux/AMD64 or Windows 64 environment
+### In Linux/AMD64 only
 
-Standalone executables for 64-bit Linux and Windows are available,
-located in `pyinstaller_build/platforms`. These executables bundle python
-so you don't need to have python installed on your machine. They also bundle
-all optional library dependencies so you can fetch secrets from AWS
+Standalone executables built by
+[nuitka](https://nuitka.net/index.html)
+for 64-bit Linux are available, located in `bin/nuitka`. These executables bundle
+python so you don't need to have python installed on your machine. They also
+bundle all optional library dependencies so you can fetch secrets from AWS
 Secrets Manager and extract them with jsonpath-ng, for example.
 
+Compared to executables built by PyInstaller (see below), they start up faster,
+and most likely are more efficient at runtime.
+However, they cannot be executed directly inside a Docker container. Instead, a
+separate extraction step must be performed at Docker build time:
+
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/4.0/bin/nuitka/linux-amd64/4.0.0/proc_wrapper.bin -O proc_wrapper_app_image \
+      && chmod +x proc_wrapper_app_image \
+      && ./proc_wrapper_app_image --appimage-extract \
+      && rm ./proc_wrapper_app_image
+
+Then to run the wrapper:
+
+    ENTRYPOINT ["squashfs-root/proc_wrapper.bin"]
+
+See the example
+[Dockerfile](tests/integration/nuitka_executable/docker_context_linux_amd64/Dockerfile) for a known working environment.
+
+### In a Linux/AMD64 or Windows 64 environment
+
+Standalone executables built by [PyInstaller](https://www.pyinstaller.org/) for 64-bit Linux and Windows are available, located in `bin/pyinstaller`.
+These executables bundle
+python so you don't need to have python installed on your machine. They also
+bundle all optional library dependencies so you can fetch secrets from AWS
+Secrets Manager and extract them with jsonpath-ng, for example. Compared to
+executables built by nuitka, they start up slower but are able to run directly
+in a Docker container without extraction.
+
 On a debian buster machine, the following packages (with known supported versions)
-must be installed:
+must be installed to run :
 
       openssl=1.1.1d-0+deb10u5
       libexpat1=2.2.6-2+deb10u1
       ca-certificates=20200601~deb10u2
 
-See the example [Dockerfile](tests/integration/standalone_executable/docker_context_linux_amd64/Dockerfile) for a known working
-environment.
+See the example
+[Dockerfile](tests/integration/pyinstaller_executable/docker_context_linux_amd64/Dockerfile) for a known working environment.
 
-Special thanks to [PyInstaller](https://www.pyinstaller.org/),
-[wine](https://www.winehq.org/), and
+Special thanks to
+[wine](https://www.winehq.org/) and
 [PyInstaller Docker Images](https://github.com/cdrx/docker-pyinstaller)
-for making this possible!
+for making it possible to cross-compile!
 
 ### When python is available
 
@@ -226,7 +254,7 @@ you would run
 
     ./proc_wrapper somecommand --somearg x
 
-assuming that are using a standalone executable, and that
+assuming that are using the PyInstaller standalone executable, and that
 you configure the program using environment variables.
 
 Or, if you have python installed:

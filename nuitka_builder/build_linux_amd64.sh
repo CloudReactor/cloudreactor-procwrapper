@@ -11,7 +11,7 @@ VERSION=`awk '/^version = "[^"]+"/ { print $3  }' ../pyproject.toml  | sed 's/\"
 
 echo "VERSION = $VERSION"
 
-OUTPUT_DIR="bin/nuitka/linux_amd64/$VERSION"
+OUTPUT_DIR="bin/nuitka/linux-amd64/$VERSION"
 
 pushd .
 cd ..
