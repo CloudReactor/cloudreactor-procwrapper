@@ -726,7 +726,13 @@ dependencies. To run a task you want to be monitored:
     # For example only, in the real world you would use Secret Fetching;
     # see below.
     params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+
+    # In an AWS Lambda environment, you can also pass a runtime_context
+    # parameter set the context of your Lambda entrypoint. This will send
+    # details of this execution to CloudReactor so it can be monitored and
+    # managed.
     proc_wrapper = ProcWrapper(params=params)
+
     x = proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
     # Should print 1
     print(x)
@@ -1162,6 +1168,7 @@ In embedded mode, your callback in python code can use the wrapper instance to s
     params.auto_create_task_run_environment_name = 'production'
     params.task_name = 'embedded_test'
     params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+
     proc_wrapper = ProcWrapper(params=params)
     proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
 
