@@ -54,9 +54,20 @@ PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_VAR
 * Override proc_wrapper parameters from environment by default
 ## v3.1.2 (2021-11-11)
 * Fix regression of failing to fetch runtime metadata
-## v4.0.0-alpha1 (unreleased)
+## v4.0.0-alpha1 (2022-05-27)
+* Execute the command in PROC_WRAPPER_TASK_COMMAND to avoid shell issues
+* Add parameters for shell flag detection and shell wrap stripping
+* Drop support for python 3.6, support python 3.10
 * Send last_app_heartbeat_at set to the time when the wrapped process or
 function sent a status update
 * Do not send exit code in embedded mode
-* Include wrapper family in Task creation request
-* Remove parameters on publish update_status() method, have it return a bool.
+* Remove parameters on publish update_status() method, have it return a bool
+* Add executable built by Nuitka, which starts up much faster than executables
+built by PyInstaller
+* Extract and send AWS Lambda metadata
+## v4.0.0 (2022-05-30)
+* Include Task Execution UUID in log format
+* Add an option to omit timestamps in logs (in case they are added by a logging
+service)
+* Simplify version output
+* Don't notify error handler in offline mode
