@@ -4,5 +4,7 @@
 #
 #    pip-compile nuitka-requirements.in
 #
-nuitka==0.7.7
+nuitka==0.8.3
+    # via -r nuitka-requirements.in
+ordered-set==4.1.0
     # via -r nuitka-requirements.in
