@@ -708,12 +708,12 @@ Embedded mode works for executing python code in the same process.
 You include the `proc_wrapper` package in your python project's
 dependencies. To run a task you want to be monitored:
 
-    from typing import Any, Dict, Mapping
+    from typing import Any, Mapping
 
     from proc_wrapper import ProcWrapper, ProcWrapperParams
 
 
-    def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
+    def fun(wrapper: ProcWrapper, cbdata: dict[str, int],
             config: Mapping[str, Any]) -> int:
         print(cbdata)
         return cbdata['a']
@@ -1136,14 +1136,15 @@ StatusUpdater class to do this:
 
 ### Status Updates in Embedded Mode
 
-In embedded mode, your callback in python code can use the wrapper instance to send updates:
+In embedded mode, your callback in python code can use the wrapper instance to
+send updates:
 
-    from typing import Any, Dict, Mapping
+    from typing import Any, Mapping
 
     import proc_wrapper
     from proc_wrapper import ProcWrapper
 
-    def fun(wrapper: ProcWrapper, cbdata: Dict[str, int],
+    def fun(wrapper: ProcWrapper, cbdata: dict[str, int],
             config: Mapping[str, Any]) -> int:
         wrapper.update_status(last_status_message='Starting the fun ...')
 
@@ -1172,15 +1173,18 @@ In embedded mode, your callback in python code can use the wrapper instance to s
     proc_wrapper = ProcWrapper(params=params)
     proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
 
-## Example Project
+## Example Projects
 
-The [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
-project uses this library to deploy some sample tasks, written in python,
-to CloudReactor, running using AWS ECS Fargate.
+These projects contain sample Tasks that use this library to report their
+execution status and results to CloudReactor, when deployed AWS ECS Fargate:
+
+* [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
+* [cloudreactor-java-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-java-ecs-quickstart)
 
 ## License
 
-This software is dual-licensed under open source (MPL 2.0) and commercial licenses. See `LICENSE` for details.
+This software is dual-licensed under open source (MPL 2.0) and commercial
+licenses. See `LICENSE` for details.
 
 ## Contributors ✨
 
