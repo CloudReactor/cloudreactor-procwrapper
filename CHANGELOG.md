@@ -71,3 +71,6 @@ built by PyInstaller
 service)
 * Simplify version output
 * Don't notify error handler in offline mode
+## v4.0.1 (2022-06-01)
+* Honor the PROC_WRAPPER_LOG_LEVEL environment variable and change the default
+log level to INFO
