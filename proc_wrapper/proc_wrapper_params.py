@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union,
 from .common_utils import coalesce, encode_int, string_to_bool, string_to_int
 from .runtime_metadata import RuntimeMetadata
 
-_DEFAULT_LOG_LEVEL = "WARNING"
+DEFAULT_LOG_LEVEL = "INFO"
 
 HEARTBEAT_DELAY_TOLERANCE_SECONDS = 60
 
@@ -382,6 +382,7 @@ class ProcWrapperParams(ConfigResolverParams):
         )
         self.status_update_interval: Optional[int] = None
 
+        self.log_level = DEFAULT_LOG_LEVEL
         self.include_timestamps_in_log: bool = True
 
         self.rollbar_access_token: Optional[str] = None
@@ -1389,7 +1390,7 @@ misconfigured.""",
         "-l",
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default=_DEFAULT_LOG_LEVEL,
+        default=DEFAULT_LOG_LEVEL,
         help="Log level",
     )
     log_group.add_argument(
