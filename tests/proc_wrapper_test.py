@@ -7,9 +7,14 @@ from dateutil.relativedelta import relativedelta
 from pytest_httpserver import HTTPServer
 
 from proc_wrapper import ProcWrapper, ProcWrapperParams, make_arg_parser
+from proc_wrapper.runtime_metadata import (
+    EXECUTION_METHOD_TYPE_AWS_ECS,
+    EXECUTION_METHOD_TYPE_AWS_LAMBDA,
+)
 
 from .test_commons import (
     ACCEPT_JSON_HEADERS,
+    TEST_ECS_CONTAINER_METADATA,
     TEST_ECS_TASK_METADATA,
     FakeAwsLambdaContext,
     make_capturing_handler,
@@ -386,13 +391,23 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         "ECS_CONTAINER_METADATA_URI"
     ] = f"http://localhost:{httpserver.port}/aws/ecs"
 
-    ecs_metadata_handler, _fetch_ecs_metadata_request_data = make_capturing_handler(
-        response_data=TEST_ECS_TASK_METADATA, status=200
-    )
+    (
+        ecs_task_metadata_handler,
+        _fetch_ecs_task_metadata_request_data,
+    ) = make_capturing_handler(response_data=TEST_ECS_TASK_METADATA, status=200)
 
     httpserver.expect_ordered_request(
         "/aws/ecs/task", method="GET", headers=ACCEPT_JSON_HEADERS
-    ).respond_with_handler(ecs_metadata_handler)
+    ).respond_with_handler(ecs_task_metadata_handler)
+
+    (
+        ecs_container_metadata_handler,
+        _fetch_ecs_container_metadata_request_data,
+    ) = make_capturing_handler(response_data=TEST_ECS_CONTAINER_METADATA, status=200)
+
+    httpserver.expect_ordered_request(
+        "/aws/ecs", method="GET", headers=ACCEPT_JSON_HEADERS
+    ).respond_with_handler(ecs_container_metadata_handler)
 
     fetch_creation_request_data = expect_task_execution_request(
         httpserver=httpserver, update=False
@@ -406,8 +421,10 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
     httpserver.check_assertions()
 
     crd = fetch_creation_request_data()
-    em = crd["execution_method"]
-    assert em["type"] == "AWS ECS"
+
+    assert crd["execution_method_type"] == EXECUTION_METHOD_TYPE_AWS_ECS
+    em = crd["execution_method_details"]
+
     assert em["task_arn"] == TEST_ECS_TASK_METADATA["TaskARN"]
     assert (
         em["task_definition_arn"]
@@ -426,15 +443,26 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         assert task_dict["passive"] is True
 
         assert task_dict["run_environment"]["name"] == "myenv"
-        emc = task_dict["execution_method_capability"]
-        assert emc["type"] == "AWS ECS"
+        assert task_dict["execution_method_type"] == EXECUTION_METHOD_TYPE_AWS_ECS
+        emc = task_dict["execution_method_capability_details"]
         assert emc["task_definition_arn"] == em["task_definition_arn"]
-        assert emc["default_cluster_arn"] == TEST_ECS_TASK_METADATA["Cluster"]
+        assert emc["cluster_arn"] == TEST_ECS_TASK_METADATA["Cluster"]
         assert emc["allocated_cpu_units"] == 256
         assert emc["allocated_memory_mb"] == 512
     else:
         assert task_dict["was_auto_created"] is not True
         assert task_dict["passive"] is not True
+
+    for x in [crd, task_dict]:
+        assert x["infrastructure_type"] == "AWS"
+        aws = x["infrastructure_settings"]
+        assert aws is not None
+        aws_network = aws["network"]
+        assert aws_network["availability_zone"] == "us-east-2b"
+        assert aws_network["region"] == "us-east-2"
+
+        nw_0 = aws_network["networks"][0]
+        assert nw_0["network_mode"] == "awsvpc"
 
 
 def test_aws_lambda_metadata(httpserver: HTTPServer):
@@ -470,11 +498,25 @@ def test_aws_lambda_metadata(httpserver: HTTPServer):
     task = crd["task"]
     assert task["uuid"] == DEFAULT_TASK_UUID
 
-    em = crd.get("execution_method")
-    assert em["function_name"] == "do_it_now"
-    assert em["function_version"] == "3.3.7"
-    assert em["allocated_memory_mb"] == 4096
-    assert em["function_arn"] == "arn:aws:lambda:us-east-2:123456789012:function:funky"
+    for x in [crd, task]:
+        assert x["allocated_memory_mb"] == 4096
+        assert x["execution_method_type"] == EXECUTION_METHOD_TYPE_AWS_LAMBDA
+        assert x["infrastructure_type"] == "AWS"
+        aws = x["infrastructure_settings"]
+        assert aws is not None
+        aws_network = aws["network"]
+        assert aws_network["region"] == "us-east-2"
+
+    em = crd.get("execution_method_details")
+    emc = task.get("execution_method_capability_details")
+
+    for x in [em, emc]:
+        assert x["function_name"] == "do_it_now"
+        assert x["function_version"] == "3.3.7"
+        assert x["function_memory_mb"] == 4096
+        assert (
+            x["function_arn"] == "arn:aws:lambda:us-east-2:123456789012:function:funky"
+        )
 
     furd = fetch_final_update_request_data()
 
@@ -498,15 +540,12 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
     httpserver.check_assertions()
 
     crd = fetch_creation_request_data()
-    em = crd.get("execution_method")
-    assert em is None
+    assert crd.get("execution_method_details") is None
 
     task_dict = crd["task"]
-
+    assert task_dict.get("execution_method_type") is None
+    assert task_dict.get("execution_method_details") is None
     assert task_dict["was_auto_created"] is True
 
     # Defaults to the value of auto-created
     assert task_dict["passive"] is True
-
-    emc = task_dict.get("execution_method_capability")
-    assert emc["type"] == "Unknown"

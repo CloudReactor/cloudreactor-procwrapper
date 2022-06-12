@@ -478,7 +478,10 @@ class ProcWrapperParams(ConfigResolverParams):
 
                 if not self.task_is_passive and (
                     (runtime_metadata is None)
-                    or (runtime_metadata.execution_method_capability is None)
+                    or (
+                        runtime_metadata.task_configuration.execution_method_capability_details
+                        is None
+                    )
                 ):
                     self._push_error(
                         task_warnings,

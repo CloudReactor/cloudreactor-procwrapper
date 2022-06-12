@@ -39,10 +39,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
-from .common_utils import encode_int, string_to_bool
+from .common_utils import best_effort_merge, coalesce, encode_int, string_to_bool
 from .config_resolver import ConfigResolver
 from .proc_wrapper_params import ProcWrapperParams, ProcWrapperParamValidationErrors
 from .runtime_metadata import (
+    CommonConfiguration,
     DefaultRuntimeMetadataFetcher,
     RuntimeMetadata,
     RuntimeMetadataFetcher,
@@ -112,6 +113,14 @@ class ProcWrapper:
     _STATUS_BUFFER_SIZE = 4096
 
     _STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT = "last_app_heartbeat_at"
+
+    _COPIED_RUNTIME_METADATA_PROPERTY_NAMES = [
+        "execution_method_type",
+        "infrastructure_type",
+        "allocated_cpu_units",
+        "allocated_memory_mb",
+        "ip_v4_addresses",
+    ]
 
     def __init__(
         self,
@@ -316,6 +325,62 @@ class ProcWrapper:
             last_app_heartbeat_at=last_app_heartbeat_at,
         )
 
+    def _transfer_runtime_metadata(
+        self,
+        dest: Dict[str, Any],
+        runtime_metadata: Optional[RuntimeMetadata],
+        override_props: Optional[Dict[str, Any]],
+        for_task: bool,
+    ) -> Dict[str, Any]:
+        em_details: Optional[Dict[str, Any]] = None
+        infra_settings: Optional[Dict[str, Any]] = None
+        rm_config: Optional[CommonConfiguration] = None
+
+        em_details_prop_name = (
+            "execution_method_capability_details"
+            if for_task
+            else "execution_method_details"
+        )
+
+        if runtime_metadata:
+            rm_config = runtime_metadata.task_configuration
+            infra_settings = rm_config.infrastructure_settings
+            em_details = rm_config.execution_method_capability_details
+
+            if not for_task:
+                rm_config = runtime_metadata.task_execution_configuration
+                em_details = (
+                    runtime_metadata.task_execution_configuration.execution_method_details
+                )
+
+        if override_props:
+            em_details = best_effort_merge(
+                em_details, override_props.get(em_details_prop_name)
+            )
+
+            infra_settings = best_effort_merge(
+                infra_settings, override_props.get("infrastructure_settings")
+            )
+
+        if em_details:
+            dest[em_details_prop_name] = em_details
+
+        if infra_settings:
+            dest["infrastructure_settings"] = infra_settings
+
+        for p in self._COPIED_RUNTIME_METADATA_PROPERTY_NAMES:
+            x = None
+            if rm_config:
+                x = getattr(rm_config, p)
+
+            if override_props:
+                x = coalesce(override_props.get(p), x)
+
+            if x is not None:
+                dest[p] = x
+
+        return dest
+
     def _create_or_update_task_execution(self) -> None:
         """
         Make a request to the API server to create a Task Execution
@@ -326,6 +391,7 @@ class ProcWrapper:
         if self.offline_mode:
             return
 
+        # TODO use runtime metadata
         if self.params.send_hostname and (self.hostname is None):
             try:
                 self.hostname = socket.gethostname()
@@ -462,21 +528,14 @@ class ProcWrapper:
 
                 task_dict["run_environment"] = run_env_dict
 
-                task_emc: Optional[Dict[str, Any]] = None
-                if self.params.send_runtime_metadata and runtime_metadata:
-                    task_emc = runtime_metadata.execution_method_capability
+                rm = runtime_metadata if self.params.send_runtime_metadata else None
 
-                if self.params.auto_create_task_props:
-                    override_emc = self.params.auto_create_task_props.get(
-                        "execution_method_capability"
-                    )
-                    if override_emc:
-                        task_emc = task_emc or {}
-                        task_emc.update(override_emc)
-
-                task_dict["execution_method_capability"] = task_emc or {
-                    "type": "Unknown"
-                }
+                self._transfer_runtime_metadata(
+                    dest=task_dict,
+                    runtime_metadata=rm,
+                    override_props=self.params.auto_create_task_props,
+                    for_task=True,
+                )
 
                 body["task"] = task_dict
                 body["max_conflicting_age_seconds"] = self.params.max_conflicting_age
@@ -490,16 +549,16 @@ class ProcWrapper:
             if self.params.task_instance_metadata:
                 body["other_instance_metadata"] = self.params.task_instance_metadata
 
-            execution_method: Optional[Dict[str, Any]] = None
-            if self.params.send_runtime_metadata and runtime_metadata:
-                execution_method = runtime_metadata.execution_method
-
-            if self.params.execution_method_props:
-                execution_method = execution_method or {}
-                execution_method.update(self.params.execution_method_props)
-
-            if execution_method:
-                body["execution_method"] = execution_method
+            self._transfer_runtime_metadata(
+                dest=body,
+                runtime_metadata=rm,
+                override_props={
+                    # TODO
+                    # "execution_method_type": self.params.execution_method_type,
+                    "execution_method_details": self.params.execution_method_props
+                },
+                for_task=False,
+            )
 
             data = json.dumps(body).encode("utf-8")
 

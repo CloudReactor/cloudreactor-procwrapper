@@ -30,7 +30,7 @@ with StatusUpdater() as updater:
     success_count = 0
     for i in range(5):
         if i == row_to_fail_at:
-            updater.send_update(failed_count=1)
+            updater.send_update(error_count=1)
             logging.error(f"Failed on row {i}, exiting!")
             exit(1)
         else:

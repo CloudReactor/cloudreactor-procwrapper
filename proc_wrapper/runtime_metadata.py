@@ -1,11 +1,18 @@
 import json
 import logging
 import time
-from typing import Any, Dict, Mapping, NamedTuple, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from .common_utils import safe_get, string_to_int
+
+EXECUTION_METHOD_TYPE_UNKNOWN = "Unknown"
+EXECUTION_METHOD_TYPE_AWS_ECS = "AWS ECS"
+EXECUTION_METHOD_TYPE_AWS_LAMBDA = "AWS Lambda"
+
+INFRASTRUCTURE_TYPE_AWS = "AWS"
 
 AWS_ECS_METADATA_TIMEOUT_SECONDS = 60
 
@@ -14,9 +21,29 @@ _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
 
 
+@dataclass
+class CommonConfiguration:
+    execution_method_type: str = EXECUTION_METHOD_TYPE_UNKNOWN
+    infrastructure_type: Optional[str] = None
+    infrastructure_settings: Optional[Dict[str, Any]] = None
+    allocated_cpu_units: Optional[int] = None
+    allocated_memory_mb: Optional[int] = None
+    ip_v4_addresses: Optional[List[str]] = None
+
+
+@dataclass
+class TaskConfiguration(CommonConfiguration):
+    execution_method_capability_details: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class TaskExecutionConfiguration(CommonConfiguration):
+    execution_method_details: Optional[Dict[str, Any]] = None
+
+
 class RuntimeMetadata(NamedTuple):
-    execution_method: Dict[str, Any]
-    execution_method_capability: Dict[str, Any]
+    task_execution_configuration: TaskExecutionConfiguration
+    task_configuration: TaskConfiguration
     raw: Dict[str, Any]
     derived: Dict[str, Any]
 
@@ -29,6 +56,25 @@ class RuntimeMetadataFetcher:
 
 
 class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
+    AWS_ECS_FARGATE_CONTAINER_PROPERTY_MAPPINGS = {
+        "DockerId": "docker_id",
+        "Name": "name",
+        "DockerName": "docker_name",
+        "Image": "image_name",
+        "ImageID": "image_id",
+        "Labels": "labels",
+        "ContainerARN": "container_arn",
+    }
+
+    AWS_ECS_FARGATE_CONTAINER_NETWORK_PROPERTY_MAPPINGS = {
+        "NetworkMode": "network_mode",
+        "IPv4SubnetCIDRBlock": "ip_v4_subnet_cidr_block",
+        "DomainNameServers": "dns_servers",
+        "DomainNameSearchList": "dns_search_list",
+        "PrivateDNSName": "private_dns_name",
+        "SubnetGatewayIpv4Address": "subnet_gateway_ip_v4_address",
+    }
+
     AWS_LAMBDA_CLIENT_METADATA_PROPERTIES = [
         "installation_id",
         "app_title",
@@ -68,22 +114,24 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     def fetch_ecs_container_metadata(
         self, env: Mapping[str, str]
     ) -> Optional[RuntimeMetadata]:
-        task_metadata_url = env.get("ECS_CONTAINER_METADATA_URI_V4") or env.get(
+        container_metadata_url = env.get("ECS_CONTAINER_METADATA_URI_V4") or env.get(
             "ECS_CONTAINER_METADATA_URI"
         )
 
-        if task_metadata_url:
-            url = f"{task_metadata_url}/task"
+        if container_metadata_url:
+            parsed_task_metadata: Optional[dict[str, Any]] = None
+            parsed_container_metadata: Optional[dict[str, Any]] = None
+
+            task_metadata_url = f"{container_metadata_url}/task"
 
             _logger.debug(f"Fetching ECS task metadata from '{task_metadata_url}' ...")
 
             headers = {"Accept": "application/json"}
             try:
-                req = Request(url, method="GET", headers=headers)
+                req = Request(task_metadata_url, method="GET", headers=headers)
                 resp = urlopen(req, timeout=AWS_ECS_METADATA_TIMEOUT_SECONDS)
                 response_body = resp.read().decode("utf-8")
-                parsed_metadata = json.loads(response_body)
-                return self.convert_ecs_task_metadata(parsed_metadata)
+                parsed_task_metadata = json.loads(response_body)
             except HTTPError as http_error:
                 status_code = http_error.code
                 _logger.warning(
@@ -93,51 +141,91 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
                 _logger.exception(
                     "Unable to fetch ECS task metadata endpoint or convert metadata."
                 )
+
+            if parsed_task_metadata is None:
+                return None
+
+            _logger.debug(
+                f"Fetching ECS container metadata from '{container_metadata_url}' ..."
+            )
+
+            try:
+                req = Request(container_metadata_url, method="GET", headers=headers)
+                resp = urlopen(req, timeout=AWS_ECS_METADATA_TIMEOUT_SECONDS)
+                response_body = resp.read().decode("utf-8")
+                parsed_container_metadata = json.loads(response_body)
+            except HTTPError as http_error:
+                status_code = http_error.code
+                _logger.warning(
+                    f"Unable to fetch ECS container metadata endpoint. Response code = {status_code}."
+                )
+            except Exception:
+                _logger.exception(
+                    "Unable to fetch ECS container metadata endpoint or convert metadata."
+                )
+
+            return self.convert_ecs_metadata(
+                parsed_task_metadata, parsed_container_metadata
+            )
         else:
             _logger.debug("No ECS metadata URL found")
 
         return None
 
-    def convert_ecs_task_metadata(self, metadata: Dict[str, Any]) -> RuntimeMetadata:
-        cluster_arn = metadata.get("Cluster") or ""
-        task_arn = metadata.get("TaskARN") or ""
-        task_definition_arn = self.compute_ecs_task_definition_arn(metadata) or ""
+    def convert_ecs_metadata(
+        self,
+        task_metadata: Dict[str, Any],
+        container_metadata: Optional[Dict[str, Any]],
+    ) -> RuntimeMetadata:
+        task_configuration = TaskConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_ECS
+        )
+        task_execution_configuration = TaskExecutionConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_ECS
+        )
+
+        cluster_arn = task_metadata.get("Cluster") or ""
+        task_arn = task_metadata.get("TaskARN") or ""
+        task_definition_arn = self.compute_ecs_task_definition_arn(task_metadata) or ""
 
         common_props: Dict[str, Any] = {
             "type": "AWS ECS",
             "task_definition_arn": task_definition_arn,
+            "cluster_arn": cluster_arn,
         }
 
         execution_method: Dict[str, Any] = {
             "task_arn": task_arn,
-            "cluster_arn": cluster_arn,
         }
 
-        execution_method_capability: Dict[str, Any] = {
-            "default_cluster_arn": cluster_arn
-        }
+        execution_method_capability: Dict[str, Any] = {}
 
-        launch_type = metadata.get("LaunchType")
+        # CHECKME: probably not available
+        launch_type = task_metadata.get("LaunchType")
         if launch_type:
-            execution_method["launch_type"] = launch_type
-            execution_method_capability["default_launch_type"] = launch_type
-            execution_method_capability["supported_launch_types"] = [launch_type]
+            common_props["launch_type"] = launch_type
+            common_props["supported_launch_types"] = [launch_type]
 
-        limits = metadata.get("Limits")
+        limits = task_metadata.get("Limits")
         if isinstance(limits, dict):
             cpu_fraction = limits.get("CPU")
             if (cpu_fraction is not None) and isinstance(cpu_fraction, (float, int)):
-                common_props["allocated_cpu_units"] = round(cpu_fraction * 1024)
+                cpu_units = round(cpu_fraction * 1024)
+                common_props["allocated_cpu_units"] = cpu_units
+                task_execution_configuration.allocated_cpu_units = cpu_units
+                task_configuration.allocated_cpu_units = cpu_units
 
             memory_mb = limits.get("Memory")
             if memory_mb is not None:
                 common_props["allocated_memory_mb"] = memory_mb
+                task_execution_configuration.allocated_memory_mb = memory_mb
+                task_configuration.allocated_memory_mb = memory_mb
 
         execution_method.update(common_props)
         execution_method_capability.update(common_props)
 
         # Only available for Fargate platform 1.4+
-        az = metadata.get("AvailabilityZone")
+        az = task_metadata.get("AvailabilityZone")
 
         if az:
             # Remove the last character, e.g. "a" from "us-west-1a"
@@ -145,22 +233,109 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         else:
             region = self.compute_region_from_ecs_cluster_arn(cluster_arn)
 
-        aws_props = {
-            "network": {
-                "availability_zone": az,
-                "region": region,
-            },
-        }
+        network_props = {"availability_zone": az, "region": region}
 
-        execution_method_capability["aws"] = aws_props
-        execution_method["aws"] = aws_props
+        aws_props = {"network": network_props}
+
+        if container_metadata is not None:
+            container_props = {}
+
+            for (
+                in_key,
+                out_key,
+            ) in self.AWS_ECS_FARGATE_CONTAINER_PROPERTY_MAPPINGS.items():
+                container_props[out_key] = container_metadata.get(in_key)
+
+            execution_method["container"] = container_props
+
+            driver = container_metadata.get("LogDriver")
+
+            logging_props = {
+                "driver": driver,
+            }
+
+            prefix_to_remove: Optional[str] = None
+
+            if driver:
+                prefix_to_remove = driver + "-"
+
+            input_log_options = container_metadata.get("LogOptions")
+
+            if input_log_options:
+                transformed_log_options: Dict[str, Any] = {}
+                for k, v in input_log_options.items():
+                    transformed_key = k
+
+                    # Use stripprefix() once the min python version is 3.9
+                    if prefix_to_remove and k.startswith(prefix_to_remove):
+                        transformed_key = k[len(prefix_to_remove) :]
+
+                    transformed_key = transformed_key.replace("-", "_")
+                    transformed_log_options[transformed_key] = v
+
+                logging_props["options"] = transformed_log_options
+
+            aws_props["logging"] = logging_props
+
+            task_aws_props = aws_props
+
+            container_networks = container_metadata.get("Networks")
+            if container_networks is not None:
+                task_execution_networks = []
+                task_networks = []
+
+                for container_network in container_networks:
+                    container_network_props = {
+                        "network_mode": container_network.get("NetworkMode")
+                    }
+
+                    for (
+                        in_key,
+                        out_key,
+                    ) in (
+                        self.AWS_ECS_FARGATE_CONTAINER_NETWORK_PROPERTY_MAPPINGS.items()
+                    ):
+                        container_network_props[out_key] = container_network.get(in_key)
+
+                    task_networks.append(container_network_props.copy())
+
+                    ip_v4_addresses = container_network.get("IPv4Addresses")
+                    container_network_props["ip_v4_addresses"] = ip_v4_addresses
+
+                    if task_execution_configuration.ip_v4_addresses is None:
+                        task_execution_configuration.ip_v4_addresses = []
+
+                    task_execution_configuration.ip_v4_addresses += ip_v4_addresses
+
+                    container_network_props["mac_address"] = container_network.get(
+                        "MACAddress"
+                    )
+
+                    task_execution_networks.append(container_network_props)
+
+                task_network_props = network_props.copy()
+                task_network_props["networks"] = task_networks
+                task_aws_props = aws_props.copy()
+                task_aws_props["network"] = task_network_props
+
+                network_props["networks"] = task_execution_networks
 
         derived = {"aws": aws_props}
 
+        task_configuration.execution_method_capability_details = (
+            execution_method_capability
+        )
+        task_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
+        task_configuration.infrastructure_settings = task_aws_props
+
+        task_execution_configuration.execution_method_details = execution_method
+        task_execution_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
+        task_execution_configuration.infrastructure_settings = aws_props
+
         return RuntimeMetadata(
-            execution_method=execution_method,
-            execution_method_capability=execution_method_capability,
-            raw=metadata,
+            task_execution_configuration=task_execution_configuration,
+            task_configuration=task_configuration,
+            raw={"task": task_metadata, "container": container_metadata},
             derived=derived,
         )
 
@@ -178,11 +353,11 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         return None
 
     def compute_ecs_task_definition_arn(
-        self, metadata: Dict[str, Any]
+        self, task_metadata: Dict[str, Any]
     ) -> Optional[str]:
-        task_arn = metadata.get("TaskARN")
-        family = metadata.get("Family")
-        revision = metadata.get("Revision")
+        task_arn = task_metadata.get("TaskARN")
+        family = task_metadata.get("Family")
+        revision = task_metadata.get("Revision")
 
         if not (task_arn and family and revision):
             _logger.warning(
@@ -212,16 +387,25 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
         _logger.debug("AWS Lambda environment detected")
 
+        task_configuration = TaskConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_LAMBDA
+        )
+        task_execution_configuration = TaskExecutionConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_LAMBDA
+        )
+
+        allocated_memory_mb = string_to_int(env.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"))
+
+        task_configuration.allocated_memory_mb = allocated_memory_mb
+        task_execution_configuration.allocated_memory_mb = allocated_memory_mb
+
         common_props: Dict[str, Any] = {
-            "type": "AWS Lambda",
             "runtime_id": env.get("AWS_EXECUTION_ENV"),
             "function_name": env.get("AWS_LAMBDA_FUNCTION_NAME"),
             "function_version": env.get("AWS_LAMBDA_FUNCTION_VERSION"),
             "init_type": env.get("AWS_LAMBDA_INITIALIZATION_TYPE"),
             "dotnet_prejit": env.get("AWS_LAMBDA_DOTNET_PREJIT"),
-            "allocated_memory_mb": string_to_int(
-                env.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE")
-            ),
+            "function_memory_mb": allocated_memory_mb,
             "time_zone_name": env.get("TZ"),
         }
 
@@ -231,7 +415,7 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         # _HANDLER – The handler location configured on the function.
         aws_region = env.get("AWS_REGION")
 
-        aws_props = {
+        aws_props: Dict[str, Any] = {
             "network": {
                 "region": aws_region,
             },
@@ -244,15 +428,17 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
         if log_group_name:
             aws_props["logging"] = {
-                "group_name": log_group_name,
-                "stream_name": env.get("AWS_LAMBDA_LOG_STREAM_NAME"),
+                "driver": "awslogs",
+                "options": {
+                    "group": log_group_name,
+                    "region": aws_region,
+                    "stream": env.get("AWS_LAMBDA_LOG_STREAM_NAME"),
+                },
             }
 
-        execution_method_capability["aws"] = aws_props.copy()
+        task_infrastructure_settings = aws_props.copy()
 
         aws_props["xray"]["context_missing"] = env.get("AWS_XRAY_CONTEXT_MISSING")
-
-        execution_method["aws"] = aws_props
 
         if context and hasattr(context, "invoked_function_arn"):
             # https://docs.aws.amazon.com/lambda/latest/dg/python-context.html
@@ -290,11 +476,21 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             execution_method.update(common_props)
             execution_method_capability.update(common_props)
 
+            task_configuration.execution_method_capability_details = (
+                execution_method_capability
+            )
+            task_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
+            task_configuration.infrastructure_settings = task_infrastructure_settings
+
+            task_execution_configuration.execution_method_details = execution_method
+            task_execution_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
+            task_execution_configuration.infrastructure_settings = aws_props
+
             derived = {"aws": aws_props}
 
             return RuntimeMetadata(
-                execution_method=execution_method,
-                execution_method_capability=execution_method_capability,
+                task_execution_configuration=task_execution_configuration,
+                task_configuration=task_configuration,
                 raw={},
                 derived=derived,
             )

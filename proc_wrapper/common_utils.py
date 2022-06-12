@@ -1,4 +1,4 @@
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 # From glglgl on
@@ -63,3 +63,18 @@ def safe_get(
         return getattr(obj, prop_name)
 
     return default_value
+
+
+def best_effort_merge(
+    dest: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    if src is not None:
+        dest = dest or {}
+        try:
+            import mergedeep
+
+            mergedeep.merge(dest, src, mergedeep.Strategy.REPLACE)
+        except ImportError:
+            dest.update(src)
+
+    return dest
