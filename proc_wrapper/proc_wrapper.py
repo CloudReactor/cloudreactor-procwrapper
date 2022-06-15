@@ -1500,9 +1500,8 @@ class ProcWrapper:
                 else:
                     self.last_api_request_failed_at = time.time()
 
-                    error_message = f"Got error response code = {status_code}"
+                    error_message = f"Got error response code = {status_code}, body = '{response_body}'"
                     _logger.error(error_message)
-
                     self._report_error(error_message, api_request_data)
 
                     if self.params.prevent_offline_execution:
