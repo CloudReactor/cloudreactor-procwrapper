@@ -1397,7 +1397,7 @@ class ProcWrapper:
         is_task_execution_creation_request: bool = False,
         is_final_update: bool = False,
     ) -> Optional[RawIOBase]:
-        _logger.debug(f"Sending {req.method} request to {req.full_url} ....")
+        _logger.debug(f"Sending {req.method} request with body '{req.data}' to {req.full_url} ....")
 
         self._refresh_api_server_retries_exhausted()
 
