@@ -74,3 +74,5 @@ service)
 ## v4.0.1 (2022-06-01)
 * Honor the PROC_WRAPPER_LOG_LEVEL environment variable and change the default
 log level to INFO
+## v4.0.2 (2022-06-02)
+* Log request and response bodies from the API server
