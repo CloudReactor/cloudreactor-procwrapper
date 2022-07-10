@@ -5,8 +5,13 @@ import time
 from io import StringIO
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
 
-from .common_utils import coalesce, strip_after
-from .proc_wrapper_params import DEFAULT_CONFIG_MERGE_STRATEGY, ConfigResolverParams
+from .common_utils import best_effort_merge, coalesce, strip_after
+from .proc_wrapper_params import (
+    CONFIG_MERGE_STRATEGY_DEEP,
+    DEFAULT_CONFIG_MERGE_STRATEGY,
+    NATIVE_CONFIG_MERGE_STRATEGIES,
+    ConfigResolverParams,
+)
 from .runtime_metadata import RuntimeMetadata
 
 FILE_URL_PREFIX = "file://"
@@ -517,7 +522,9 @@ class ConfigResolver:
         if params.config_merge_strategy:
             merge_strategy = params.config_merge_strategy
 
-        if merge_strategy != DEFAULT_CONFIG_MERGE_STRATEGY:
+        if merge_strategy == CONFIG_MERGE_STRATEGY_DEEP:
+            self.merge = best_effort_merge
+        elif merge_strategy not in NATIVE_CONFIG_MERGE_STRATEGIES:
             import mergedeep  # type: ignore
 
             self.merge = mergedeep.merge
@@ -679,8 +686,11 @@ class ConfigResolver:
             )
 
             if env:
-                if self.merge and self.mergedeep_strategy:
-                    self.merge(merged_env, env, strategy=self.mergedeep_strategy)
+                if self.merge:
+                    if self.mergedeep_strategy:
+                        self.merge(merged_env, env, strategy=self.mergedeep_strategy)
+                    else:
+                        self.merge(merged_env, env)
                 else:
                     # Shallow merge
                     merged_env.update(env)
@@ -695,8 +705,13 @@ class ConfigResolver:
             )
 
             if config:
-                if self.merge and self.mergedeep_strategy:
-                    self.merge(merged_config, config, strategy=self.mergedeep_strategy)
+                if self.merge:
+                    if self.mergedeep_strategy:
+                        self.merge(
+                            merged_config, config, strategy=self.mergedeep_strategy
+                        )
+                    else:
+                        self.merge(merged_env, env)
                 else:
                     # Shallow merge
                     merged_config.update(config)

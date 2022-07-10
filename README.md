@@ -221,7 +221,7 @@ for making it possible to cross-compile!
 
 ### When python is available
 
-Install this module via pip (or your favourite package manager):
+Install this module via pip (or your favorite package manager):
 
 `pip install cloudreactor-procwrapper`
 
@@ -302,7 +302,7 @@ Here are all the options:
                         [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES]
                         [--status-update-interval STATUS_UPDATE_INTERVAL]
                         [-e ENV_LOCATIONS] [--config CONFIG_LOCATIONS]
-                        [--config-merge-strategy {SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}]
+                        [--config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}]
                         [--overwrite_env_during_resolution]
                         [--config-ttl CONFIG_TTL]
                         [--no-fail-fast-config-resolution]
@@ -536,13 +536,13 @@ Here are all the options:
                             populate the configuration for embedded mode. By
                             default, the file format is assumed to be in JSON.
                             Specify multiple times to include multiple locations.
-      --config-merge-strategy {SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
-                            Merge strategy for merging config files with
-                            mergedeep. Defaults to SHALLOW, which does not require
-                            mergedeep. All other strategies require the mergedeep
-                            python package to be installed.
+      --config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
+                            Merge strategy for merging configurations. Defaults to
+                            'DEEP', which does not require mergedeep. Besides the
+                            'SHALLOW' strategy, all other strategies require the
+                            mergedeep python package to be installed.
       --overwrite_env_during_resolution
-                            Do not overwrite existing environment variables when
+                            Overwrite existing environment variables when
                             resolving them
       --config-ttl CONFIG_TTL
                             Number of seconds to cache resolved environment
@@ -956,7 +956,8 @@ fetched and parsed dictionary values. For example:
 
 Top-level fetching can potentially fetch multiple dictionaries which are
 merged together in the final environment / configuration dictionary.
-The default merge strategy (`SHALLOW`) is just to overwrite top-level keys, with later
+The default merge strategy (`DEEP`) merges recursively, even dictionaries
+in lists. The `SHALLOW` merge strategy just overwrites top-level keys, with later
 secret locations taking precedence. However, if you include the
 [mergedeep](https://github.com/clarketm/mergedeep) library, you can also
 set the merge strategy to one of:
@@ -966,7 +967,9 @@ set the merge strategy to one of:
 * `TYPESAFE_REPLACE`
 * `TYPESAFE_ADDITIVE`
 
-so that nested dictionaries / lists will be merged as well. In wrapped mode,
+so that nested lists can be appended to instead of replaced (in the case of the
+`ADDITIVE` strategies), or errors will be raised if incompatibly-typed values
+are merged (in the case of the `TYPESAFE` strategies). In wrapped mode,
 the merge strategy can be set with the `--config-merge-strategy` command-line
 argument or `PROC_WRAPPER_CONFIG_MERGE_STRATEGY` environment variable. In
 embedded mode, the merge strategy can be set in the

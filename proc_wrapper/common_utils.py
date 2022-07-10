@@ -1,4 +1,7 @@
+import logging
 from typing import Any, Dict, Optional, Tuple
+
+_logger = logging.getLogger(__name__)
 
 
 # From glglgl on
@@ -65,15 +68,56 @@ def safe_get(
     return default_value
 
 
+def deepmerge_with_lists_pair(dest: Any, src: Any) -> Any:
+    """
+    Merge deeply, returning the merged value.
+    dest or any collections inside dest might be modified in-place.
+    This only handles dict, list, strings, and primtives, enough for JSON object
+    merging.
+    """
+    if isinstance(dest, dict):
+        if isinstance(src, dict):
+            for k, v in src.items():
+                if k in dest:
+                    dest[k] = deepmerge_with_lists_pair(dest[k], v)
+                else:
+                    dest[k] = v
+
+            return dest
+
+        _logger.warning(f"Attempt to merge dict {dest} with non-dict {src}")
+        return src
+
+    if isinstance(dest, list):
+        if isinstance(src, list):
+            x_len = len(dest)
+            y_len = len(src)
+            for i, v in enumerate(dest):
+                if i < y_len:
+                    dest[i] = deepmerge_with_lists_pair(dest[i], src[i])
+                else:
+                    break
+
+            i = x_len
+            while i < y_len:
+                dest.append(src[i])
+                i += 1
+
+            return dest
+        else:
+            _logger.warning(f"Attempt to merge iterable {dest} with non-iterable {src}")
+            return src
+
+    return src
+
+
 def best_effort_merge(
     dest: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     if src is not None:
         dest = dest or {}
         try:
-            import mergedeep
-
-            mergedeep.merge(dest, src, mergedeep.Strategy.REPLACE)
+            return deepmerge_with_lists_pair(dest, src)
         except ImportError:
             dest.update(src)
 

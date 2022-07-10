@@ -26,8 +26,13 @@ DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS = 300
 DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS = 30
 DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS = 1800
 
+CONFIG_MERGE_STRATEGY_DEEP = "DEEP"
 CONFIG_MERGE_STRATEGY_SHALLOW = "SHALLOW"
-DEFAULT_CONFIG_MERGE_STRATEGY = CONFIG_MERGE_STRATEGY_SHALLOW
+DEFAULT_CONFIG_MERGE_STRATEGY = CONFIG_MERGE_STRATEGY_DEEP
+NATIVE_CONFIG_MERGE_STRATEGIES = [
+    CONFIG_MERGE_STRATEGY_DEEP,
+    CONFIG_MERGE_STRATEGY_SHALLOW,
+]
 DEFAULT_MAX_CONFIG_RESOLUTION_ITERATIONS = 3
 DEFAULT_MAX_CONFIG_RESOLUTION_DEPTH = 5
 DEFAULT_ENV_VAR_NAME_FOR_CONFIG = "TASK_CONFIG"
@@ -1562,6 +1567,7 @@ to include multiple locations.""",
     config_group.add_argument(
         "--config-merge-strategy",
         choices=[
+            CONFIG_MERGE_STRATEGY_DEEP,
             CONFIG_MERGE_STRATEGY_SHALLOW,
             "REPLACE",
             "ADDITIVE",
@@ -1570,9 +1576,10 @@ to include multiple locations.""",
         ],
         default=DEFAULT_CONFIG_MERGE_STRATEGY,
         help=f"""
-Merge strategy for merging config files with mergedeep.
-Defaults to {DEFAULT_CONFIG_MERGE_STRATEGY}, which does not require mergedeep.
-All other strategies require the mergedeep python package to be installed.
+Merge strategy for merging configurations.
+Defaults to '{DEFAULT_CONFIG_MERGE_STRATEGY}', which does not require mergedeep.
+Besides the '{CONFIG_MERGE_STRATEGY_SHALLOW}' strategy, all other strategies
+require the mergedeep python package to be installed.
             """,
     )
 
@@ -1580,7 +1587,7 @@ All other strategies require the mergedeep python package to be installed.
         "--overwrite_env_during_resolution",
         action="store_true",
         help="""
-Do not overwrite existing environment variables when resolving them""",
+Overwrite existing environment variables when resolving them""",
     )
 
     config_group.add_argument(
