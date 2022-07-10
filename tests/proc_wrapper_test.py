@@ -458,7 +458,6 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         aws = x["infrastructure_settings"]
         assert aws is not None
         aws_network = aws["network"]
-        assert aws_network["availability_zone"] == "us-east-2b"
         assert aws_network["region"] == "us-east-2"
 
         nw_0 = aws_network["networks"][0]

@@ -78,9 +78,7 @@ def test_aws_ecs_runtime_metadata(httpserver: HTTPServer):
 
     for aws in [tc.infrastructure_settings, tec.infrastructure_settings]:
         assert aws is not None
-        print(f"aws = {aws}")
         network = aws["network"]
-        assert network["availability_zone"] == "us-east-2b"
         assert network["region"] == "us-east-2"
 
         networks = network["networks"]
@@ -103,7 +101,9 @@ def test_aws_ecs_runtime_metadata(httpserver: HTTPServer):
 
     aws = tec.infrastructure_settings
     assert aws is not None
-    nw_0 = aws["network"]["networks"][0]
+    network = aws["network"]
+    assert network["availability_zone"] == "us-east-2b"
+    nw_0 = network["networks"][0]
     assert nw_0 is not None
     assert nw_0["network_mode"] == "awsvpc"
     assert nw_0["ip_v4_addresses"] == ["192.0.2.3"]

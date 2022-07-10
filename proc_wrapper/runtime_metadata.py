@@ -189,7 +189,6 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         task_definition_arn = self.compute_ecs_task_definition_arn(task_metadata) or ""
 
         common_props: Dict[str, Any] = {
-            "type": "AWS ECS",
             "task_definition_arn": task_definition_arn,
             "cluster_arn": cluster_arn,
         }
@@ -200,7 +199,6 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
         execution_method_capability: Dict[str, Any] = {}
 
-        # CHECKME: probably not available
         launch_type = task_metadata.get("LaunchType")
         if launch_type:
             common_props["launch_type"] = launch_type
@@ -233,7 +231,7 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         else:
             region = self.compute_region_from_ecs_cluster_arn(cluster_arn)
 
-        network_props = {"availability_zone": az, "region": region}
+        network_props = {"region": region}
 
         aws_props = {"network": network_props}
 
@@ -270,6 +268,7 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
                     if prefix_to_remove and k.startswith(prefix_to_remove):
                         transformed_key = k[len(prefix_to_remove) :]
 
+                    # create-group => create_group
                     transformed_key = transformed_key.replace("-", "_")
                     transformed_log_options[transformed_key] = v
 
@@ -277,7 +276,12 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
             aws_props["logging"] = logging_props
 
-            task_aws_props = aws_props
+            task_aws_props = aws_props.copy()
+            task_network_props = network_props.copy()
+            task_aws_props["network"] = task_network_props
+
+            if az:
+                network_props["availability_zone"] = az
 
             container_networks = container_metadata.get("Networks")
             if container_networks is not None:
@@ -313,12 +317,8 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
                     task_execution_networks.append(container_network_props)
 
-                task_network_props = network_props.copy()
-                task_network_props["networks"] = task_networks
-                task_aws_props = aws_props.copy()
-                task_aws_props["network"] = task_network_props
-
                 network_props["networks"] = task_execution_networks
+                task_network_props["networks"] = task_networks
 
         derived = {"aws": aws_props}
 
