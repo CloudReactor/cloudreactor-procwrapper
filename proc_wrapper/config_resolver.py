@@ -372,8 +372,8 @@ class FileSecretProvider(SecretProvider):
         if location.startswith(FILE_URL_PREFIX):
             location = location[FILE_URL_PREFIX_LENGTH:]
 
-        # TODO: encoding
-        with open(location, "r") as f:
+        # TODO: allow different encodings
+        with open(location, "r", encoding="utf-8") as f:
             return (f.read(), None, None)
 
 
@@ -665,7 +665,7 @@ class ConfigResolver:
             if value is None:
                 string_value = ""
             elif isinstance(value, bool):
-                # Boolean values get transformed to environment value TRUE or FALSE
+                # Boolean values get transformed to environment values TRUE or FALSE
                 string_value = str(value).upper()
             elif isinstance(value, (dict, list)):
                 # Collections get serialized as JSON
@@ -690,7 +690,7 @@ class ConfigResolver:
                     if self.mergedeep_strategy:
                         self.merge(merged_env, env, strategy=self.mergedeep_strategy)
                     else:
-                        self.merge(merged_env, env)
+                        merged_env = self.merge(merged_env, env)
                 else:
                     # Shallow merge
                     merged_env.update(env)
@@ -711,7 +711,7 @@ class ConfigResolver:
                             merged_config, config, strategy=self.mergedeep_strategy
                         )
                     else:
-                        self.merge(merged_env, env)
+                        merged_config = self.merge(merged_config, config)
                 else:
                     # Shallow merge
                     merged_config.update(config)
@@ -848,7 +848,7 @@ class ConfigResolver:
             if (
                 name.startswith(var_prefix)
                 and name.endswith(var_suffix)
-                and (type(value) is str)
+                and isinstance(value, str)
             ):
                 var_name = name[var_prefix_length:-var_suffix_length]
                 inner_path = ConfigResolver.qualify_path(path, var_name)
@@ -903,13 +903,19 @@ class ConfigResolver:
                 # is non-deterministic due to key ordering.
                 old_value = dict_value.get(var_name)
                 if (old_value is not None) and issubclass(type(old_value), dict):
-                    if self.merge and self.mergedeep_strategy:
+                    if self.merge:
                         new_resolved_value = old_value.copy()
-                        self.merge(
-                            new_resolved_value,
-                            resolved_value,
-                            strategy=self.mergedeep_strategy,
-                        )
+                        if self.mergedeep_strategy:
+                            self.merge(
+                                new_resolved_value,
+                                resolved_value,
+                                strategy=self.mergedeep_strategy,
+                            )
+                        else:
+                            new_resolved_value = self.merge(
+                                new_resolved_value, resolved_value
+                            )
+
                         resolved_value = new_resolved_value
 
             resolved_dict_value[var_name] = resolved_value

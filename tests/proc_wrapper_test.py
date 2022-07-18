@@ -83,6 +83,7 @@ def make_online_params(port: int) -> ProcWrapperParams:
     params.process_max_retries = 2
     params.process_retry_delay = 1
     params.api_request_timeout = 5
+    params.api_task_execution_creation_error_timeout = 1
     params.api_final_update_timeout = 5
     params.api_retry_delay = 1
     params.api_resume_delay = 1
@@ -105,20 +106,19 @@ def expect_task_execution_request(
     response_data: Optional[Dict[str, Any]] = None,
     status: Optional[int] = None,
     update: bool = True,
+    uuid: Optional[str] = None,
 ):
     method = "PATCH" if update else "POST"
     url = "/api/v1/task_executions/"
+    uuid = uuid or DEFAULT_TASK_EXECUTION_UUID
 
     if response_data is None:
         if update:
             response_data = {}
         else:
             response_data = {
-                "uuid": DEFAULT_TASK_EXECUTION_UUID,
-                "task": {
-                    "uuid": DEFAULT_TASK_UUID,
-                    "name": "A Task",
-                },
+                "uuid": uuid,
+                "task": {"uuid": DEFAULT_TASK_UUID, "name": "A Task"},
             }
 
     if status is None:
@@ -127,11 +127,13 @@ def expect_task_execution_request(
         expected_status = status
 
     if update:
-        url += quote_plus(DEFAULT_TASK_EXECUTION_UUID) + "/"
+        url += quote_plus(uuid) + "/"
 
     handler, fetch_captured_request_data = make_capturing_handler(
         response_data=response_data, status=expected_status
     )
+
+    print(f"Expect order request to {url}")
 
     httpserver.expect_ordered_request(
         url, method=method, headers=CLIENT_HEADERS
@@ -356,7 +358,113 @@ def test_embedded_mode_with_server(
         assert (datetime.now() - last_app_heartbeat_at).seconds < 10
 
 
-def callback_with_config(
+def callback_with_params_from_config(
+    wrapper: ProcWrapper, cbdata: int, config: Dict[str, Any]
+) -> int:
+    return config["app_stuff"]["a"] + cbdata
+
+
+def test_embedded_mode_with_params_from_config(httpserver: HTTPServer):
+    port = httpserver.port
+
+    task_name = "embedded_mode_with_params_from_config"
+
+    config = {
+        "proc_wrapper_params": {
+            "task": {
+                "name": task_name,
+                "was_auto_created": True,
+                "passive": True,
+                "run_environment": {"name": "myenv"},
+            },
+            "log_level": "DEBUG",
+            "api_base_url": f"http://localhost:{port}",
+            "api_key": TEST_API_KEY,
+        },
+        "app_stuff": {"a": 42},
+    }
+
+    params = ProcWrapperParams()
+    params.initial_config = config
+
+    wrapper = ProcWrapper(params=params)
+
+    assert params.api_base_url == f"http://localhost:{port}"
+    assert params.api_key == TEST_API_KEY
+    assert params.task_name == task_name
+    assert params.log_level == "DEBUG"
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
+    )
+
+    fetch_final_update_request_data = expect_task_execution_request(
+        httpserver=httpserver
+    )
+
+    assert wrapper.managed_call(callback_with_params_from_config, 58) == 100
+
+    httpserver.check_assertions()
+
+    crd = fetch_creation_request_data()
+    assert crd["status"] == ProcWrapper.STATUS_RUNNING
+
+    furd = fetch_final_update_request_data()
+    assert furd["status"] == ProcWrapper.STATUS_SUCCEEDED
+
+
+def callback_with_params_from_input(
+    wrapper: ProcWrapper, cbdata: int, config: Dict[str, str]
+) -> int:
+    return cbdata
+
+
+@pytest.mark.parametrize(
+    """
+    input, expect_extraction
+    """,
+    [
+        (None, False),
+        ({}, False),
+        (
+            {
+                "cloudreactor_context": {
+                    "proc_wrapper_params": {
+                        "task_execution": {"uuid": "UUID-FROM-INPUT"}
+                    }
+                }
+            },
+            True,
+        ),
+    ],
+)
+def test_embedded_mode_with_params_from_input(
+    input: Optional[Any], expect_extraction: bool, httpserver: HTTPServer
+):
+    params = make_online_params(httpserver.port)
+    wrapper = ProcWrapper(params=params, input_value=input)
+    te_uuid = "UUID-FROM-INPUT"
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=expect_extraction, uuid=te_uuid
+    )
+
+    fetch_final_update_request_data = expect_task_execution_request(
+        httpserver=httpserver, uuid=te_uuid
+    )
+
+    assert wrapper.managed_call(callback_with_params_from_input, 69) == 69
+
+    httpserver.check_assertions()
+
+    crd = fetch_creation_request_data()
+    assert crd["status"] == ProcWrapper.STATUS_RUNNING
+
+    furd = fetch_final_update_request_data()
+    assert furd["status"] == ProcWrapper.STATUS_SUCCEEDED
+
+
+def callback_with_env_in_config(
     wrapper: ProcWrapper, cbdata: str, config: Dict[str, Any]
 ) -> str:
     return "super" + cbdata + config["ENV"]["ANOTHER_ENV"]
@@ -371,13 +479,13 @@ def test_env_pass_through():
 
     assert process_env["ANOTHER_ENV"] == "250"
 
-    assert wrapper.managed_call(callback_with_config, "duper") == "superduper250"
+    assert wrapper.managed_call(callback_with_env_in_config, "duper") == "superduper250"
 
 
 @pytest.mark.parametrize(
     """
-  auto_create
-""",
+    auto_create
+    """,
     [(True), (False)],
 )
 def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):

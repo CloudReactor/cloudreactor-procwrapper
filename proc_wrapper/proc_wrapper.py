@@ -130,8 +130,15 @@ class ProcWrapper:
         env_override: Optional[Mapping[str, Any]] = None,
         override_params_from_env: bool = True,
         runtime_context: Optional[Any] = None,
+        input_value: Optional[Any] = None,
+        override_params_from_input: bool = True,
+        override_params_from_config: Optional[bool] = None,
     ) -> None:
         _logger.info("Creating ProcWrapper instance ...")
+
+        self.input_value = input_value
+        self.runtime_context = runtime_context
+        self.override_params_from_env = override_params_from_env
 
         if env_override:
             self.env = dict(env_override)
@@ -171,8 +178,6 @@ class ProcWrapper:
             runtime_metadata_fetcher or DefaultRuntimeMetadataFetcher()
         )
 
-        self.runtime_context = runtime_context
-
         runtime_metadata: Optional[RuntimeMetadata] = None
         try:
             runtime_metadata = self.runtime_metadata_fetcher.fetch(
@@ -205,14 +210,32 @@ class ProcWrapper:
             want_env=True, want_config=self.params.embedded_mode
         )
 
-        self.config_resolver.fetch_and_resolve_env()
-
         if override_params_from_env:
             self.params.override_proc_wrapper_params_from_env(
                 env=self.resolved_env,
                 mutable_only=False,
                 runtime_metadata=runtime_metadata,
             )
+
+        self.override_params_from_config = coalesce(
+            override_params_from_config, self.params.embedded_mode
+        )
+
+        if self.override_params_from_config:
+            env_override = self.params.override_proc_wrapper_params_from_config(
+                config=self.resolved_config, mutable_only=False
+            )
+
+            if env_override:
+                self.resolved_env.update(env_override)
+
+        if override_params_from_input:
+            env_override = self.params.override_proc_wrapper_params_from_input(
+                input=input_value
+            )
+
+            if env_override:
+                self.resolved_env.update(env_override)
 
         self.in_pytest = string_to_bool(os.environ.get("IN_PYTEST")) or False
 
@@ -485,6 +508,8 @@ class ProcWrapper:
             if stop_reason is not None:
                 body["stop_reason"] = stop_reason
 
+            rm = runtime_metadata if self.params.send_runtime_metadata else None
+
             if self.task_execution_uuid:
                 # Manually started
                 url += self.task_execution_uuid + "/"
@@ -527,8 +552,6 @@ class ProcWrapper:
                     ] = self.params.auto_create_task_run_environment_uuid
 
                 task_dict["run_environment"] = run_env_dict
-
-                rm = runtime_metadata if self.params.send_runtime_metadata else None
 
                 self._transfer_runtime_metadata(
                     dest=task_dict,
@@ -789,17 +812,28 @@ class ProcWrapper:
             self.resolved_config,
             self.failed_config_props,
         ) = self.config_resolver.fetch_and_resolve_env_and_config(
-            want_env=True, want_config=self.params.embedded_mode
+            want_env=self.override_params_from_env,
+            want_config=self.override_params_from_config,
         )
 
         runtime_metadata = self.runtime_metadata_fetcher.fetch(
             env=self.resolved_env, context=self.runtime_context
         )
 
-        # In case API key(s) change
-        self.params.override_proc_wrapper_params_from_env(
-            env=self.resolved_env, mutable_only=True, runtime_metadata=runtime_metadata
-        )
+        if self.override_params_from_env:
+            self.params.override_proc_wrapper_params_from_env(
+                env=self.resolved_env,
+                mutable_only=True,
+                runtime_metadata=runtime_metadata,
+            )
+
+        if self.override_params_from_config:
+            env_override = self.params.override_proc_wrapper_params_from_config(
+                config=self.resolved_config, mutable_only=True
+            )
+
+            if env_override:
+                self.resolved_env.update(env_override)
 
         self.param_errors = self.params.validation_errors(
             runtime_metadata=runtime_metadata

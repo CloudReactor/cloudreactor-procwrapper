@@ -6,7 +6,13 @@ import re
 import shlex
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union, cast
 
-from .common_utils import coalesce, encode_int, string_to_bool, string_to_int
+from .common_utils import (
+    best_effort_merge,
+    coalesce,
+    encode_int,
+    string_to_bool,
+    string_to_int,
+)
 from .runtime_metadata import RuntimeMetadata
 
 DEFAULT_LOG_LEVEL = "INFO"
@@ -41,6 +47,60 @@ DEFAULT_RESOLVABLE_ENV_VAR_NAME_PREFIX = ""
 DEFAULT_RESOLVABLE_ENV_VAR_NAME_SUFFIX = "_FOR_PROC_WRAPPER_TO_RESOLVE"
 DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_PREFIX = ""
 DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX = "__to_resolve"
+
+CLOUDREACTOR_CONTEXT_INPUT_PROPERTY_NAME = "cloudreactor_context"
+PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME = "proc_wrapper_params"
+
+IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
+    "schedule",
+    "max_concurrency",
+    "max_conflicting_age",
+    "offline_mode",
+    "prevent_offline_execution",
+    "service",
+    "deployment",
+    "api_base_url",
+    "api_heartbeat_interval",
+    "enable_status_update_listener",
+    "status_update_socket_port",
+    "status_update_message_max_bytes",
+    "status_update_interval",
+    "log_level",
+    "include_timestamps_in_log",
+]
+
+MUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
+    "api_key",
+    "api_request_timeout",
+    "api_error_timeout",
+    "api_retry_delay",
+    "api_resume_delay",
+    "api_task_execution_creation_error_timeout",
+    "api_task_execution_creation_conflict_timeout",
+    "api_task_execution_creation_conflict_retry_delay",
+    "process_timeout",
+    "process_max_retries",
+    "process_retry_delay",
+    "command",
+    "command_line",
+    "shell_mode",
+    "strip_shell_wrapping",
+    "work_dir",
+    "process_termination_grace_period",
+    "process_check_interval",
+    "process_group_termination",
+    "send_pid",
+    "send_hostname",
+    "send_runtime_metadata",
+]
+
+
+PROPERTIES_COPIED_FROM_ROLLBAR_CONFIG = [
+    "access_token",
+    "retries",
+    "retry_delay",
+    "timeout",
+]
 
 SHELL_MODE_AUTO = "auto"
 SHELL_MODE_FORCE_ENABLE = "enable"
@@ -111,7 +171,7 @@ class ConfigResolverParams:
         self.log_secrets: bool = False
         self.env_locations: List[str] = []
         self.config_locations: List[str] = []
-        self.config_merge_strategy: str = CONFIG_MERGE_STRATEGY_SHALLOW
+        self.config_merge_strategy: str = DEFAULT_CONFIG_MERGE_STRATEGY
         self.overwrite_env_during_resolution: bool = False
         self.max_config_resolution_depth: int = DEFAULT_MAX_CONFIG_RESOLUTION_DEPTH
         self.max_config_resolution_iterations: int = (
@@ -324,7 +384,6 @@ class ProcWrapperParams(ConfigResolverParams):
         self.execution_method_props: Optional[Dict[str, Any]] = None
         self.auto_create_task_run_environment_name: Optional[str] = None
         self.auto_create_task_run_environment_uuid: Optional[str] = None
-        self.auto_create_task_run_environment_task_props: Optional[str] = None
         self.force_task_active: Optional[bool] = None
         self.task_is_passive: bool = True
         self.task_execution_uuid: Optional[str] = None
@@ -405,6 +464,125 @@ class ProcWrapperParams(ConfigResolverParams):
             self._override_immutable_from_env(env, runtime_metadata=runtime_metadata)
 
         self._override_mutable_from_env(env)
+
+    def override_proc_wrapper_params_from_config(
+        self, config: Dict[str, Any], mutable_only: bool = False
+    ) -> Optional[Dict[str, str]]:
+        params = config.get(PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME)
+        if not isinstance(params, dict):
+            _logger.debug(
+                f"override_proc_wrapper_params_from_config(): {PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME} is not a dict"
+            )
+            return None
+
+        return self.override_proc_wrapper_params_from_dict(
+            params=params, mutable_only=mutable_only
+        )
+
+    def override_proc_wrapper_params_from_dict(
+        self, params: Dict[str, Any], mutable_only: bool = False
+    ) -> Optional[Dict[str, str]]:
+        _logger.debug("Starting override_proc_wrapper_params_from_dict() ...")
+
+        if not mutable_only:
+            task_execution = params.get("task_execution")
+            if isinstance(task_execution, dict):
+                self.task_execution_uuid = task_execution.get(
+                    "uuid", self.task_execution_uuid
+                )
+                self.task_version_number = task_execution.get(
+                    "version_number", self.task_version_number
+                )
+                self.task_version_text = task_execution.get(
+                    "version_text", self.task_version_text
+                )
+                self.task_version_signature = task_execution.get(
+                    "version_signature", self.task_version_signature
+                )
+
+                # Task properties can appear either embedded in Task Execution
+                # properties or at the config level.
+                task = task_execution.get("task")
+                if isinstance(task, dict):
+                    self._override_proc_wrapper_params_from_task_dict(task)
+
+            task = params.get("task")
+
+            if isinstance(task, dict):
+                self._override_proc_wrapper_params_from_task_dict(task)
+
+            for attr in IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG:
+                if attr in params:
+                    setattr(self, attr, params[attr])
+
+        for attr in MUTABLE_PROPERTIES_COPIED_FROM_CONFIG:
+            if attr in params:
+                setattr(self, attr, params[attr])
+
+        rollbar_params = params.get("rollbar")
+        if isinstance(rollbar_params, dict):
+            for attr in PROPERTIES_COPIED_FROM_ROLLBAR_CONFIG:
+                if attr in rollbar_params:
+                    setattr(self, "rollbar_" + attr, rollbar_params[attr])
+
+        env_override = params.get("env_override")
+        if isinstance(env_override, dict):
+            _logger.info("env_override found in config")
+            return env_override
+
+        _logger.info("No env_override found in config")
+        return None
+
+    def override_proc_wrapper_params_from_input(
+        self, input: Optional[Any]
+    ) -> Optional[Dict[str, str]]:
+        """
+        Override parameters from the input. For now, don't trust the
+        input except for providing the TaskExecution UUID, which should
+        be harmless if injected by an attacker. In the future we may
+        allow more parameters and the environment to be overridden, if
+        we can ensure the input comes from a trusted source.
+        """
+
+        if not isinstance(input, dict):
+            _logger.debug(
+                "override_proc_wrapper_params_from_input(): input is missing or not a dict"
+            )
+            return None
+
+        context = input.get(CLOUDREACTOR_CONTEXT_INPUT_PROPERTY_NAME)
+
+        if not isinstance(context, dict):
+            _logger.debug(
+                "override_proc_wrapper_params_from_input(): context not found"
+            )
+            return None
+
+        params = context.get(PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME)
+        if not isinstance(params, dict):
+            _logger.debug(
+                "override_proc_wrapper_params_from_input(): proc_wrapper_params not found in context"
+            )
+            return None
+
+        task_execution = params.get("task_execution")
+        if isinstance(task_execution, dict):
+            te_uuid = task_execution.get("uuid")
+            if te_uuid:
+                _logger.info(f"Found Task Execution {te_uuid} in input")
+                self.task_execution_uuid = te_uuid
+            else:
+                _logger.debug("No UUID found in Task Execution")
+
+        else:
+            _logger.debug(
+                "override_proc_wrapper_params_from_input(): task_execution not found in proc_wrapper_params"
+            )
+
+        # In the future we may allow the input to override the environment,
+        # but we need to secure this against attackers that inject properties
+        # into the input.
+        return None
 
     def validation_errors(
         self, runtime_metadata: Optional[RuntimeMetadata] = None
@@ -899,6 +1077,37 @@ class ProcWrapperParams(ConfigResolverParams):
                 )
                 or self.status_update_message_max_bytes
             )
+
+    def _override_proc_wrapper_params_from_task_dict(
+        self, task: Dict[str, Any]
+    ) -> None:
+        self.task_name = task.get("name", self.task_name)
+        self.task_uuid = task.get("uuid", self.task_uuid)
+        self.task_instance_metadata = task.get(
+            "other_metadata", self.task_instance_metadata
+        )
+        self.auto_create_task = task.get("was_auto_created", self.auto_create_task)
+
+        if self.auto_create_task:
+            self.auto_create_task_props = (
+                best_effort_merge(self.auto_create_task_props or {}, task) or {}
+            )
+
+            self.task_is_passive = coalesce(
+                task.get("passive"),
+                self.auto_create_task_props.get("passive"),
+                self.task_is_passive,
+            )
+
+            run_env = task.get("run_environment")
+            if isinstance(run_env, dict):
+                self.auto_create_task_run_environment_name = run_env.get(
+                    "name", self.auto_create_task_run_environment_name
+                )
+
+                self.auto_create_task_run_environment_uuid = run_env.get(
+                    "uuid", self.auto_create_task_run_environment_uuid
+                )
 
     def _override_mutable_from_env(self, env: Dict[str, str]) -> None:
         self.rollbar_access_token = env.get(
