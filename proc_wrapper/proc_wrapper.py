@@ -748,7 +748,10 @@ class ProcWrapper:
 
         self._reload_params()
         self.log_configuration(initial=True)
-        self._setup_task_execution()
+
+        if not self._setup_task_execution():
+            self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
+            return
 
         rv = None
         success = False
@@ -1618,7 +1621,11 @@ class ProcWrapper:
         format = "PROC_WRAPPER: "
 
         if self.task_execution_uuid:
-            format += f"[{self.task_execution_uuid}] "
+            uuid_signature = self.task_execution_uuid
+            if len(uuid_signature) > 8:
+                uuid_signature = self.task_execution_uuid[0:8]
+
+            format += f"[{uuid_signature}] "
 
         if self.params.include_timestamps_in_log:
             format += "%(asctime)s "
