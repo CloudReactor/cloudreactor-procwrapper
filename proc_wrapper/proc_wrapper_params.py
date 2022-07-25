@@ -1612,7 +1612,7 @@ misconfigured.""",
     log_group.add_argument(
         "--log-secrets", action="store_true", help="Log sensitive information"
     )
-    api_group.add_argument(
+    log_group.add_argument(
         "--exclude-timestamps-in-log",
         action="store_false",
         dest="include_timestamps_in_log",
