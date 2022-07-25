@@ -1003,9 +1003,8 @@ class ProcWrapperParams(ConfigResolverParams):
                     string_to_bool(env.get("PROC_WRAPPER_TASK_IS_PASSIVE")),
                     auto_create_task_props.get("passive"),
                     args_forced_passive,
-                    True,
                 )
-                or False
+                or self.task_is_passive
             )
 
             em_overrides_str = env.get("PROC_WRAPPER_EXECUTION_METHOD_PROPS")
@@ -1050,7 +1049,7 @@ class ProcWrapperParams(ConfigResolverParams):
         api_base_url = env.get("PROC_WRAPPER_API_BASE_URL") or self.api_base_url
         self.api_base_url = api_base_url.rstrip("/")
 
-        # Properties to be reported to CloudRector
+        # Properties to be reported to CloudReactor
         self.schedule = env.get("PROC_WRAPPER_SCHEDULE") or self.schedule
 
         self.enable_status_update_listener = (
