@@ -182,7 +182,7 @@ and most likely are more efficient at runtime.
 However, they cannot be executed directly inside a Docker container. Instead, a
 separate extraction step must be performed at Docker build time:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/4.0/bin/nuitka/linux-amd64/4.0.0/proc_wrapper.bin -O proc_wrapper_app_image \
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0/bin/nuitka/linux-amd64/5.0.0/proc_wrapper.bin -O proc_wrapper_app_image \
       && chmod +x proc_wrapper_app_image \
       && ./proc_wrapper_app_image --appimage-extract \
       && rm ./proc_wrapper_app_image
@@ -443,10 +443,6 @@ Here are all the options:
       --send-hostname       Send the hostname to the API server
       --no-send-runtime-metadata
                             Do not send metadata about the runtime environment
-      --exclude-timestamps-in-log
-                            Exclude timestamps in log (possibly because the log
-                            stream will be enriched by timestamps automatically by
-                            a logging service like AWS CloudWatch Logs)
 
     log:
       Logging settings
@@ -454,6 +450,10 @@ Here are all the options:
       -l {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                             Log level
       --log-secrets         Log sensitive information
+      --exclude-timestamps-in-log
+                            Exclude timestamps in log (possibly because the log
+                            stream will be enriched by timestamps automatically by
+                            a logging service like AWS CloudWatch Logs)
 
     process:
       Process settings
@@ -718,34 +718,105 @@ dependencies. To run a task you want to be monitored:
         print(cbdata)
         return cbdata['a']
 
-    params = ProcWrapperParams()
-    params.auto_create_task = True
-    params.auto_create_task_run_environment_name = 'production'
-    params.task_name = 'embedded_test'
 
-    # For example only, in the real world you would use Secret Fetching;
-    # see below.
-    params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+    # This is the function signature of a function invoked by AWS Lambda.
+    def entrypoint(event: Any, context: Any) -> int:
+        params = ProcWrapperParams()
+        params.auto_create_task = True
 
-    # In an AWS Lambda environment, you can also pass a runtime_context
-    # parameter set the context of your Lambda entrypoint. This will send
-    # details of this execution to CloudReactor so it can be monitored and
-    # managed.
-    proc_wrapper = ProcWrapper(params=params)
+        # If the Task Execution is running in AWS Lambda, CloudReactor can make the
+        # associated Task available to run (non-passive) in the CloudReactor
+        # dashboard or by API, after the wrapper reports its first execution.
+        proc_wrapper_params.task_is_passive = False
 
-    x = proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
-    # Should print 1
-    print(x)
+        params.task_name = 'embedded_test_production'
+        params.auto_create_task_run_environment_name = 'production'
 
+        # For example only, in the real world you would use Secret Fetching;
+        # see below.
+        params.api_key = 'YOUR_CLOUDREACTOR_API_KEY'
+
+        # In an AWS Lambda environment, passing the context and event allows
+        # CloudReactor to monitor and manage this Task.
+        proc_wrapper = ProcWrapper(params=params, runtime_context=context,
+            input_value=event)
+
+        x = proc_wrapper.managed_call(fun, {'a': 1, 'b': 2})
+        # Should print 1
+        print(x)
+
+        return x
 
 This is suitable for running in single-threaded environments like
 AWS Lambda, or as part of a larger process that executes
 sub-routines that should be monitored.
 
-Currently, Tasks running as Lambdas must be marked as
-passive Tasks, as the execution method is Unknown. In the near future,
-CloudReactor will support running and managing Tasks that run as
-Lambdas.
+In embedded mode, besides setting properties of ProcWrapperParams in code,
+ProcWrapper can be also configured in two ways:
+
+First, using environment variables, as in wrapped mode.
+
+Second, using the configuration dictionary. If the configuration dictionary
+contains the key `proc_wrapper_params` and its value is a dictionary, the
+keys and values in the dictionary will be used to to set these attributes in
+ProcWrapperParams:
+
+| Key                              	| Type      	| Mutable 	| Uses Resolved Config 	|
+|----------------------------------	|-----------	|---------	|----------------------	|
+| log_secrets                      	| bool      	| No      	| No                   	|
+| env_locations                    	| list[str] 	| No      	| No                   	|
+| config_locations                 	| list[str] 	| No      	| No                   	|
+| config_merge_strategy            	| str       	| No      	| No                   	|
+| overwrite_env_during_resolution  	| bool      	| No      	| No                   	|
+| max_config_resolution_depth      	| int       	| No      	| No                   	|
+| max_config_resolution_iterations 	| int       	| No      	| No                   	|
+| config_ttl                       	| int       	| No      	| No                   	|
+| fail_fast_config_resolution      	| bool      	| No      	| No                   	|
+| resolved_env_var_name_prefix     	| str       	| No      	| No                   	|
+| resolved_env_var_name_suffix     	| str       	| No      	| No                   	|
+| resolved_config_property_name_prefix | str     	| No      	| No                   	|
+| resolved_config_property_name_suffix | str    	| No      	| No                   	|
+| schedule                          | str       	| No      	| Yes                  	|
+| max_concurrency                   | int       	| No      	| Yes                  	|
+| max_conflicting_age               | int       	| No      	| Yes                  	|
+| offline_mode                      | bool       	| No      	| Yes                  	|
+| prevent_offline_execution         | bool       	| No      	| Yes                  	|
+| service                           | bool       	| No      	| Yes                  	|
+| deployment                        | str       	| No      	| Yes                  	|
+| api_base_url                      | str       	| No      	| Yes                  	|
+| api_heartbeat_interval            | int       	| No      	| Yes                  	|
+| enable_status_listener            | bool      	| No      	| Yes                  	|
+| status_update_socket_port         | int        	| No      	| Yes                  	|
+| status_update_message_max_bytes   | int        	| No      	| Yes                  	|
+| status_update_interval            | int        	| No      	| Yes                  	|
+| log_level                         | str        	| No      	| Yes                  	|
+| include_timestamps_in_log         | bool      	| No      	| Yes                  	|
+| api_key                           | str        	| Yes     	| Yes                  	|
+| api_request_timeout               | int        	| Yes      	| Yes                  	|
+| api_error_timeout                 | int        	| Yes     	| Yes                  	|
+| api_retry_delay                   | int        	| Yes     	| Yes                  	|
+| api_resume_delay                  | int        	| Yes     	| Yes                  	|
+| api_task_execution_creation_error_timeout | int        	| Yes     	| Yes                  	|
+| api_task_execution_creation_conflict_timeout | int        	| Yes     	| Yes                  	|
+| api_task_execution_creation_conflict_retry_delay | int        	| Yes     	| Yes                  	|
+| process_timeout                   | int        	| Yes     	| Yes                  	|
+| process_max_retries               | int        	| Yes     	| Yes                  	|
+| process_retry_delay               | int        	| Yes     	| Yes                  	|
+| command                           | list[str]  	| Yes     	| Yes                  	|
+| command_line                      | str        	| Yes     	| Yes                  	|
+| shell_mode                        | bool      	| Yes     	| Yes                  	|
+| strip_shell_wrapping              | bool      	| Yes     	| Yes                  	|
+| work_dir                          | str       	| Yes     	| Yes                  	|
+| process_termination_grace_period  | int       	| Yes     	| Yes                  	|
+| send_pid                          | bool      	| Yes     	| Yes                  	|
+| send_hostname                     | bool      	| Yes     	| Yes                  	|
+| send_runtime_metadata             | bool      	| Yes     	| Yes                  	|
+
+Keys that are marked with "Mutable" -- "No" in the table above can be
+overridden when the configuration is reloaded after the `config_ttl` expires.
+
+Keys that are marked as "Uses Resolved Config" -- "Yes" in the table above can come
+from the resolved configuration after secret resolution (see below).
 
 ## Secret Fetching and Resolution
 
@@ -812,7 +883,7 @@ The format of a secret value can be auto-detected from the extension or by the
 MIME type if available. Otherwise, you may need to an explicit format code
 (e.g. `!yaml`).
 
-#### AWS Secrets Manager / S3 Notes
+#### AWS Secrets Manager / S3 notes
 
 [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 is used to fetch secrets. It will try to access to AWS Secrets Manager
@@ -926,7 +997,7 @@ passed to the your callback function will contain a merged dictionary of all
 fetched and parsed dictionary values. For example:
 
     def callback(wrapper: ProcWrapper, cbdata: str,
-            config: Dict[str, str]) -> str:
+            config: Dict[str, Any]) -> str:
         return "super" + cbdata + config["username"]
 
 
@@ -1179,10 +1250,14 @@ send updates:
 ## Example Projects
 
 These projects contain sample Tasks that use this library to report their
-execution status and results to CloudReactor, when deployed to AWS ECS Fargate:
+execution status and results to CloudReactor
 
-* [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
-* [cloudreactor-java-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-java-ecs-quickstart)
+* [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart) runs python code in a Docker container
+in AWS ECS Fargate (wrapped mode)
+* [cloudreactor-python-lambda-quickstart](https://github.com/CloudReactor/cloudreactor-python-lambda-quickstart) runs python code in AWS Lambda
+(embedded mode)
+* [cloudreactor-java-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-java-ecs-quickstart) runs Java code in a Docker container in
+AWS ECS Fargate (wrapped mode)
 
 ## License
 

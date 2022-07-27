@@ -76,3 +76,12 @@ service)
 log level to INFO
 ## v4.0.2 (2022-06-02)
 * Log request and response bodies from the API server
+## v5.0.0 (2022-07-22)
+* Extract runtime metadata for AWS Lambda, and parse input for Task Execution UUID so it can be linked to an existing Task
+Execution started by CloudReactor
+* Allow proc_wrapper to be configured by the configuration loaded by secret fetching
+* Add native DEEP merge strategy which is now the default
+* Add the first part of the Task Execution UUID to log messages
+* Add the option --exclude-timestamps-in-log
+* Fix an issue with the passive flag being overridden
+* Allow config resolver parameters to be overridden
