@@ -39,7 +39,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
-from .common_utils import best_effort_merge, coalesce, encode_int, string_to_bool
+from .common_utils import best_effort_deep_merge, coalesce, encode_int, string_to_bool
 from .config_resolver import ConfigResolver
 from .proc_wrapper_params import ProcWrapperParams, ProcWrapperParamValidationErrors
 from .runtime_metadata import (
@@ -377,11 +377,11 @@ class ProcWrapper:
                 )
 
         if override_props:
-            em_details = best_effort_merge(
+            em_details = best_effort_deep_merge(
                 em_details, override_props.get(em_details_prop_name)
             )
 
-            infra_settings = best_effort_merge(
+            infra_settings = best_effort_deep_merge(
                 infra_settings, override_props.get("infrastructure_settings")
             )
 

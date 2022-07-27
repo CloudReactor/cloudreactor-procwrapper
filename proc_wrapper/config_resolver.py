@@ -5,7 +5,7 @@ import time
 from io import StringIO
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
 
-from .common_utils import best_effort_merge, coalesce, strip_after
+from .common_utils import best_effort_deep_merge, coalesce, strip_after
 from .proc_wrapper_params import (
     CONFIG_MERGE_STRATEGY_DEEP,
     DEFAULT_CONFIG_MERGE_STRATEGY,
@@ -514,7 +514,7 @@ class ConfigResolver:
             self.params.resolved_config_property_name_suffix
         )
 
-        self.merge: Optional[Any] = None
+        self.merge_impl: Optional[Any] = None
         self.mergedeep_strategy: Optional[Any] = None
 
         merge_strategy = DEFAULT_CONFIG_MERGE_STRATEGY
@@ -523,11 +523,11 @@ class ConfigResolver:
             merge_strategy = params.config_merge_strategy
 
         if merge_strategy == CONFIG_MERGE_STRATEGY_DEEP:
-            self.merge = best_effort_merge
+            self.merge_impl = best_effort_deep_merge
         elif merge_strategy not in NATIVE_CONFIG_MERGE_STRATEGIES:
             import mergedeep  # type: ignore
 
-            self.merge = mergedeep.merge
+            self.merge_impl = mergedeep.merge
             self.mergedeep_strategy = getattr(mergedeep.Strategy, merge_strategy)
 
         self.plain_secret_provider = PlainSecretProvider()
@@ -678,6 +678,11 @@ class ConfigResolver:
         return flattened
 
     def fetch_and_merge(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        merged_config: Dict[str, Any] = self.params.initial_config.copy()
+
+        if self.params.initial_config:
+            self.params.override_resolver_params_from_config(self.params.initial_config)
+
         merged_env: Dict[str, Any] = {}
 
         for env_file_location in self.params.env_locations:
@@ -686,35 +691,23 @@ class ConfigResolver:
             )
 
             if env:
-                if self.merge:
-                    if self.mergedeep_strategy:
-                        self.merge(merged_env, env, strategy=self.mergedeep_strategy)
-                    else:
-                        merged_env = self.merge(merged_env, env)
-                else:
-                    # Shallow merge
-                    merged_env.update(env)
+                merged_env = self.merge(merged_env, env)
 
         # Merge the current environment last
         merged_env.update(self.env)
 
-        merged_config: Dict[str, Any] = self.params.initial_config.copy()
+        # If the environment has changed, update the resolver parameters
+        # so that config locations can be set by the updated environment.
+        if self.params.env_locations:
+            self.params.override_resolver_params_from_env(env=merged_env)
+
         for config_location in self.params.config_locations:
             config = self.fetch_config_from_location(
                 config_location, default_format=FORMAT_JSON
             )
 
             if config:
-                if self.merge:
-                    if self.mergedeep_strategy:
-                        self.merge(
-                            merged_config, config, strategy=self.mergedeep_strategy
-                        )
-                    else:
-                        merged_config = self.merge(merged_config, config)
-                else:
-                    # Shallow merge
-                    merged_config.update(config)
+                merged_config = self.merge(merged_config, config)
 
         return (merged_config, merged_env)
 
@@ -898,25 +891,12 @@ class ConfigResolver:
             )
 
             resolved_value = inner_result.resolved_value
-            if issubclass(type(resolved_value), dict):
+            if self.merge_impl and issubclass(type(resolved_value), dict):
                 # Looking up in resolved_dict_value might fix some cases, but
                 # is non-deterministic due to key ordering.
                 old_value = dict_value.get(var_name)
                 if (old_value is not None) and issubclass(type(old_value), dict):
-                    if self.merge:
-                        new_resolved_value = old_value.copy()
-                        if self.mergedeep_strategy:
-                            self.merge(
-                                new_resolved_value,
-                                resolved_value,
-                                strategy=self.mergedeep_strategy,
-                            )
-                        else:
-                            new_resolved_value = self.merge(
-                                new_resolved_value, resolved_value
-                            )
-
-                        resolved_value = new_resolved_value
+                    resolved_value = self.merge(old_value.copy(), resolved_value)
 
             resolved_dict_value[var_name] = resolved_value
             resolved_var_names.extend(inner_result.resolved_var_names)
@@ -929,6 +909,18 @@ class ConfigResolver:
             failed_var_names=failed_var_names,
             unresolved_var_names=unresolved_var_names,
         )
+
+    def merge(self, dest: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+        if self.merge_impl:
+            if self.mergedeep_strategy:
+                dest = self.merge_impl(dest, src, strategy=self.mergedeep_strategy)
+            else:
+                dest = self.merge_impl(dest, src)
+        else:
+            # Shallow merge
+            dest.update(src)
+
+        return dest
 
     def parse_data_string(
         self, data_string: str, format: str

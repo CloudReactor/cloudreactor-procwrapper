@@ -7,7 +7,7 @@ import shlex
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union, cast
 
 from .common_utils import (
-    best_effort_merge,
+    best_effort_deep_merge,
     coalesce,
     encode_int,
     string_to_bool,
@@ -50,6 +50,24 @@ DEFAULT_RESOLVABLE_CONFIG_PROPERTY_NAME_SUFFIX = "__to_resolve"
 
 CLOUDREACTOR_CONTEXT_INPUT_PROPERTY_NAME = "cloudreactor_context"
 PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME = "proc_wrapper_params"
+
+CONFIG_RESOLVER_PROPERTIES_COPIED_FROM_CONFIG = [
+    "log_secrets",
+    "env_locations",
+    "config_locations",
+    "config_merge_strategy",
+    "overwrite_env_during_resolution",
+    "max_config_resolution_depth",
+    "max_config_resolution_iterations",
+    "config_ttl",
+    "fail_fast_config_resolution",
+    "resolved_env_var_name_prefix",
+    "resolved_env_var_name_suffix",
+    "resolved_config_property_name_prefix",
+    "resolved_config_property_name_suffix",
+    "env_var_name_for_config",
+    "config_property_name_for_env",
+]
 
 IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
     "schedule",
@@ -312,6 +330,21 @@ class ConfigResolverParams:
             env.get("PROC_WRAPPER_CONFIG_PROPERTY_NAME_FOR_ENV"),
             self.config_property_name_for_env,
         )
+
+    def override_resolver_params_from_config(self, config: Mapping[str, Any]) -> None:
+        params = config.get(PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME)
+        if not isinstance(params, dict):
+            _logger.debug(
+                f"override_resolver_params_from_config(): {PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME} is not a dict"
+            )
+            return None
+
+        return self.override_resolver_params_from_dict(params=params)
+
+    def override_resolver_params_from_dict(self, params: Mapping[str, Any]) -> None:
+        for attr in CONFIG_RESOLVER_PROPERTIES_COPIED_FROM_CONFIG:
+            if attr in params:
+                setattr(self, attr, params[attr])
 
     def log_configuration(self) -> None:
         _logger.debug(f"Log secrets = {self.log_secrets}")
@@ -1089,7 +1122,7 @@ class ProcWrapperParams(ConfigResolverParams):
 
         if self.auto_create_task:
             self.auto_create_task_props = (
-                best_effort_merge(self.auto_create_task_props or {}, task) or {}
+                best_effort_deep_merge(self.auto_create_task_props or {}, task) or {}
             )
 
             self.task_is_passive = coalesce(

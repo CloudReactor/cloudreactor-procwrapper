@@ -111,7 +111,7 @@ def deepmerge_with_lists_pair(dest: Any, src: Any) -> Any:
     return src
 
 
-def best_effort_merge(
+def best_effort_deep_merge(
     dest: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     if src is not None:
