@@ -36,17 +36,18 @@ Available as a standalone executable or as a python module.
 
 * Runs either processes started with a command line or a python function you
 supply
-* Implements retries and time limits on wrapped processes
+* Implements retries and time limits
 * Injects secrets from AWS Secrets Manager, AWS S3, or local files and extracts
 them into the process environment (for command-lines) or configuration (for
 functions)
 * When used with the CloudReactor service:
   * Reports when a process/function starts and when it exits, along with the
-  exit code
+  exit code and runtime metadata (if running in AWS ECS or AWS Lambda)
   * Sends heartbeats, optionally with status information like the number of
   items processed
   * Prevents too many concurrent executions
   * Stops execution when manually stopped in the CloudReactor dashboard
+  * Sends CloudReactor the data necessary to start the process / function if running in AWS ECS or AWS Lambda
 
 ## How it works
 
@@ -105,10 +106,11 @@ external links in the dashboard, by setting the environment variable
 
 ### Execution Methods
 
-CloudReactor currently supports two Execution Methods:
+CloudReactor currently supports three Execution Methods:
 
 1) [AWS ECS (in Fargate)](https://aws.amazon.com/fargate/)
-2) Unknown
+2) [AWS Lambda](https://aws.amazon.com/lambda/)
+3) Unknown
 
 If a Task is running in AWS ECS, CloudReactor is able to run additional
 Task Executions, provided the details of running the Task is provided
@@ -119,16 +121,19 @@ the ECS Task settings, and sends them to the API server. CloudReactor
 can also schedule Tasks or setup long-running services using Tasks,
 provided they are run in AWS ECS.
 
+If a Task is running in AWS Lambda, CloudReactor is able to run additional
+Task Executions after the first run of the function.
+
 However, a Task may use the Unknown execution method if it is not running
-in AWS ECS. If that is the case, CloudReactor won't be able to
+in AWS ECS or Lambda. If that is the case, CloudReactor won't be able to
 start the Task in the dashboard or as part of a Workflow,
 schedule the Task, or setup a service with the Task. But the advantage is
 that the Task code can be executed by any method available to you,
-such as bare metal servers, VM's, Docker, AWS Lambda, or Kubernetes.
+such as bare metal servers, VM's, or Kubernetes.
 All Tasks in CloudReactor, regardless of execution method, have their
 history kept and are monitored.
 
-This module detects which of the two Execution Methods your Task is
+This module detects  the execution method your Task is
 running with and sends that information to the API server, provided
 you configure your Task to be auto-created.
 
@@ -153,7 +158,7 @@ If you just want to use this module to retry processes, limit execution time,
 or fetch secrets, you can use offline mode, in which case no CloudReactor API
 key is required. But CloudReactor offers a free tier so we hope you
 [sign up](https://dash.cloudreactor.io/signup)
-or a free account to enable monitoring and/or management.
+for a free account to enable monitoring and/or management.
 
 If you want CloudReactor to be able to start your Tasks, you should use the
 [Cloudreactor AWS Setup Wizard](https://github.com/CloudReactor/cloudreactor-aws-setup-wizard)
@@ -704,8 +709,8 @@ runs at the same time as the command it wraps.
 
 ### Embedded mode
 
-Embedded mode works for executing python code in the same process.
-You include the `proc_wrapper` package in your python project's
+You can use embedded mode to execute python code from inside a python program.
+Include the `proc_wrapper` package in your python project's
 dependencies. To run a task you want to be monitored:
 
     from typing import Any, Mapping
@@ -724,8 +729,8 @@ dependencies. To run a task you want to be monitored:
         params = ProcWrapperParams()
         params.auto_create_task = True
 
-        # If the Task Execution is running in AWS Lambda, CloudReactor can make the
-        # associated Task available to run (non-passive) in the CloudReactor
+        # If the Task Execution is running in AWS Lambda, CloudReactor can make
+        # the associated Task available to run (non-passive) in the CloudReactor
         # dashboard or by API, after the wrapper reports its first execution.
         proc_wrapper_params.task_is_passive = False
 
@@ -749,17 +754,21 @@ dependencies. To run a task you want to be monitored:
 
 This is suitable for running in single-threaded environments like
 AWS Lambda, or as part of a larger process that executes
-sub-routines that should be monitored.
+sub-routines that should be monitored. See
+[cloudreactor-python-lambda-quickstart](https://github.com/CloudReactor/cloudreactor-python-lambda-quickstart) for an example project that uses
+proc_wrapper in a function run by AWS Lambda.
 
-In embedded mode, besides setting properties of ProcWrapperParams in code,
-ProcWrapper can be also configured in two ways:
+#### Embedded mode configuration
+
+In embedded mode, besides setting properties of `ProcWrapperParams` in code,
+`ProcWrapper` can be also configured in two ways:
 
 First, using environment variables, as in wrapped mode.
 
 Second, using the configuration dictionary. If the configuration dictionary
 contains the key `proc_wrapper_params` and its value is a dictionary, the
 keys and values in the dictionary will be used to to set these attributes in
-ProcWrapperParams:
+`ProcWrapperParams`:
 
 | Key                              	| Type      	| Mutable 	| Uses Resolved Config 	|
 |----------------------------------	|-----------	|---------	|----------------------	|
@@ -815,8 +824,8 @@ ProcWrapperParams:
 Keys that are marked with "Mutable" -- "No" in the table above can be
 overridden when the configuration is reloaded after the `config_ttl` expires.
 
-Keys that are marked as "Uses Resolved Config" -- "Yes" in the table above can come
-from the resolved configuration after secret resolution (see below).
+Keys that are marked as "Uses Resolved Config" -- "Yes" in the table above can
+come from the resolved configuration after secret resolution (see below).
 
 ## Secret Fetching and Resolution
 
@@ -887,9 +896,9 @@ MIME type if available. Otherwise, you may need to an explicit format code
 
 [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 is used to fetch secrets. It will try to access to AWS Secrets Manager
-or S3 using environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
-if they are set, or use the EC2 instance role, ECS task role, or Lambda execution role
-if available.
+or S3 using environment variables `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` if they are set, or use the EC2 instance role, ECS task
+role, or Lambda execution role if available.
 
 For Secrets Manager, you can also use "partial ARNs"
 (without the hyphened suffix) as keys.
@@ -902,6 +911,10 @@ This allows you to get the latest version of the secret.
 
 If the secret was stored in Secrets Manager as binary, the
 corresponding value will be set to the Base-64 encoded value.
+
+If you're deploying a python function using AWS Lambda, note that boto3 is
+already included in the available packages, so there's no need to include it
+(unless the bundled version isn't compatible).
 
 ### Secret Tranformation
 
