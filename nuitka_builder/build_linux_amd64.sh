@@ -7,7 +7,7 @@ eval "$(pyenv virtualenv-init -)"
 
 pyenv deactivate || true
 pyenv activate nuitka
-pip-compile nuitka-requirements.in
+pip-compile --allow-unsafe --generate-hashes nuitka-requirements.in
 pip-sync nuitka-requirements.txt ../proc_wrapper-requirements.txt
 
 VERSION=`awk '/^version = "[^"]+"/ { print $3  }' ../pyproject.toml  | sed 's/\"//g'`

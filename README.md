@@ -184,17 +184,11 @@ Secrets Manager and extract them with jsonpath-ng, for example.
 
 Compared to executables built by PyInstaller (see below), they start up faster,
 and most likely are more efficient at runtime.
-However, they cannot be executed directly inside a Docker container. Instead, a
-separate extraction step must be performed at Docker build time:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0/bin/nuitka/linux-amd64/5.0.0/proc_wrapper.bin -O proc_wrapper_app_image \
-      && chmod +x proc_wrapper_app_image \
-      && ./proc_wrapper_app_image --appimage-extract \
-      && rm ./proc_wrapper_app_image
+To download and run the wrapper:
 
-Then to run the wrapper:
-
-    ENTRYPOINT ["squashfs-root/proc_wrapper.bin"]
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/nuitka/linux-amd64/5.0.1/proc_wrapper.bin
+    ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
 [Dockerfile](tests/integration/nuitka_executable/docker_context_linux_amd64/Dockerfile) for a known working environment.

@@ -16,4 +16,4 @@ cp "$INTEGRATION_DIR/common.env" "$CONTEXT_DIR/"
 cp "$INTEGRATION_DIR/secret.env" "$CONTEXT_DIR/"
 docker build -t $IMAGE_NAME "$SCRIPT_DIR/docker_context_linux_amd64"
 export PROC_WRAPPER_TASK_COMMAND='echo "nuitka linux-amd64 executable passed!"'
-docker run --rm -e PROC_WRAPPER_TASK_COMMAND $IMAGE_NAME
+docker run --rm -e PROC_WRAPPER_LOG_LEVEL=DEBUG -e PROC_WRAPPER_TASK_COMMAND $IMAGE_NAME
