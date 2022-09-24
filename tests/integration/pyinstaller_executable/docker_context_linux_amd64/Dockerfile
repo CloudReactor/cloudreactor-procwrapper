@@ -18,6 +18,6 @@ WORKDIR /home/appuser
 
 COPY --chown=appuser:appuser common.env .
 COPY --chown=appuser:appuser secret.env .
-COPY --chown=appuser:appuser proc_wrapper .
+COPY --chown=appuser:appuser proc_wrapper.bin .
 
-ENTRYPOINT ["./proc_wrapper", "-e", "common.env", "-e", "secret.env" ]
+ENTRYPOINT ["./proc_wrapper.bin", "-e", "common.env", "-e", "secret.env" ]

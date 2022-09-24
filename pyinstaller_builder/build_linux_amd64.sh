@@ -19,7 +19,7 @@ TEMP_CONTAINER_NAME="$IMAGE_NAME-temp"
 
 docker rm $TEMP_CONTAINER_NAME || true
 docker create --name $TEMP_CONTAINER_NAME $IMAGE_NAME
-docker cp $TEMP_CONTAINER_NAME:/root/app/dist/proc_wrapper $DEST_DIR
+docker cp $TEMP_CONTAINER_NAME:/root/app/dist/proc_wrapper $DEST_DIR/proc_wrapper.bin
 
 docker rm $TEMP_CONTAINER_NAME
 
