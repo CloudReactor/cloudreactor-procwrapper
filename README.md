@@ -173,7 +173,7 @@ an auto-created Task, it must have at least the Developer access level.
 
 ## Installation
 
-### In Linux/AMD64 only
+### Nuitka
 
 Standalone executables built by
 [nuitka](https://nuitka.net/index.html)
@@ -185,33 +185,66 @@ Secrets Manager and extract them with jsonpath-ng, for example.
 Compared to executables built by PyInstaller (see below), they start up faster,
 and most likely are more efficient at runtime.
 
-To download and run the wrapper:
+#### RHEL or derivatives
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/nuitka/linux-amd64/5.0.1/proc_wrapper.bin
+To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
+
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/nuitka/al2/5.0.1/proc_wrapper.bin
+    ENTRYPOINT ["proc_wrapper.bin"]
+
+Example Dockerfiles of known working environments are available for
+[Amazon Linux 2](tests/integration/nuitka_executable/docker_context_al2_amd64/)
+and
+[Fedora](tests/integration/nuitka_executable/docker_context_al2_amd64/Dockerfile).
+
+Fedora 27 or later are supported.
+
+#### Debian based systems
+
+On a Debian based (including Ubuntu) machine:
+
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/nuitka/debian-amd64/5.0.1/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
-[Dockerfile](tests/integration/nuitka_executable/docker_context_linux_amd64/Dockerfile) for a known working environment.
+[Dockerfile](tests/integration/nuitka_executable/docker_context_debian_amd64/Dockerfile) for a known working Debian environment.
 
-### In a Linux/AMD64 or Windows 64 environment
+Debian 10 (Buster) or later are supported.
+
+### PyInstaller
 
 Standalone executables built by [PyInstaller](https://www.pyinstaller.org/) for 64-bit Linux and Windows are available, located in `bin/pyinstaller`.
 These executables bundle
 python so you don't need to have python installed on your machine. They also
 bundle all optional library dependencies so you can fetch secrets from AWS
 Secrets Manager and extract them with jsonpath-ng, for example. Compared to
-executables built by nuitka, they start up slower but are able to run directly
-in a Docker container without extraction.
+executables built by nuitka, they start up slower but might be more reliable.
 
-On a debian buster machine, the following packages (with known supported versions)
-must be installed to run :
+#### RHEL or derivatives
 
-      openssl=1.1.1d-0+deb10u5
-      libexpat1=2.2.6-2+deb10u1
-      ca-certificates=20200601~deb10u2
+To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
+
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/pyinstaller/al2/5.0.1/proc_wrapper.bin
+    ENTRYPOINT ["proc_wrapper.bin"]
+
+Example Dockerfiles of known working environments are available for
+[Amazon Linux 2](tests/integration/pyinstaller_executable/docker_context_al2_amd64/)
+and
+[Fedora](tests/integration/pyinstaller_executable/docker_context_al2_amd64/Dockerfile).
+
+Fedora 27 or later are supported.
+
+#### Debian based machines
+
+On a Debian based (including Ubuntu) machine:
+
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/pyinstaller/debian-amd64/5.0.1/proc_wrapper.bin
+    ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
-[Dockerfile](tests/integration/pyinstaller_executable/docker_context_linux_amd64/Dockerfile) for a known working environment.
+[Dockerfile](tests/integration/pyinstaller_executable/docker_context_debian_amd64/Dockerfile) for a known working Debian environment.
+
+Debian 10 (Buster) or later are supported.
 
 Special thanks to
 [wine](https://www.winehq.org/) and

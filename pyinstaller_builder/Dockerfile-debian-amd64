@@ -1,0 +1,43 @@
+FROM python:3.10.7-slim-buster
+
+LABEL maintainer="jeff@cloudreactor.io"
+
+# Based on https://github.com/cdrx/docker-pyinstaller/blob/master/Dockerfile-py3-amd64
+RUN \
+    set -x \
+    # update system
+    && apt-get update \
+    # install requirements
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        wget \
+        git \
+        libbz2-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        openssl \
+        zlib1g-dev \
+        libffi-dev \
+        #optional libraries
+        libgdbm-dev \
+        #libgdbm3 \
+        uuid-dev
+        # UPX does not seem to reduce size
+        # upx
+
+WORKDIR /root/app
+RUN pip install --no-input --no-cache-dir --upgrade pip==22.2.2
+
+COPY proc_wrapper-requirements.txt .
+
+RUN pip install -r proc_wrapper-requirements.txt
+RUN pip install pyinstaller==5.4.1
+
+COPY proc_wrapper ./proc_wrapper
+
+RUN pyinstaller -F --name proc_wrapper --noupx --clean proc_wrapper/__main__.py
+
+ENTRYPOINT ["ls", "-la", "dist/proc_wrapper"]
