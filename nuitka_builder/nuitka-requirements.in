@@ -1,3 +1,4 @@
--c ../proc_wrapper-requirements.txt
+-c proc_wrapper-requirements.txt
 nuitka>=1.0.7
 ordered-set>=4.1.0
+zstandard>=0.18.0

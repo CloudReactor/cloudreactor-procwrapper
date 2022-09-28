@@ -1,0 +1,36 @@
+FROM amazonlinux:2.0.20220805.0
+
+LABEL maintainer="jeff@cloudreactor.io"
+
+RUN yum install -y --setopt=skip_missing_names_on_install=False shadow-utils openssl binutils glibc ca-certificates curl wget python3.7 python3-pip python3-devel gzip tar gcc
+
+WORKDIR /tmp
+RUN wget https://github.com/NixOS/patchelf/releases/download/0.15.0/patchelf-0.15.0-x86_64.tar.gz
+RUN gzip -d patchelf-0.15.0-x86_64.tar.gz
+RUN tar xvf patchelf-0.15.0-x86_64.tar
+RUN cp bin/patchelf /usr/bin
+
+RUN groupadd appuser && useradd -g appuser --create-home appuser
+USER appuser
+WORKDIR /home/appuser
+
+RUN pip3 install --no-input --no-cache-dir --upgrade pip==22.1
+
+RUN pip3 install pip-tools==6.6.1
+
+COPY nuitka_builder/nuitka-requirements.in .
+COPY proc_wrapper-requirements.txt .
+
+#RUN export PATH="$PATH:/home/appuser/.local/bin"
+
+RUN /home/appuser/.local/bin/pip-compile --generate-hashes nuitka-requirements.in --output-file nuikta-requirements.txt
+COPY proc_wrapper-requirements.txt .
+
+RUN /home/appuser/.local/bin/pip-sync proc_wrapper-requirements.txt nuikta-requirements.txt
+
+COPY proc_wrapper ./proc_wrapper
+
+RUN python3 -m nuitka --standalone --onefile \
+  --assume-yes-for-downloads -o proc_wrapper.bin proc_wrapper/__main__.py
+
+ENTRYPOINT ["ls", "-la", "proc_wrapper.bin"]

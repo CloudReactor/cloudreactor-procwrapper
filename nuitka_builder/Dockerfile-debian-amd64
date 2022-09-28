@@ -1,0 +1,37 @@
+FROM python:3.10.7-buster
+
+LABEL maintainer="jeff@cloudreactor.io"
+
+RUN \
+    set -x \
+    # update system
+    && apt-get update \
+    # install requirements
+    && apt-get install -y --no-install-recommends \
+    patchelf
+
+
+WORKDIR /root/app
+RUN pip install --no-input --no-cache-dir --upgrade pip==22.1
+
+
+RUN groupadd appuser && useradd -g appuser --create-home appuser
+USER appuser
+WORKDIR /home/appuser
+
+RUN pip install pip-tools==6.6.1
+
+COPY nuitka_builder/nuitka-requirements.in .
+COPY proc_wrapper-requirements.txt .
+
+RUN /home/appuser/.local/bin/pip-compile --generate-hashes nuitka-requirements.in --output-file nuikta-requirements.txt
+COPY proc_wrapper-requirements.txt .
+
+RUN /home/appuser/.local/bin/pip-sync proc_wrapper-requirements.txt nuikta-requirements.txt
+
+COPY proc_wrapper ./proc_wrapper
+
+RUN python3 -m nuitka --standalone --onefile \
+  --assume-yes-for-downloads -o proc_wrapper.bin proc_wrapper/__main__.py
+
+ENTRYPOINT ["ls", "-la", "proc_wrapper.bin"]
