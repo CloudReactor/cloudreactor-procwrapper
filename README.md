@@ -189,7 +189,7 @@ and most likely are more efficient at runtime.
 
 To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/nuitka/al2/5.0.1/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/nuitka/al2/5.0.2/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 Example Dockerfiles of known working environments are available for
@@ -203,7 +203,7 @@ Fedora 27 or later are supported.
 
 On a Debian based (including Ubuntu) machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/nuitka/debian-amd64/5.0.1/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/nuitka/debian-amd64/5.0.2/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
@@ -224,7 +224,7 @@ executables built by nuitka, they start up slower but might be more reliable.
 
 To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/pyinstaller/al2/5.0.1/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/pyinstaller/al2/5.0.2/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 Example Dockerfiles of known working environments are available for
@@ -238,7 +238,7 @@ Fedora 27 or later are supported.
 
 On a Debian based (including Ubuntu) machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.1/bin/pyinstaller/debian-amd64/5.0.1/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/pyinstaller/debian-amd64/5.0.2/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
