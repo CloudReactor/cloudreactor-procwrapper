@@ -941,7 +941,14 @@ corresponding value will be set to the Base-64 encoded value.
 
 If you're deploying a python function using AWS Lambda, note that boto3 is
 already included in the available packages, so there's no need to include it
-(unless the bundled version isn't compatible).
+(unless the bundled version isn't compatible). Also we strongly encourage you
+to add:
+
+    logging.getLogger("botocore").setLevel(logging.INFO)
+
+to your code if you are using proc_wrapper for secrets resolution. This
+prevent secrets from Secrets Manager from being leaked. For details, see this
+[issue](https://github.com/boto/boto3/issues/2292).
 
 ### Secret Tranformation
 
