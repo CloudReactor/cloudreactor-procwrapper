@@ -20,11 +20,15 @@ if not isinstance(numeric_log_level, int):
     logging.warning(
         f"Invalid log level: {log_level}, defaulting to {DEFAULT_LOG_LEVEL}"
     )
-    numeric_log_level = getattr(logging, DEFAULT_LOG_LEVEL, None)
+    numeric_log_level = getattr(logging, DEFAULT_LOG_LEVEL, logging.INFO)
 
 logging.basicConfig(
     level=numeric_log_level,
     format="PROC_WRAPPER: %(asctime)s %(levelname)s: %(message)s",
 )
+
+if (numeric_log_level is None) or (numeric_log_level < logging.INFO):
+    # Disable botocore DEBUG logging because it leaks secrets
+    logging.getLogger("botocore").setLevel(logging.INFO)
 
 ProcWrapper(params=main_args).run()

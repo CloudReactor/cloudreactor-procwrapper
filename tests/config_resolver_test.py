@@ -122,6 +122,9 @@ def put_aws_s3_file(
 
 
 def test_env_in_aws_secrets_manager():
+    # Disable botocore DEBUG logging because it leaks secrets
+    logging.getLogger("botocore").setLevel(logging.INFO)
+
     env_override = RESOLVE_ENV_BASE_ENV.copy()
 
     params = ConfigResolverParams()
