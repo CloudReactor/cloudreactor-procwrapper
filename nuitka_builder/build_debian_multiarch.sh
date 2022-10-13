@@ -54,6 +54,8 @@ docker buildx build \
 
 
 # below can be cleaned up
+# local docker does not support manifest lists yet so this
+# loads each architecture into the local context individually with a different tag
 
 AMD64_IMAGE_NAME="$IMAGE_NAME:amd64"
 docker run -ti --rm $AMD64_IMAGE_NAME
