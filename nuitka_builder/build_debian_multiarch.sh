@@ -43,6 +43,7 @@ docker buildx build \
     --file "$SCRIPT_DIR/Dockerfile-debian" \
     $BASE_DIR
 
+
 # push both platforms as one image manifest list
 #docker buildx build \
 #    --platform linux/arm64,linux/amd64 \
@@ -52,20 +53,29 @@ docker buildx build \
 #    $BASE_DIR
 
 
-# remove builder
-# docker buildx rm debian-builder
+# below can be cleaned up
 
-#docker run -ti --rm $IMAGE_NAME
-#
-#TEMP_CONTAINER_NAME="$IMAGE_NAME-temp"
-#
-#docker rm $TEMP_CONTAINER_NAME | true
-#docker create --name $TEMP_CONTAINER_NAME $IMAGE_NAME
-#
-#DEST_DIR="$BASE_DIR/bin/nuitka/debian-amd64/$VERSION"
-#
-#mkdir -p $DEST_DIR
-#
-#docker cp $TEMP_CONTAINER_NAME:/home/appuser/proc_wrapper.bin $DEST_DIR
-#
-#docker rm $TEMP_CONTAINER_NAME
+AMD64_IMAGE_NAME="$IMAGE_NAME:amd64"
+docker run -ti --rm $AMD64_IMAGE_NAME
+TEMP_CONTAINER_NAME="$IMAGE_NAME-amd64-temp"
+docker rm $TEMP_CONTAINER_NAME | true
+docker create --name $TEMP_CONTAINER_NAME $AMD64_IMAGE_NAME
+DEST_DIR="$BASE_DIR/bin/nuitka/debian-amd64/$VERSION"
+mkdir -p $DEST_DIR
+docker cp $TEMP_CONTAINER_NAME:/home/appuser/proc_wrapper.bin $DEST_DIR
+
+echo "removing container $TEMP_CONTAINER_NAME"
+docker rm $TEMP_CONTAINER_NAME
+
+ARM64_IMAGE_NAME="$IMAGE_NAME:arm64"
+docker run -ti --rm $ARM64_IMAGE_NAME
+TEMP_CONTAINER_NAME="$IMAGE_NAME-arm64-temp"
+docker rm $TEMP_CONTAINER_NAME | true
+docker create --name $TEMP_CONTAINER_NAME $ARM64_IMAGE_NAME
+DEST_DIR="$BASE_DIR/bin/nuitka/debian-arm64/$VERSION"
+mkdir -p $DEST_DIR
+docker cp $TEMP_CONTAINER_NAME:/home/appuser/proc_wrapper.bin $DEST_DIR
+
+echo "removing container $TEMP_CONTAINER_NAME"
+docker rm $TEMP_CONTAINER_NAME
+
