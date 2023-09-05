@@ -11,6 +11,7 @@ from .common_utils import safe_get, string_to_int
 EXECUTION_METHOD_TYPE_UNKNOWN = "Unknown"
 EXECUTION_METHOD_TYPE_AWS_ECS = "AWS ECS"
 EXECUTION_METHOD_TYPE_AWS_LAMBDA = "AWS Lambda"
+EXECUTION_METHOD_TYPE_AWS_CODEBUILD = "AWS CodeBuild"
 
 INFRASTRUCTURE_TYPE_AWS = "AWS"
 
@@ -55,6 +56,16 @@ class RuntimeMetadataFetcher:
         return None
 
 
+def populate_dict_from_env(
+    dest: Dict[str, Any], env: Mapping[str, str], attrs: list[str], env_prefix: str = ""
+) -> Dict[str, Any]:
+    for attr in attrs:
+        env_name = env_prefix + attr.upper()
+        dest[attr] = env.get(env_name)
+
+    return dest
+
+
 class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     AWS_ECS_FARGATE_CONTAINER_PROPERTY_MAPPINGS = {
         "DockerId": "docker_id",
@@ -83,6 +94,35 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "app_package_name",
     ]
 
+    AWS_CODEBUILD_EXECUTION_METHOD_CAPABILITY_ATTRIBUTES = [
+        "build_id" "build_arn",
+        "build_image",
+        "batch_identifier",
+        "source_version",
+        "source_repo_url",
+        "kms_key_id",
+    ]
+
+    AWS_CODEBUILD_EXECUTION_METHOD_ATTRIBUTES = [
+        "build_number",
+        "batch_build_number",
+        "initiator",
+        "public_build_url",
+        "resolved_source_version",
+        "src_dir",
+        "start_time",
+    ]
+
+    AWS_CODEBUILD_WEBHOOK_ATTRIBUTES = [
+        "actor_account_id",
+        "base_ref",
+        "event",
+        "merge_commit",
+        "prev_commit",
+        "head_ref",
+        "trigger",
+    ]
+
     def __init__(self):
         self.runtime_metadata: Optional[RuntimeMetadata] = None
         self.fetched_at: Optional[float] = None
@@ -105,6 +145,9 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             self.runtime_metadata = self.fetch_aws_lambda_metadata(
                 env=env, context=context
             )
+
+        if not self.runtime_metadata:
+            self.runtime_metadata = self.fetch_aws_codebuild_metadata(env=env)
 
         self.fetched_at = time.time()
 
@@ -385,7 +428,7 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         if not env.get("LAMBDA_TASK_ROOT"):
             return None
 
-        _logger.debug("AWS Lambda environment detected")
+        _logger.info("AWS Lambda environment detected")
 
         task_configuration = TaskConfiguration(
             execution_method_type=EXECUTION_METHOD_TYPE_AWS_LAMBDA
@@ -503,3 +546,89 @@ ProcWrapper.
 """
         )
         return None
+
+    def fetch_aws_codebuild_metadata(
+        self, env: Mapping[str, str]
+    ) -> Optional[RuntimeMetadata]:
+        # https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
+
+        build_arn = env.get("CODEBUILD_BUILD_ARN")
+
+        if not build_arn:
+            return None
+
+        _logger.info("AWS CodeBuild environment detected")
+
+        task_configuration = TaskConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_CODEBUILD
+        )
+        task_execution_configuration = TaskExecutionConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_CODEBUILD
+        )
+
+        common_props = populate_dict_from_env(
+            dest={},
+            env=env,
+            attrs=self.AWS_CODEBUILD_EXECUTION_METHOD_CAPABILITY_ATTRIBUTES,
+            env_prefix="CODEBUILD_",
+        )
+
+        execution_method_capability: Dict[str, Any] = {
+            **common_props,
+        }
+
+        execution_method = populate_dict_from_env(
+            dest=common_props.copy(),
+            env=env,
+            attrs=self.AWS_CODEBUILD_EXECUTION_METHOD_ATTRIBUTES,
+            env_prefix="CODEBUILD_",
+        )
+
+        webhook = populate_dict_from_env(
+            dest={},
+            env=env,
+            attrs=self.AWS_CODEBUILD_WEBHOOK_ATTRIBUTES,
+            env_prefix="CODEBUILD_WEBHOOK_",
+        )
+
+        execution_method["webhook"] = webhook
+
+        aws_region = env.get("AWS_REGION")
+
+        aws_props: Dict[str, Any] = {
+            "network": {
+                "region": aws_region,
+            },
+        }
+
+        task_infrastructure_settings = aws_props.copy()
+
+        log_stream = env.get("CODEBUILD_LOG_PATH")
+
+        if log_stream:
+            aws_props["logging"] = {
+                "driver": "awslogs",
+                "options": {
+                    "region": aws_region,
+                    "stream": log_stream,
+                },
+            }
+
+        derived = {"aws": aws_props}
+
+        task_configuration.execution_method_capability_details = (
+            execution_method_capability
+        )
+        task_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
+        task_configuration.infrastructure_settings = task_infrastructure_settings
+
+        task_execution_configuration.execution_method_details = execution_method
+        task_execution_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
+        task_execution_configuration.infrastructure_settings = aws_props
+
+        return RuntimeMetadata(
+            task_execution_configuration=task_execution_configuration,
+            task_configuration=task_configuration,
+            raw={},
+            derived=derived,
+        )

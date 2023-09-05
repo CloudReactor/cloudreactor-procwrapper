@@ -8,6 +8,7 @@ from .test_commons import (
     TEST_ECS_TASK_METADATA,
     FakeAwsLambdaContext,
     make_capturing_handler,
+    make_fake_aws_codebuild_env,
     make_fake_aws_lambda_env,
 )
 
@@ -172,3 +173,44 @@ def test_aws_lambda_runtime_metadata():
     cognito = em["cognito_identity"]
     assert cognito["id"] == context.identity.cognito_identity_id
     assert cognito["pool_id"] == context.identity.cognito_identity_pool_id
+
+
+def test_aws_codebuild_runtime_metadata():
+    env = make_fake_aws_codebuild_env()
+
+    fetcher = DefaultRuntimeMetadataFetcher()
+    metadata = fetcher.fetch(env=env)
+
+    assert metadata is not None
+
+    tc = metadata.task_configuration
+    tec = metadata.task_execution_configuration
+
+    em = tec.execution_method_details
+    emc = tc.execution_method_capability_details
+
+    for t in [tc, tec]:
+        assert t.execution_method_type == "AWS CodeBuild"
+        assert t.infrastructure_type == "AWS"
+
+    for h in [em, emc]:
+        assert h["runtime_id"] == "AWS_Lambda_python3.9"
+        assert h["function_name"] == "do_it_now"
+        assert h["function_version"] == "3.3.7"
+        assert h["init_type"] == "on-demand"
+        assert h["dotnet_prejit"] is None
+        assert h["function_memory_mb"] == 4096
+        assert h["time_zone_name"] == "America/Los_Angeles"
+        assert (
+            h["function_arn"] == "arn:aws:lambda:us-east-2:123456789012:function:funky"
+        )
+
+    for aws in [tc.infrastructure_settings, tec.infrastructure_settings]:
+        network = aws["network"]
+        assert network["region"] == "us-east-2"
+
+        logging_info = aws["logging"]
+        assert logging_info["driver"] == "awslogs"
+        logging_options = logging_info["options"]
+        assert logging_options["group"] == "muh_log_group"
+        assert logging_options["stream"] == "colorado-river"

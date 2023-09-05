@@ -176,3 +176,19 @@ def make_fake_aws_lambda_env() -> Mapping[str, str]:
         "_X_AMZN_TRACE_ID": "894diemsggt",
         "TZ": "America/Los_Angeles",
     }
+
+
+def make_fake_aws_codebuild_env() -> Mapping[str, str]:
+    return {
+        "LAMBDA_TASK_ROOT": "/root/lambda/task",
+        "AWS_REGION": "us-east-2",
+        "AWS_EXECUTION_ENV": "AWS_Lambda_python3.9",
+        "AWS_LAMBDA_FUNCTION_NAME": "do_it_now",
+        "AWS_LAMBDA_FUNCTION_MEMORY_SIZE": "4096",
+        "AWS_LAMBDA_FUNCTION_VERSION": "3.3.7",
+        "AWS_LAMBDA_INITIALIZATION_TYPE": "on-demand",
+        "AWS_LAMBDA_LOG_GROUP_NAME": "muh_log_group",
+        "AWS_LAMBDA_LOG_STREAM_NAME": "colorado-river",
+        "_X_AMZN_TRACE_ID": "894diemsggt",
+        "TZ": "America/Los_Angeles",
+    }
