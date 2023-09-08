@@ -107,6 +107,7 @@ class ProcWrapper:
             HTTPStatus.SERVICE_UNAVAILABLE.value,
             HTTPStatus.BAD_GATEWAY.value,
             HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            HTTPStatus.GATEWAY_TIMEOUT.value,
         ]
     )
 
@@ -1508,7 +1509,6 @@ class ProcWrapper:
                     error_message = f"Endpoint temporarily not available, status code = {status_code}"
                     _logger.warning(error_message)
 
-                    self._report_error(error_message, api_request_data)
                 elif status_code == 409:
                     if is_task_execution_creation_request:
                         if not self.was_conflict:
@@ -1540,7 +1540,6 @@ class ProcWrapper:
                     self.last_api_request_failed_at = time.time()
 
                     error_message = f"Got error response code = {status_code}, body = '{response_body}'"
-                    _logger.error(error_message)
                     self._report_error(error_message, api_request_data)
 
                     if self.params.prevent_offline_execution:
@@ -1595,7 +1594,10 @@ class ProcWrapper:
             )
             self._exit_or_raise(exit_code)
 
-        _logger.error("Exhausted retry timeout, not sending any more API requests.")
+        self._report_error(
+            "Exhausted retry timeout, not sending any more API requests.",
+            api_request_data,
+        )
         return None
 
     def _refresh_api_server_retries_exhausted(self) -> bool:
