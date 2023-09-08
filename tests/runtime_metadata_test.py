@@ -8,6 +8,7 @@ from .test_commons import (
     TEST_ECS_TASK_METADATA,
     FakeAwsLambdaContext,
     make_capturing_handler,
+    make_fake_aws_codebuild_env,
     make_fake_aws_lambda_env,
 )
 
@@ -172,3 +173,71 @@ def test_aws_lambda_runtime_metadata():
     cognito = em["cognito_identity"]
     assert cognito["id"] == context.identity.cognito_identity_id
     assert cognito["pool_id"] == context.identity.cognito_identity_pool_id
+
+
+def test_aws_codebuild_runtime_metadata():
+    env = make_fake_aws_codebuild_env()
+
+    fetcher = DefaultRuntimeMetadataFetcher()
+    metadata = fetcher.fetch(env=env)
+
+    assert metadata is not None
+
+    tc = metadata.task_configuration
+    tec = metadata.task_execution_configuration
+
+    em = tec.execution_method_details
+    emc = tc.execution_method_capability_details
+
+    for t in [tc, tec]:
+        assert t.execution_method_type == "AWS CodeBuild"
+        assert t.infrastructure_type == "AWS"
+
+    for h in [em, emc]:
+        assert h["build_image"] == "aws/codebuild/standard:2.0"
+        assert h["kms_key_id"] == "arn:aws:kms:us-east-1:123456789012:key/key-ID"
+        assert h["source_repo_url"] == "https://github.com/aws/codebuild-demo-project"
+
+    assert (
+        em["build_id"] == "codebuild-demo-project:b1e6661e-e4f2-4156-9ab9-82a19EXAMPLE"
+    )
+    assert (
+        em["build_arn"]
+        == "arn:aws:codebuild:us-east-1:123456789012:build/codebuild-demo-project:b1e6661e-e4f2-4156-9ab9-82a19EXAMPLE"
+    )
+    assert em["batch_build_identifier"] == "CBBBI"
+    assert em["build_number"] == "25"
+    assert em["initiator"] == "codepipline/codebuild-demo-project"
+    assert em["resolved_source_version"] == "3d6151b3ebc9ba70b83de319db596d7eda56e517"
+    assert em["source_version"] == "arn:aws:s3:::bucket/pipeline/App/OGgJCVJ.zip"
+    assert (
+        em["public_build_url"] == "https://public.build.aws.com/codebuild-demo-project"
+    )
+
+    webhook = em["webhook"]
+    assert webhook["actor_account_id"] == "123456789012"
+    assert webhook["base_ref"] == "CBWHBR"
+    assert webhook["event"] == "CBWHE"
+    assert webhook["merge_commit"] == "CBWHMC"
+    assert webhook["prev_commit"] == "CBWHPC"
+    assert webhook["head_ref"] == "CBWHHR"
+    assert webhook["trigger"] == "pr/12345"
+
+    assert (
+        emc["build_arn"]
+        == "arn:aws:codebuild:us-east-1:123456789012:build/codebuild-demo-project"
+    )
+
+    for aws in [tc.infrastructure_settings, tec.infrastructure_settings]:
+        network = aws["network"]
+        assert network["region"] == "us-east-1"
+
+        logging_info = aws["logging"]
+        assert logging_info["driver"] == "awslogs"
+        logging_options = logging_info["options"]
+        assert logging_options["region"] == "us-east-1"
+
+    assert (
+        tec.infrastructure_settings["logging"]["options"]["stream"]
+        == "40b92e01-706b-422a-9305-8bdb16f7c269"
+    )

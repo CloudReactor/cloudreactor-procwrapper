@@ -788,6 +788,7 @@ class ProcWrapperParams(ConfigResolverParams):
         _logger.info(f"Passive task = {self.task_is_passive}")
 
         _logger.info(f"Task instance metadata = {self.task_instance_metadata}")
+        _logger.info(f"Send runtime metadata = {self.send_runtime_metadata}")
 
         _logger.debug(f"Task is a service = {self.service}")
         _logger.debug(f"Max concurrency = {self.max_concurrency}")
