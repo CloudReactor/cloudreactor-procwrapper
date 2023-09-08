@@ -164,8 +164,8 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         )
 
         if container_metadata_url:
-            parsed_task_metadata: Optional[dict[str, Any]] = None
-            parsed_container_metadata: Optional[dict[str, Any]] = None
+            parsed_task_metadata: Optional[Dict[str, Any]] = None
+            parsed_container_metadata: Optional[Dict[str, Any]] = None
 
             task_metadata_url = f"{container_metadata_url}/task"
 
