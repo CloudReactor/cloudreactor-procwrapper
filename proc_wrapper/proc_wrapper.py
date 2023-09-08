@@ -1574,10 +1574,8 @@ class ProcWrapper:
                 if isinstance(ex, URLError):
                     error_message = f"URL error: {ex}"
                     api_request_data["error"] = {"reason": str(ex.reason)}
-                    _logger.error(error_message)
                 else:
                     error_message = f"Unhandled exception: {ex}"
-                    _logger.exception(error_message)
 
                 self._report_error(error_message, api_request_data)
 
