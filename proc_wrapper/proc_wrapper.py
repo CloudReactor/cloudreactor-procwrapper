@@ -1683,7 +1683,6 @@ class ProcWrapper:
             return False
 
         payload = {
-            "access_token": self.params.rollbar_access_token,
             "data": {
                 "environment": self.params.deployment or "Unknown",
                 "body": {
@@ -1707,15 +1706,19 @@ class ProcWrapper:
                     }
                 },
                 "level": level,
-                "server": {
-                    "host": self.hostname
-                    # Could put code version here
-                },
+                "timestamp": time.time(),
+                "code_version": self.params.task_version_signature,
+                "context": "proc_wrapper",
+                "server": {"host": self.hostname},
             },
         }
 
         request_body = json.dumps(payload).encode("utf-8")
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Rollbar-Access-Token": self.params.rollbar_access_token,
+        }
         req = Request(
             "https://api.rollbar.com/api/1/item/",
             data=request_body,
