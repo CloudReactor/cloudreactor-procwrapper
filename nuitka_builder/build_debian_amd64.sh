@@ -13,7 +13,7 @@ mkdir -p $DEST_DIR
 
 IMAGE_NAME=cloudreactor-proc-wrapper-nuitka-debian-amd64
 
-docker build -f "$SCRIPT_DIR/Dockerfile-debian-amd64" -t $IMAGE_NAME $BASE_DIR
+docker build -f "$SCRIPT_DIR/Dockerfile-debian" -t $IMAGE_NAME $BASE_DIR
 docker run -ti --rm $IMAGE_NAME
 
 TEMP_CONTAINER_NAME="$IMAGE_NAME-temp"
