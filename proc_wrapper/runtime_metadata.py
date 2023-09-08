@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import time
@@ -57,7 +58,7 @@ class RuntimeMetadataFetcher:
 
 
 def populate_dict_from_env(
-    dest: Dict[str, Any], env: Mapping[str, str], attrs: list[str], env_prefix: str = ""
+    dest: Dict[str, Any], env: Mapping[str, str], attrs: List[str], env_prefix: str = ""
 ) -> Dict[str, Any]:
     for attr in attrs:
         env_name = env_prefix + attr.upper()
@@ -95,7 +96,8 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     ]
 
     AWS_CODEBUILD_EXECUTION_METHOD_CAPABILITY_ATTRIBUTES = [
-        "build_id" "build_arn",
+        "build_id",
+        "build_arn",
         "build_image",
         "batch_identifier",
         "source_version",
@@ -105,7 +107,7 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
     AWS_CODEBUILD_EXECUTION_METHOD_ATTRIBUTES = [
         "build_number",
-        "batch_build_number",
+        "batch_build_identifier",
         "initiator",
         "public_build_url",
         "resolved_source_version",
@@ -577,6 +579,15 @@ ProcWrapper.
             **common_props,
         }
 
+        build_arn = common_props.get("build_arn")
+
+        #  Strip the build ID from the full ARN for a generic ARN that can
+        #  be used to start the build again.
+        if build_arn:
+            last_colon_index = build_arn.rfind(":")
+            if last_colon_index > 0:
+                execution_method_capability["build_arn"] = build_arn[0:last_colon_index]
+
         execution_method = populate_dict_from_env(
             dest=common_props.copy(),
             env=env,
@@ -601,8 +612,6 @@ ProcWrapper.
             },
         }
 
-        task_infrastructure_settings = aws_props.copy()
-
         log_stream = env.get("CODEBUILD_LOG_PATH")
 
         if log_stream:
@@ -610,9 +619,12 @@ ProcWrapper.
                 "driver": "awslogs",
                 "options": {
                     "region": aws_region,
-                    "stream": log_stream,
                 },
             }
+
+        task_infrastructure_settings = copy.deepcopy(aws_props)
+
+        aws_props["logging"]["options"]["stream"] = log_stream
 
         derived = {"aws": aws_props}
 

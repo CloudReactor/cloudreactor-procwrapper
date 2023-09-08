@@ -76,7 +76,6 @@ def transform_value(
     transform_expr_str: str,
     log_secrets: bool = False,
 ) -> Any:
-
     result: Any = None
 
     if transform_expr_str == SELF_TRANSFORM_VALUE:
