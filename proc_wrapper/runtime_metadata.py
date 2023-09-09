@@ -96,7 +96,6 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     ]
 
     AWS_CODEBUILD_EXECUTION_METHOD_CAPABILITY_ATTRIBUTES = [
-        "build_id",
         "build_arn",
         "build_image",
         "batch_identifier",
@@ -106,6 +105,7 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     ]
 
     AWS_CODEBUILD_EXECUTION_METHOD_ATTRIBUTES = [
+        "build_id",
         "build_number",
         "batch_build_identifier",
         "initiator",
