@@ -99,17 +99,16 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "build_arn",
         "build_image",
         "batch_identifier",
-        "source_version",
         "source_repo_url",
         "kms_key_id",
     ]
 
     AWS_CODEBUILD_EXECUTION_METHOD_ATTRIBUTES = [
         "build_id",
-        "build_number",
         "batch_build_identifier",
         "initiator",
         "public_build_url",
+        "source_version",
         "resolved_source_version",
         "src_dir",
         "start_time",
@@ -141,15 +140,16 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             )
             return self.runtime_metadata
 
-        self.runtime_metadata = self.fetch_ecs_container_metadata(env=env)
+        # Do this first for easier simulation
+        self.runtime_metadata = self.fetch_aws_codebuild_metadata(env=env)
+
+        if not self.runtime_metadata:
+            self.runtime_metadata = self.fetch_ecs_container_metadata(env=env)
 
         if not self.runtime_metadata:
             self.runtime_metadata = self.fetch_aws_lambda_metadata(
                 env=env, context=context
             )
-
-        if not self.runtime_metadata:
-            self.runtime_metadata = self.fetch_aws_codebuild_metadata(env=env)
 
         self.fetched_at = time.time()
 
@@ -594,6 +594,16 @@ ProcWrapper.
             attrs=self.AWS_CODEBUILD_EXECUTION_METHOD_ATTRIBUTES,
             env_prefix="CODEBUILD_",
         )
+
+        build_number_str = env.get("CODEBUILD_BUILD_NUMBER")
+
+        if build_number_str:
+            try:
+                execution_method["build_number"] = int(build_number_str)
+            except ValueError:
+                _logger.warning(
+                    f"Error parsing CODEBUILD_BUILD_NUMBER '{build_number_str}' as integer"
+                )
 
         webhook = populate_dict_from_env(
             dest={},
