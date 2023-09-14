@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -111,7 +112,6 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "source_version",
         "resolved_source_version",
         "src_dir",
-        "start_time",
     ]
 
     AWS_CODEBUILD_WEBHOOK_ATTRIBUTES = [
@@ -605,6 +605,18 @@ ProcWrapper.
                     f"Error parsing CODEBUILD_BUILD_NUMBER '{build_number_str}' as integer"
                 )
 
+        build_succeeding_str = env.get("CODEBUILD_BUILD_SUCCEEDING")
+
+        if build_succeeding_str is not None:
+            execution_method["build_succeeding"] = build_succeeding_str == "1"
+
+        start_time_str = env.get("CODEBUILD_START_TIME")
+
+        if start_time_str:
+            execution_method["start_time"] = datetime.fromtimestamp(
+                float(start_time_str) * 0.001
+            ).isoformat()
+
         webhook = populate_dict_from_env(
             dest={},
             env=env,
@@ -617,6 +629,7 @@ ProcWrapper.
         aws_region = env.get("AWS_REGION")
 
         aws_props: Dict[str, Any] = {
+            "region": aws_region,
             "network": {
                 "region": aws_region,
             },
@@ -634,7 +647,8 @@ ProcWrapper.
 
         task_infrastructure_settings = copy.deepcopy(aws_props)
 
-        aws_props["logging"]["options"]["stream"] = log_stream
+        if log_stream:
+            aws_props["logging"]["options"]["stream"] = log_stream
 
         derived = {"aws": aws_props}
 

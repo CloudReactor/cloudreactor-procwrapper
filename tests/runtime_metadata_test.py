@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pytest_httpserver import HTTPServer
 
 from proc_wrapper import DefaultRuntimeMetadataFetcher
@@ -213,6 +215,8 @@ def test_aws_codebuild_runtime_metadata():
     assert (
         em["public_build_url"] == "https://public.build.aws.com/codebuild-demo-project"
     )
+    assert em["build_succeeding"] is True
+    assert em["start_time"] == datetime.fromtimestamp(1693959305.402).isoformat()
 
     webhook = em["webhook"]
     assert webhook["actor_account_id"] == "123456789012"
