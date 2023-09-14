@@ -367,15 +367,16 @@ class ProcWrapper:
         )
 
         if runtime_metadata:
-            rm_config = runtime_metadata.task_configuration
-            infra_settings = rm_config.infrastructure_settings
-            em_details = rm_config.execution_method_capability_details
-
-            if not for_task:
+            if for_task:
+                rm_config = runtime_metadata.task_configuration
+                em_details = rm_config.execution_method_capability_details
+            else:
                 rm_config = runtime_metadata.task_execution_configuration
                 em_details = (
                     runtime_metadata.task_execution_configuration.execution_method_details
                 )
+
+            infra_settings = rm_config.infrastructure_settings
 
         if override_props:
             em_details = best_effort_deep_merge(
