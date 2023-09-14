@@ -1037,8 +1037,9 @@ class ProcWrapperParams(ConfigResolverParams):
                     string_to_bool(env.get("PROC_WRAPPER_TASK_IS_PASSIVE")),
                     auto_create_task_props.get("passive"),
                     args_forced_passive,
+                    self.task_is_passive,
                 )
-                or self.task_is_passive
+                or False
             )
 
             em_overrides_str = env.get("PROC_WRAPPER_EXECUTION_METHOD_PROPS")
