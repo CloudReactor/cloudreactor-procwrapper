@@ -191,7 +191,7 @@ def test_wrapped_mode_with_server(
 
         finished_at_str = urd["finished_at"]
         finished_at = datetime.fromisoformat(finished_at_str)
-        assert (datetime.now() - finished_at).seconds < 10
+        assert (datetime.utcnow() - finished_at).seconds < 10
 
 
 def callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
@@ -355,7 +355,7 @@ def test_embedded_mode_with_server(
     if last_app_heartbeat_at_override:
         assert (last_app_heartbeat_at_override - last_app_heartbeat_at).seconds <= 1
     else:
-        assert (datetime.now() - last_app_heartbeat_at).seconds < 10
+        assert (datetime.utcnow() - last_app_heartbeat_at).seconds < 10
 
 
 def callback_with_params_from_config(

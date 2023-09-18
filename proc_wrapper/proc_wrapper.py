@@ -288,7 +288,7 @@ class ProcWrapper:
             action = "timed out"
 
         task_name = self.task_name or self.task_uuid or "[Unnamed]"
-        now = datetime.now()
+        now = datetime.utcnow()
         now_ts = now.timestamp()
         max_attempts_str = (
             "infinity"
@@ -645,7 +645,7 @@ class ProcWrapper:
         _logger.debug(f"_update_status(), is_app_update = {is_app_update}")
 
         if is_app_update:
-            self.last_app_heartbeat_at = last_app_heartbeat_at or datetime.now()
+            self.last_app_heartbeat_at = last_app_heartbeat_at or datetime.utcnow()
 
         if self.offline_mode:
             return False
@@ -723,7 +723,7 @@ class ProcWrapper:
             timed_out_attempts=timed_out_attempts,
             exit_code=exit_code,
             pid=pid,
-            finished_at=datetime.now(),
+            finished_at=datetime.utcnow(),
         )
 
     def managed_call(self, fun, data: Any = None):
