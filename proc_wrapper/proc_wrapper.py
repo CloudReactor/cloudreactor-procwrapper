@@ -1150,7 +1150,7 @@ class ProcWrapper:
             if self.api_server_retries_exhausted:
                 error_message = "API Server not responding properly"
             elif not self.task_execution_uuid:
-                error_message = "Task Execution UUID not assigned"
+                error_message = "Failed to get permission to start Task"
 
             self._report_error(error_message, self.last_api_request_data)
 
