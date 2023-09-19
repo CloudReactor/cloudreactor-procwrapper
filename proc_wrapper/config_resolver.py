@@ -80,7 +80,8 @@ def transform_value(
 
     if transform_expr_str == SELF_TRANSFORM_VALUE:
         return parsed_value
-    elif transform_expr_str.startswith(JSON_PATH_TRANSFORM_PREFIX):
+
+    if transform_expr_str.startswith(JSON_PATH_TRANSFORM_PREFIX):
         try:
             import jsonpath_ng  # type: ignore
         except ImportError as import_error:
@@ -926,9 +927,11 @@ class ConfigResolver:
     ) -> Optional[Dict[str, Any]]:
         if format == FORMAT_DOTENV:
             return self.parse_dot_env(data_string)
-        elif format == FORMAT_JSON:
+
+        if format == FORMAT_JSON:
             return self.parse_json(data_string)
-        elif format == FORMAT_YAML:
+
+        if format == FORMAT_YAML:
             return self.parse_yaml(data_string)
 
         return None

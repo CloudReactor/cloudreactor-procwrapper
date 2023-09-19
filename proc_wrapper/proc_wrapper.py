@@ -256,8 +256,6 @@ class ProcWrapper:
 
             self.exit_handler_installed = True
 
-        return None
-
     def log_configuration(self, initial: bool = False) -> None:
         if initial:
             _logger.info(f"Wrapper version = {ProcWrapper.VERSION}")
