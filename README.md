@@ -42,12 +42,12 @@ them into the process environment (for command-lines) or configuration (for
 functions)
 * When used with the CloudReactor service:
   * Reports when a process/function starts and when it exits, along with the
-  exit code and runtime metadata (if running in AWS ECS or AWS Lambda)
+  exit code and runtime metadata (if running in AWS ECS, AWS Lambda, or AWS CodeBuild)
   * Sends heartbeats, optionally with status information like the number of
   items processed
   * Prevents too many concurrent executions
   * Stops execution when manually stopped in the CloudReactor dashboard
-  * Sends CloudReactor the data necessary to start the process / function if running in AWS ECS or AWS Lambda
+  * Sends CloudReactor the data necessary to start the process / function if running in AWS ECS, AWS Lambda, or AWS CodeBuild
 
 ## How it works
 
@@ -110,6 +110,7 @@ CloudReactor currently supports three Execution Methods:
 
 1) [AWS ECS (in Fargate)](https://aws.amazon.com/fargate/)
 2) [AWS Lambda](https://aws.amazon.com/lambda/)
+3) [AWS CodeBuild](https://aws.amazon.com/lambda/)
 3) Unknown
 
 If a Task is running in AWS ECS, CloudReactor is able to run additional
@@ -125,7 +126,7 @@ If a Task is running in AWS Lambda, CloudReactor is able to run additional
 Task Executions after the first run of the function.
 
 However, a Task may use the Unknown execution method if it is not running
-in AWS ECS or Lambda. If that is the case, CloudReactor won't be able to
+in AWS ECS, AWS Lambda, or AWS CodeBuild. If that is the case, CloudReactor won't be able to
 start the Task in the dashboard or as part of a Workflow,
 schedule the Task, or setup a service with the Task. But the advantage is
 that the Task code can be executed by any method available to you,
@@ -189,7 +190,7 @@ and most likely are more efficient at runtime.
 
 To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/nuitka/al2/5.0.2/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.0/bin/nuitka/al2/5.1.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 Example Dockerfiles of known working environments are available for
@@ -203,7 +204,7 @@ Fedora 27 or later are supported.
 
 On a Debian based (including Ubuntu) machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/nuitka/debian-amd64/5.0.2/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.0/bin/nuitka/debian-amd64/5.1.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
@@ -224,7 +225,7 @@ executables built by nuitka, they start up slower but might be more reliable.
 
 To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/pyinstaller/al2/5.0.2/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.0/bin/pyinstaller/al2/5.1.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 Example Dockerfiles of known working environments are available for
@@ -238,7 +239,7 @@ Fedora 27 or later are supported.
 
 On a Debian based (including Ubuntu) machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.0.2/bin/pyinstaller/debian-amd64/5.0.2/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.0/bin/pyinstaller/debian-amd64/5.1.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example

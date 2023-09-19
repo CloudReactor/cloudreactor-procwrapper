@@ -90,3 +90,11 @@ UUID so it can be linked to an existing Task Execution started by CloudReactor
 * Add binaries for Amazon Linux 2 / Fedora / RHEL
 ## v5.0.2 (2022-10-05)
 * Configure botocore not to emit DEBUG logs which may leak secrets
+## v5.1.0 (2023-09-19)
+* Change support python 3.11 (BREAKING)
+* Support AWS CodeBuild runtime metadata
+* Enhance Rollbar requests with more info, including code_version
+* Change error in Rollbar to warning when CloudReactor is temporarily unavailable
+* Remove extra logging
+* Fix an issue setting the task_is_passive property
+* Always send time in UTC timezone
