@@ -83,6 +83,3 @@ addopts = "-v -Wdefault --cov=proc_wrapper"
 [tool.isort]
 profile = "black"
 known_first_party = ["proc_wrapper", "tests"]
-
-[project.scripts]
-proc_wrapper = "proc_wrapper.__main__:main"
