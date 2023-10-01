@@ -975,9 +975,6 @@ class ProcWrapperParams(ConfigResolverParams):
             "PROC_WRAPPER_TASK_VERSION_SIGNATURE", self.task_version_signature
         )
 
-        if self.offline_mode:
-            return
-
         task_overrides_str = env.get("PROC_WRAPPER_AUTO_CREATE_TASK_PROPS")
         if task_overrides_str:
             try:
@@ -995,6 +992,13 @@ class ProcWrapperParams(ConfigResolverParams):
             auto_create_task_props.get("was_auto_created"),
             self.auto_create_task,
         )
+
+        self.task_name = env.get(
+            "PROC_WRAPPER_TASK_NAME", auto_create_task_props.get("name", self.task_name)
+        )
+
+        if self.offline_mode:
+            return
 
         max_concurrency = string_to_int(
             env.get("PROC_WRAPPER_TASK_MAX_CONCURRENCY"), negative_value=-1
@@ -1065,9 +1069,6 @@ class ProcWrapperParams(ConfigResolverParams):
 
         self.task_uuid = env.get(
             "PROC_WRAPPER_TASK_UUID", auto_create_task_props.get("uuid", self.task_uuid)
-        )
-        self.task_name = env.get(
-            "PROC_WRAPPER_TASK_NAME", auto_create_task_props.get("name", self.task_name)
         )
 
         count = auto_create_task_props.get("min_service_instance_count")
