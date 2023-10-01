@@ -91,7 +91,8 @@ UUID so it can be linked to an existing Task Execution started by CloudReactor
 ## v5.0.2 (2022-10-05)
 * Configure botocore not to emit DEBUG logs which may leak secrets
 ## v5.1.0 (2023-09-19)
-* Change support python 3.11 (BREAKING)
+* Support running via pipx
+* Support python 3.11
 * Support AWS CodeBuild runtime metadata
 * Enhance Rollbar requests with more info, including code_version
 * Change error in Rollbar to warning when CloudReactor is temporarily unavailable

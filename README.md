@@ -294,6 +294,14 @@ Or, if you have python installed:
 
     python -m proc_wrapper somecommand --somearg x
 
+Or, if using [pipx](https://github.com/pypa/pipx), first install with:
+
+    pipx install cloudreactor_procwrapper
+
+then run with
+
+    proc_wrapper somecommand --somearg x
+
 Here are all the options:
 
     usage: proc_wrapper [-h] [-v] [-n TASK_NAME] [--task-uuid TASK_UUID] [-a]
