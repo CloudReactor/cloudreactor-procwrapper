@@ -112,17 +112,14 @@ def expect_task_execution_request(
     url = "/api/v1/task_executions/"
     uuid = uuid or DEFAULT_TASK_EXECUTION_UUID
 
-    if response_data is None:
-        if update:
-            response_data = {}
-        else:
-            response_data = {
-                "uuid": uuid,
-                "task": {"uuid": DEFAULT_TASK_UUID, "name": "A Task"},
-            }
+    if not update and response_data is None:
+        response_data = {
+            "uuid": uuid,
+            "task": {"uuid": DEFAULT_TASK_UUID, "name": "A Task"},
+        }
 
     if status is None:
-        expected_status = 200 if update else 201
+        expected_status = 204 if update else 201
     else:
         expected_status = status
 

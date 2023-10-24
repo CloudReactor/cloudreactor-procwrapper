@@ -108,16 +108,19 @@ TEST_ECS_CONTAINER_METADATA = {
 }
 
 
-def make_capturing_handler(response_data: Dict[str, Any], status: int = 200):
+def make_capturing_handler(response_data: Optional[Dict[str, Any]], status: int = 200):
     captured_request_data: List[Optional[Dict[str, Any]]] = [None]
 
     def handler(request: Request) -> Response:
         if request.data:
             captured_request_data[0] = json.loads(request.data)
 
-        return Response(
-            json.dumps(response_data), status, None, content_type="application/json"
-        )
+        if response_data:
+            return Response(
+                json.dumps(response_data), status, None, content_type="application/json"
+            )
+        else:
+            return Response(None, status, None)
 
     def fetch_captured_request_data() -> Optional[Dict[str, Any]]:
         return captured_request_data[0]
