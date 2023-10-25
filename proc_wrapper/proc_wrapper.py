@@ -1315,6 +1315,10 @@ class ProcWrapper:
     def make_process_env(self) -> Dict[str, str]:
         process_env = self.resolved_env.copy()
         self.params.populate_env(process_env)
+
+        if self.task_execution_uuid:
+            process_env["PROC_WRAPPER_TASK_EXECUTION_UUID"] = self.task_execution_uuid
+
         return process_env
 
     def send_update(

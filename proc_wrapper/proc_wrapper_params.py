@@ -452,7 +452,7 @@ class ProcWrapperParams(ConfigResolverParams):
         self.api_task_execution_creation_conflict_retry_delay: int = (
             DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
         )
-        self.api_request_timeout: Optional[int] = None
+        self.api_request_timeout: Optional[int] = DEFAULT_API_REQUEST_TIMEOUT_SECONDS
         self.send_pid: bool = False
         self.send_hostname: bool = False
         self.send_runtime_metadata: bool = True
@@ -890,7 +890,8 @@ class ProcWrapperParams(ConfigResolverParams):
                     self.status_update_message_max_bytes
                 )
 
-            env["PROC_WRAPPER_TASK_EXECUTION_UUID"] = str(self.task_execution_uuid)
+            if self.task_execution_uuid:
+                env["PROC_WRAPPER_TASK_EXECUTION_UUID"] = self.task_execution_uuid
 
             if self.task_uuid:
                 env["PROC_WRAPPER_TASK_UUID"] = self.task_uuid

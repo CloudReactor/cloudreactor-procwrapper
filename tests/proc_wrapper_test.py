@@ -169,6 +169,40 @@ def test_wrapped_mode_with_server(
 
     assert wrapper.run() == expected_exit_code
 
+    process_env = wrapper.make_process_env()
+
+    if expect_api_server_use:
+        copied_prop_names = [
+            "PROC_WRAPPER_TASK_UUID",
+            "PROC_WRAPPER_TASK_VERSION_SIGNATURE",
+            "PROC_WRAPPER_API_BASE_URL",
+            "PROC_WRAPPER_API_KEY",
+            "PROC_WRAPPER_API_RETRY_DELAY_SECONDS",
+        ]
+
+        for p in copied_prop_names:
+            assert process_env[p] == env[p], p
+
+        expected_props = {
+            "PROC_WRAPPER_TASK_EXECUTION_UUID": DEFAULT_TASK_EXECUTION_UUID,
+            "PROC_WRAPPER_OFFLINE_MODE": "FALSE",
+            "PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS": "300",
+            "PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS": "30",
+            "PROC_WRAPPER_API_RETRY_DELAY_SECONDS": "1",
+            # original value is -1, but negative values get limited to 0
+            "PROC_WRAPPER_API_RESUME_DELAY_SECONDS": "0",
+            "PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER": "FALSE",
+            "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": "-1",
+            "PROC_WRAPPER_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS": "30",
+            "PROC_WRAPPER_MAX_CONCURRENCY": "-1",
+            "PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION": "FALSE",
+        }
+
+        for k, v in expected_props.items():
+            assert process_env[k] == v, k
+
+        assert process_env
+
     if expect_api_server_use:
         httpserver.check_assertions()
 
