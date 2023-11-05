@@ -423,6 +423,9 @@ class ProcWrapperParams(ConfigResolverParams):
         self.task_version_number: Optional[int] = None
         self.task_version_text: Optional[str] = None
         self.task_version_signature: Optional[str] = None
+        self.build_task_execution_uuid: Optional[str] = None
+        self.deployment_task_execution_uuid: Optional[str] = None
+
         self.schedule: Optional[str] = None
         self.max_concurrency: Optional[int] = None
         self.max_conflicting_age: Optional[int] = None
@@ -531,6 +534,16 @@ class ProcWrapperParams(ConfigResolverParams):
                 )
                 self.task_version_signature = task_execution.get(
                     "version_signature", self.task_version_signature
+                )
+                self.build_task_execution_uuid = (
+                    task_execution.get("build", {})
+                    .get("task_execution", {})
+                    .get("uuid", self.build_task_execution_uuid)
+                )
+                self.deployment_task_execution_uuid = (
+                    task_execution.get("deployment", {})
+                    .get("task_execution", {})
+                    .get("uuid", self.build_task_execution_uuid)
                 )
 
                 # Task properties can appear either embedded in Task Execution
@@ -976,6 +989,15 @@ class ProcWrapperParams(ConfigResolverParams):
             "PROC_WRAPPER_TASK_VERSION_SIGNATURE", self.task_version_signature
         )
 
+        self.build_task_execution_uuid = env.get(
+            "PROC_WRAPPER_BUILD_TASK_EXECUTION_UUID", self.build_task_execution_uuid
+        )
+
+        self.deployment_task_execution_uuid = env.get(
+            "PROC_WRAPPER_DEPLOYMENT_TASK_EXECUTION_UUID",
+            self.deployment_task_execution_uuid,
+        )
+
         task_overrides_str = env.get("PROC_WRAPPER_AUTO_CREATE_TASK_PROPS")
         if task_overrides_str:
             try:
@@ -1144,6 +1166,17 @@ class ProcWrapperParams(ConfigResolverParams):
                 self.auto_create_task_run_environment_uuid = run_env.get(
                     "uuid", self.auto_create_task_run_environment_uuid
                 )
+
+        self.build_task_execution_uuid = (
+            task.get("build", {})
+            .get("task_execution", {})
+            .get("uuid", self.build_task_execution_uuid)
+        )
+        self.deployment_task_execution_uuid = (
+            task.get("deployment", {})
+            .get("task_execution", {})
+            .get("uuid", self.build_task_execution_uuid)
+        )
 
     def _override_mutable_from_env(self, env: Dict[str, str]) -> None:
         self.rollbar_access_token = env.get(
@@ -1481,6 +1514,14 @@ passive.""",
         "--task-version-signature",
         help="""
 Version signature of the Task's source code (such as a git commit hash)""",
+    )
+    task_group.add_argument(
+        "--build-task-execution-uuid",
+        help="UUID of Task Execution that built this Task's source code",
+    )
+    task_group.add_argument(
+        "--deployment-task-execution-uuid",
+        help="UUID of Task Execution that deployed this Task to the Runtime Environment",
     )
     task_group.add_argument(
         "--execution-method-props",

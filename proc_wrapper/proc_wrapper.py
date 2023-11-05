@@ -503,6 +503,19 @@ class ProcWrapper:
                 ),
                 "embedded_mode": self.params.embedded_mode,
             }
+
+            if self.params.build_task_execution_uuid:
+                body["build"] = {
+                    "task_execution": {"uuid": self.params.build_task_execution_uuid}
+                }
+
+            if self.params.deployment_task_execution_uuid:
+                body["deployment"] = {
+                    "task_execution": {
+                        "uuid": self.params.deployment_task_execution_uuid
+                    }
+                }
+
             body.update(common_body)
 
             if stop_reason is not None:
