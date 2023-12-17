@@ -191,7 +191,7 @@ def make_fake_aws_codebuild_env() -> Mapping[str, str]:
         "CODEBUILD_BUILD_IMAGE": "aws/codebuild/standard:2.0",
         "CODEBUILD_BUILD_NUMBER": "25",
         "CODEBUILD_BUILD_SUCCEEDING": "1",
-        "CODEBUILD_INITIATOR": "codepipline/codebuild-demo-project",
+        "CODEBUILD_INITIATOR": "codepipeline/codebuild-demo-project",
         "CODEBUILD_KMS_KEY_ID": "arn:aws:kms:us-east-1:123456789012:key/key-ID",
         "CODEBUILD_LOG_PATH": "40b92e01-706b-422a-9305-8bdb16f7c269",
         "CODEBUILD_PUBLIC_BUILD_URL": "https://public.build.aws.com/codebuild-demo-project",

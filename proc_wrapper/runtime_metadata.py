@@ -102,12 +102,12 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "batch_identifier",
         "source_repo_url",
         "kms_key_id",
+        "initiator",
     ]
 
     AWS_CODEBUILD_EXECUTION_METHOD_ATTRIBUTES = [
         "build_id",
         "batch_build_identifier",
-        "initiator",
         "public_build_url",
         "source_version",
         "resolved_source_version",

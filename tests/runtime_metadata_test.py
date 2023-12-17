@@ -199,6 +199,7 @@ def test_aws_codebuild_runtime_metadata():
         assert h["build_image"] == "aws/codebuild/standard:2.0"
         assert h["kms_key_id"] == "arn:aws:kms:us-east-1:123456789012:key/key-ID"
         assert h["source_repo_url"] == "https://github.com/aws/codebuild-demo-project"
+        assert h["initiator"] == "codepipeline/codebuild-demo-project"
 
     assert (
         em["build_id"] == "codebuild-demo-project:b1e6661e-e4f2-4156-9ab9-82a19EXAMPLE"
@@ -209,7 +210,6 @@ def test_aws_codebuild_runtime_metadata():
     )
     assert em["batch_build_identifier"] == "CBBBI"
     assert em["build_number"] == 25
-    assert em["initiator"] == "codepipline/codebuild-demo-project"
     assert em["resolved_source_version"] == "3d6151b3ebc9ba70b83de319db596d7eda56e517"
     assert em["source_version"] == "arn:aws:s3:::bucket/pipeline/App/OGgJCVJ.zip"
     assert (
