@@ -99,3 +99,7 @@ UUID so it can be linked to an existing Task Execution started by CloudReactor
 * Remove extra logging
 * Fix an issue setting the task_is_passive property
 * Always send time in UTC timezone
+## v5.1.1 (2023-12-17)
+* Read Task name even in offline mode
+* Move CodeBuild initiator to execution method capability (Task instead of Task Execution)
+* Send build and deploy Task Execution UUIDs
