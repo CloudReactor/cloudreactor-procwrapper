@@ -34,7 +34,7 @@ from datetime import datetime
 from http import HTTPStatus
 from io import RawIOBase
 from subprocess import Popen, TimeoutExpired
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Union
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -57,6 +57,9 @@ caught_sigterm = False
 
 def _exit_handler(wrapper: "ProcWrapper"):
     # Prevent re-entrancy and changing of the exit code
+
+    _logger.info("In _exit_handler")
+
     atexit.unregister(_exit_handler)
     wrapper.handle_exit()
 
@@ -72,6 +75,22 @@ def _signal_handler(signum, frame):
 
 
 class ProcWrapper:
+    """
+    A class that wraps the execution of a process and provides functionality for managing the process,
+    updating its status, and handling errors.
+
+    Attributes:
+      WRAPPER_FAMILY (str): The family of the proc wrapper.
+      VERSION (str): The version of the proc wrapper.
+      STATUS_RUNNING (str): The status indicating that the process is running.
+      STATUS_SUCCEEDED (str): The status indicating that the process has succeeded.
+      STATUS_FAILED (str): The status indicating that the process has failed.
+      STATUS_TERMINATED_AFTER_TIME_OUT (str): The status indicating that the process was terminated after a timeout.
+      STATUS_MARKED_DONE (str): The status indicating that the process has been marked as done.
+      STATUS_EXITED_AFTER_MARKED_DONE (str): The status indicating that the process has exited after being marked as done.
+      STATUS_ABORTED (str): The status indicating that the process has been aborted.
+    """
+
     WRAPPER_FAMILY = "CloudReactor python proc_wrapper"
     VERSION = getattr(sys.modules[__package__], "__version__")
 
@@ -159,10 +178,13 @@ class ProcWrapper:
         self.timeout_count = 0
         self.timed_out = False
         self.hostname: Optional[str] = None
+        self.process_env: Optional[Dict[str, str]] = None
         self.process: Optional[Popen[bytes]] = None
+        self.is_execution_status_from_runtime_metadata = False
         self.api_server_retries_exhausted = False
         self.last_api_request_failed_at: Optional[float] = None
         self.last_api_request_data: Optional[Dict[str, Any]] = None
+        self.config_last_reloaded_at: Optional[float] = None
 
         self.status_dict: Dict[str, Any] = {}
         self._status_socket: Optional[socket.socket] = None
@@ -175,30 +197,34 @@ class ProcWrapper:
         self.exit_handler_installed = False
         self.in_pytest = False
 
+        if params:
+            self.params = params
+        else:
+            self.params = ProcWrapperParams(override_from_env=True, env=self.env)
+
         self.runtime_metadata_fetcher: RuntimeMetadataFetcher = (
-            runtime_metadata_fetcher or DefaultRuntimeMetadataFetcher()
+            runtime_metadata_fetcher or DefaultRuntimeMetadataFetcher(params=params)
         )
 
-        runtime_metadata: Optional[RuntimeMetadata] = None
+        self.runtime_metadata: Optional[RuntimeMetadata] = None
         try:
-            runtime_metadata = self.runtime_metadata_fetcher.fetch(
+            self.runtime_metadata = self.runtime_metadata_fetcher.fetch(
                 env=self.env, context=self.runtime_context
             )
         except Exception:
             _logger.exception("Failed to fetch runtime metadata")
 
-        if params:
-            self.params = params
-        else:
-            self.params = ProcWrapperParams(override_from_env=False)
-            self.params.override_resolver_params_from_env(env=self.env)
+        if self.runtime_metadata:
+            self.is_execution_status_from_runtime_metadata = (
+                self.runtime_metadata.is_execution_status_source
+            )
 
         if config_resolver:
             self.config_resolver = config_resolver
         else:
             self.config_resolver = ConfigResolver(
                 params=self.params,
-                runtime_metadata=runtime_metadata,
+                runtime_metadata=self.runtime_metadata,
                 env_override=self.env,
             )
 
@@ -212,10 +238,8 @@ class ProcWrapper:
         )
 
         if override_params_from_env:
-            self.params.override_proc_wrapper_params_from_env(
-                env=self.resolved_env,
-                mutable_only=False,
-                runtime_metadata=runtime_metadata,
+            self.params.override_params_from_env(
+                env=self.resolved_env, mutable_only=False
             )
 
         self.override_params_from_config = coalesce(
@@ -223,7 +247,7 @@ class ProcWrapper:
         )
 
         if self.override_params_from_config:
-            env_override = self.params.override_proc_wrapper_params_from_config(
+            env_override = self.params.override_params_from_config(
                 config=self.resolved_config, mutable_only=False
             )
 
@@ -231,9 +255,7 @@ class ProcWrapper:
                 self.resolved_env.update(env_override)
 
         if override_params_from_input:
-            env_override = self.params.override_proc_wrapper_params_from_input(
-                input=input_value
-            )
+            env_override = self.params.override_params_from_input(input=input_value)
 
             if env_override:
                 self.resolved_env.update(env_override)
@@ -247,6 +269,8 @@ class ProcWrapper:
             and (not self.params.embedded_mode)
             and (not self.in_pytest)
         ):
+            _logger.debug("Installing exit handler and signal handler ...")
+
             atexit.register(_exit_handler, self)
 
             # The function registered with atexit.register() isn't called when python receives
@@ -255,6 +279,10 @@ class ProcWrapper:
             signal.signal(signal.SIGTERM, _signal_handler)
 
             self.exit_handler_installed = True
+
+            _logger.debug("Successfully installed exit handler and signal handler")
+        else:
+            _logger.debug("Skipping installation of exit handler and signal handler")
 
     def log_configuration(self, initial: bool = False) -> None:
         if initial:
@@ -404,29 +432,56 @@ class ProcWrapper:
 
         return dest
 
+    def _compute_hostname(self) -> Optional[str]:
+        rm = self.runtime_metadata
+
+        if rm and (rm.host_addresses or rm.host_names):
+            self.hostname = ((rm.host_addresses or []) + (rm.host_names or []))[0]
+
+        if self.hostname is None:
+            try:
+                self.hostname = socket.gethostname()
+            except Exception:
+                _logger.warning("Can't get hostname", exc_info=True)
+
+        _logger.debug(f"Hostname = '{self.hostname}'")
+
+        return self.hostname
+
+    def _compute_status_update_host(self) -> str:
+        if (
+            self.runtime_metadata
+            and self.runtime_metadata.monitor_host_addresses
+            and self.runtime_metadata.host_addresses
+            and (
+                self.runtime_metadata.monitor_host_addresses[0]
+                != self.runtime_metadata.host_addresses[0]
+            )
+        ):
+            return self.runtime_metadata.monitor_host_addresses[0]
+        else:
+            return "127.0.0.1"
+
     def _create_or_update_task_execution(self) -> None:
         """
         Make a request to the API server to create a Task Execution
         for this Task. Retry and wait between requests if so configured
-        and the maximum concurrency has already been reached.
+        and the maximum concurrency has not already been reached.
         """
 
         if self.offline_mode:
             return
 
-        # TODO use runtime metadata
-        if self.params.send_hostname and (self.hostname is None):
-            try:
-                self.hostname = socket.gethostname()
-                _logger.debug(f"Hostname = '{self.hostname}'")
-            except Exception:
-                _logger.warning("Can't get hostname", exc_info=True)
-
-        runtime_metadata: Optional[RuntimeMetadata] = None
-        if self.params.send_runtime_metadata:
-            runtime_metadata = self.runtime_metadata_fetcher.fetch(
-                env=self.resolved_env, context=self.runtime_context
+        if self.params.send_runtime_metadata or self.params.send_hostname:
+            self.runtime_metadata = (
+                self.runtime_metadata
+                or self.runtime_metadata_fetcher.fetch(
+                    env=self.resolved_env, context=self.runtime_context
+                )
             )
+
+        if self.params.send_hostname and (not self.hostname):
+            self._compute_hostname()
 
         status = ProcWrapper.STATUS_RUNNING
         stop_reason: Optional[str] = None
@@ -521,7 +576,7 @@ class ProcWrapper:
             if stop_reason is not None:
                 body["stop_reason"] = stop_reason
 
-            rm = runtime_metadata if self.params.send_runtime_metadata else None
+            rm = self.runtime_metadata if self.params.send_runtime_metadata else None
 
             if self.task_execution_uuid:
                 # Manually started
@@ -832,19 +887,17 @@ class ProcWrapper:
             want_config=self.override_params_from_config,
         )
 
-        runtime_metadata = self.runtime_metadata_fetcher.fetch(
+        self.runtime_metadata = self.runtime_metadata_fetcher.fetch(
             env=self.resolved_env, context=self.runtime_context
         )
 
         if self.override_params_from_env:
-            self.params.override_proc_wrapper_params_from_env(
-                env=self.resolved_env,
-                mutable_only=True,
-                runtime_metadata=runtime_metadata,
+            self.params.override_params_from_env(
+                env=self.resolved_env, mutable_only=True
             )
 
         if self.override_params_from_config:
-            env_override = self.params.override_proc_wrapper_params_from_config(
+            env_override = self.params.override_params_from_config(
                 config=self.resolved_config, mutable_only=True
             )
 
@@ -852,8 +905,10 @@ class ProcWrapper:
                 self.resolved_env.update(env_override)
 
         self.param_errors = self.params.validation_errors(
-            runtime_metadata=runtime_metadata
+            runtime_metadata=self.runtime_metadata
         )
+
+        self.config_last_reloaded_at = time.time()
 
     def _setup_task_execution(self) -> bool:
         self.task_uuid = self.params.task_uuid
@@ -918,11 +973,6 @@ class ProcWrapper:
             self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
             self._status_message_so_far = bytearray()
 
-        process_env = self.make_process_env()
-
-        if self.params.log_secrets:
-            _logger.debug(f"Process environment = {process_env}")
-
         first_attempt_started_at: Optional[float] = None
         latest_attempt_started_at: Optional[float] = None
         exit_code: Optional[int] = None
@@ -932,10 +982,6 @@ class ProcWrapper:
         while self.attempt_count < self.max_execution_attempts:
             self.attempt_count += 1
             self.timed_out = False
-
-            _logger.info(
-                f"Running process (attempt {self.attempt_count}/{self.max_execution_attempts}) ..."
-            )
 
             current_time = time.time()
 
@@ -953,47 +999,37 @@ class ProcWrapper:
                     current_time + self.params.process_check_interval
                 )
 
-            if self.params.log_secrets:
-                _logger.debug(f"process_env={process_env}")
-
-            latest_attempt_started_at = time.time()
+            latest_attempt_started_at = current_time
             if first_attempt_started_at is None:
                 first_attempt_started_at = latest_attempt_started_at
 
-            # Set the session ID so we can kill the process as a group, so we kill
-            # all subprocesses. See https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true
-            # On Windows, os does not have setsid function.
-            preexec_fn = (
-                getattr(os, "setsid", None)
-                if self.params.process_group_termination
-                else None
-            )
-
-            self.process = Popen(
-                command,
-                shell=shell,
-                stdout=None,
-                stderr=None,
-                env=process_env,
-                cwd=self.params.work_dir,
-                preexec_fn=preexec_fn,
-            )
-
-            pid = self.process.pid
-            _logger.info(f"pid = {pid}")
-
-            if pid and self.params.send_pid:
-                self._update_status(pid=pid)
+            if command and (self.process is None):
+                _logger.info(
+                    f"Running process (attempt {self.attempt_count}/{self.max_execution_attempts}) ..."
+                )
+                self._start_command(command=command, shell=shell)
 
             done_polling = False
             while not done_polling:
-                exit_code = self.process.poll()
-
                 self._read_from_status_socket()
 
                 current_time = time.time()
 
-                # None means the process is still running
+                monitor_process_exit_code: Optional[int] = None
+                if command and self.process:
+                    monitor_process_exit_code = self.process.poll()
+
+                if self.is_execution_status_from_runtime_metadata:
+                    runtime_metadata = self.runtime_metadata_fetcher.fetch(
+                        self.resolved_env, self.runtime_context
+                    )
+                    if runtime_metadata:
+                        self.runtime_metadata = runtime_metadata
+                        exit_code = self.runtime_metadata.exit_code
+                else:
+                    exit_code = monitor_process_exit_code
+
+                # None means the monitored process is still running
                 if exit_code is None:
                     if current_time >= process_finish_deadline:
                         done_polling = True
@@ -1001,15 +1037,15 @@ class ProcWrapper:
                         self.timeout_count += 1
 
                         if self.attempt_count < self.max_execution_attempts:
-                            # FIXME: clear exit code
                             self._update_status(
-                                timed_out_attempts=self.timeout_count,
+                                timed_out_attempts=self.timeout_count, exit_code=None
                             )
 
-                        _logger.warning(
-                            f"Process timed out after {self.params.process_timeout} seconds, sending SIGTERM ..."
-                        )
-                        self._terminate_or_kill_process()
+                        if self.process:
+                            _logger.warning(
+                                f"Process timed out after {self.params.process_timeout} seconds, sending SIGTERM ..."
+                            )
+                            self._terminate_or_kill_process()
                     else:
                         if (self.params.process_check_interval is not None) and (
                             current_time >= next_process_check_time
@@ -1044,10 +1080,16 @@ class ProcWrapper:
                             _logger.debug(
                                 f"Waiting {round(sleep_duration)} seconds while process is running ..."
                             )
-                            try:
-                                self.process.wait(sleep_duration)
-                            except TimeoutExpired:
-                                _logger.debug("Done waiting while process is running.")
+
+                            if self.process:
+                                try:
+                                    self.process.wait(sleep_duration)
+                                except TimeoutExpired:
+                                    _logger.debug(
+                                        "Done waiting while process is running."
+                                    )
+                            else:
+                                time.sleep(sleep_duration)
 
                 else:
                     _logger.info(f"Process exited with exit code {exit_code}")
@@ -1064,7 +1106,9 @@ class ProcWrapper:
 
                     self.failed_count += 1
 
-                    if self.attempt_count >= self.max_execution_attempts:
+                    if self.is_execution_status_from_runtime_metadata or (
+                        self.attempt_count >= self.max_execution_attempts
+                    ):
                         self.print_final_status(
                             exit_code=exit_code,
                             first_attempt_started_at=first_attempt_started_at,
@@ -1076,18 +1120,38 @@ class ProcWrapper:
                         failed_attempts=self.failed_count, exit_code=exit_code
                     )
 
-                    if self.params.process_retry_delay:
+                if monitor_process_exit_code is not None:
+                    _logger.info(
+                        f"Monitor process exit code = {monitor_process_exit_code}"
+                    )
+
+                    if command and self.params.process_retry_delay:
                         _logger.debug(
-                            f"Sleeping {self.params.process_retry_delay} seconds after process failed ..."
+                            f"Sleeping {self.params.process_retry_delay} seconds after monitor process exited ..."
                         )
                         time.sleep(self.params.process_retry_delay)
-                        _logger.debug("Done sleeping after process failed.")
+                        _logger.debug("Done sleeping after monitor process exited.")
 
-                    if self.params.config_ttl is not None:
-                        self._reload_params()
-                        self.log_configuration()
-                        process_env = self.make_process_env()
-                        command, shell = self.params.resolve_command_and_shell_flag()
+                if (self.params.config_ttl is not None) and (
+                    (
+                        (self.config_last_reloaded_at is None)
+                        or (
+                            current_time
+                            >= self.config_last_reloaded_at + self.params.config_ttl
+                        )
+                    )
+                    or (
+                        (not self.is_execution_status_from_runtime_metadata)
+                        and monitor_process_exit_code
+                    )
+                ):
+                    self._reload_params()
+                    self.log_configuration()
+                    self.process_env = None
+                    command, shell = self.params.resolve_command_and_shell_flag()
+
+                if monitor_process_exit_code is not None:
+                    self._start_command(command=command, shell=shell)
 
         if self.attempt_count >= self.max_execution_attempts:
             self.print_final_status(
@@ -1217,6 +1281,41 @@ class ProcWrapper:
                 "Called method is only for wrapped process (non-embedded) mode"
             )
 
+    def _start_command(self, command: Union[str, List[str]], shell: bool):
+        if self.process_env is None:
+            self.process_env = self.make_process_env()
+            if self.process_env and self.params.log_secrets:
+                _logger.debug(f"process_env={self.process_env}")
+
+        # Set the session ID so we can kill the process as a group, so we kill
+        # all subprocesses. See https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true
+        # On Windows, os does not have setsid function.
+        preexec_fn = (
+            getattr(os, "setsid", None)
+            if self.params.process_group_termination
+            else None
+        )
+
+        self.process = Popen(
+            command,
+            shell=shell,
+            stdout=None,
+            stderr=None,
+            env=self.process_env,
+            cwd=self.params.work_dir,
+            preexec_fn=preexec_fn,
+        )
+
+        pid = self.process.pid
+        _logger.info(f"pid = {pid}")
+
+        if (
+            pid
+            and self.params.send_pid
+            and (not self.is_execution_status_from_runtime_metadata)
+        ):
+            self._update_status(pid=pid)
+
     def _open_status_socket(self) -> Optional[socket.socket]:
         if self.offline_mode or (not self.params.enable_status_update_listener):
             _logger.info("Not opening status socket.")
@@ -1225,8 +1324,9 @@ class ProcWrapper:
         try:
             _logger.info("Opening status update socket ...")
             self._status_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            status_update_host = self._compute_status_update_host()
             self._status_socket.bind(
-                ("127.0.0.1", self.params.status_update_socket_port)
+                (status_update_host, self.params.status_update_socket_port)
             )
             self._status_socket.setblocking(False)
             _logger.info("Successfully created status update socket")
@@ -1331,6 +1431,17 @@ class ProcWrapper:
 
         if self.task_execution_uuid:
             process_env["PROC_WRAPPER_TASK_EXECUTION_UUID"] = self.task_execution_uuid
+
+        if self.params.enable_status_update_listener:
+            process_env[
+                "PROC_WRAPPER_STATUS_UPDATE_HOST"
+            ] = self._compute_status_update_host()
+
+        if (
+            self.runtime_metadata
+            and self.runtime_metadata.monitor_process_env_additions
+        ):
+            process_env.update(self.runtime_metadata.monitor_process_env_additions)
 
         return process_env
 

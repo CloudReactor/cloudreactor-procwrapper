@@ -42,9 +42,7 @@ def make_proc_wrapper_params(
 
     resolved_env, _failed_var_names = config_resolver.fetch_and_resolve_env()
 
-    params.override_proc_wrapper_params_from_env(
-        resolved_env, mutable_only=False, runtime_metadata=runtime_metadata
-    )
+    params.override_params_from_env(resolved_env, mutable_only=False)
 
     return params
 
@@ -368,7 +366,7 @@ def test_override_from_config(
         params_dict["env_override"] = {"ENV_X": "X", "ENV_Y": "Y"}
 
     config = make_config_with_proc_wrapper_params(params_dict=params_dict)
-    env_override = params.override_proc_wrapper_params_from_config(
+    env_override = params.override_params_from_config(
         config=config, mutable_only=mutable_only
     )
 
@@ -459,7 +457,7 @@ def test_override_from_config(
 def test_override_from_input(input: Optional[Any], expect_override: bool):
     params = make_proc_wrapper_params(embedded_mode=True)
 
-    params.override_proc_wrapper_params_from_input(input)
+    params.override_params_from_input(input)
 
     if expect_override:
         assert params.task_execution_uuid == "TE-UUID"

@@ -4,7 +4,18 @@ import logging
 import os
 import re
 import shlex
-from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 
 from .common_utils import (
     best_effort_deep_merge,
@@ -13,7 +24,9 @@ from .common_utils import (
     string_to_bool,
     string_to_int,
 )
-from .runtime_metadata import RuntimeMetadata
+
+if TYPE_CHECKING:
+    from runtime_metadata import RuntimeMetadata
 
 DEFAULT_LOG_LEVEL = "INFO"
 
@@ -184,7 +197,7 @@ class ProcWrapperParamValidationErrors(NamedTuple):
 
 
 class ConfigResolverParams:
-    def __init__(self, override_from_env: bool = True):
+    def __init__(self, env: Optional[Mapping[str, str]] = None):
         self.initial_config: Dict[str, Any] = {}
         self.log_secrets: bool = False
         self.env_locations: List[str] = []
@@ -211,8 +224,8 @@ class ConfigResolverParams:
             str
         ] = DEFAULT_CONFIG_VAR_NAME_FOR_ENV
 
-        if override_from_env:
-            self.override_resolver_params_from_env()
+        if env is not None:
+            self.override_resolver_params_from_env(env=env)
 
     def override_resolver_params_from_env(
         self, env: Optional[Mapping[str, str]] = None
@@ -405,8 +418,24 @@ class ConfigResolverParams:
 
 
 class ProcWrapperParams(ConfigResolverParams):
-    def __init__(self, embedded_mode: bool = True, override_from_env: bool = True):
-        super().__init__(override_from_env=override_from_env)
+    """
+    Represents the parameters for the ProcWrapper.
+
+    Args:
+        embedded_mode (bool, optional): Flag indicating whether the ProcWrapper is running in embedded mode. Defaults to True.
+        override_from_env (bool, optional): Flag indicating whether to override the parameters from the environment variables. Defaults to True.
+    """
+
+    def __init__(
+        self,
+        embedded_mode: bool = True,
+        override_from_env: bool = True,
+        env: Optional[Mapping[str, str]] = None,
+    ):
+        override_env: Optional[Mapping[str, str]] = (
+            coalesce(env, os.environ) if override_from_env else None
+        )
+        super().__init__(env=override_env)
 
         self.embedded_mode = embedded_mode
 
@@ -485,40 +514,64 @@ class ProcWrapperParams(ConfigResolverParams):
         self.log_level = DEFAULT_LOG_LEVEL
         self.include_timestamps_in_log: bool = True
 
+        self.monitor_container_name: Optional[str] = None
+        self.main_container_name: Optional[str] = None
+        self.sidecar_container_mode: Optional[bool] = None
+
         self.rollbar_access_token: Optional[str] = None
         self.rollbar_retries: Optional[int] = DEFAULT_ROLLBAR_RETRIES
         self.rollbar_retry_delay: int = DEFAULT_ROLLBAR_RETRY_DELAY_SECONDS
         self.rollbar_timeout: int = DEFAULT_ROLLBAR_TIMEOUT_SECONDS
 
-    def override_proc_wrapper_params_from_env(
-        self,
-        env: Dict[str, str],
-        mutable_only: bool = False,
-        runtime_metadata: Optional[RuntimeMetadata] = None,
+        if override_env is not None:
+            self.override_early_params_from_env(env=override_env)
+
+    def override_early_params_from_env(self, env: Mapping[str, str]) -> None:
+        self.main_container_name = env.get(
+            "PROC_WRAPPER_MAIN_CONTAINER_NAME", self.main_container_name
+        )
+
+        self.monitor_container_name = env.get(
+            "PROC_WRAPPER_MONITOR_CONTAINER_NAME", self.monitor_container_name
+        )
+
+        self.sidecar_container_mode = coalesce(
+            string_to_bool(env.get("PROC_WRAPPER_SIDECAR_CONTAINER_MODE")),
+            self.sidecar_container_mode,
+        )
+
+        if (
+            (self.sidecar_container_mode is None)
+            and self.main_container_name
+            and self.monitor_container_name
+            and (self.main_container_name != self.monitor_container_name)
+        ):
+            self.sidecar_container_mode = True
+
+    def override_params_from_env(
+        self, env: Dict[str, str], mutable_only: bool = False
     ) -> None:
         if not mutable_only:
-            self._override_immutable_from_env(env, runtime_metadata=runtime_metadata)
+            self._override_immutable_from_env(env)
 
         self._override_mutable_from_env(env)
 
-    def override_proc_wrapper_params_from_config(
+    def override_params_from_config(
         self, config: Dict[str, Any], mutable_only: bool = False
     ) -> Optional[Dict[str, str]]:
         params = config.get(PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME)
         if not isinstance(params, dict):
             _logger.debug(
-                f"override_proc_wrapper_params_from_config(): {PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME} is not a dict"
+                f"override_params_from_config(): {PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME} is not a dict"
             )
             return None
 
-        return self.override_proc_wrapper_params_from_dict(
-            params=params, mutable_only=mutable_only
-        )
+        return self.override_params_from_dict(params=params, mutable_only=mutable_only)
 
-    def override_proc_wrapper_params_from_dict(
+    def override_params_from_dict(
         self, params: Dict[str, Any], mutable_only: bool = False
     ) -> Optional[Dict[str, str]]:
-        _logger.debug("Starting override_proc_wrapper_params_from_dict() ...")
+        _logger.debug("Starting override_params_from_dict() ...")
 
         if not mutable_only:
             task_execution = params.get("task_execution")
@@ -579,7 +632,7 @@ class ProcWrapperParams(ConfigResolverParams):
         _logger.info("No env_override found in config")
         return None
 
-    def override_proc_wrapper_params_from_input(
+    def override_params_from_input(
         self, input: Optional[Any]
     ) -> Optional[Dict[str, str]]:
         """
@@ -631,7 +684,7 @@ class ProcWrapperParams(ConfigResolverParams):
         return None
 
     def validation_errors(
-        self, runtime_metadata: Optional[RuntimeMetadata] = None
+        self, runtime_metadata: Optional["RuntimeMetadata"] = None
     ) -> ProcWrapperParamValidationErrors:
         process_errors: Dict[str, List[str]] = {}
         process_warnings: Dict[str, List[str]] = {}
@@ -646,7 +699,15 @@ class ProcWrapperParams(ConfigResolverParams):
         )
 
         if not self.embedded_mode:
-            if (not self.command) and (not self.command_line):
+            runtime_metadata_is_execution_status_source = (
+                runtime_metadata and runtime_metadata.is_execution_status_source
+            )
+
+            if (
+                (not self.command)
+                and (not self.command_line)
+                and (not runtime_metadata_is_execution_status_source)
+            ):
                 self._push_error(
                     process_errors,
                     "command",
@@ -660,6 +721,16 @@ class ProcWrapperParams(ConfigResolverParams):
                     f"Process check interval {self.process_check_interval} must be positive.",
                 )
                 self.process_check_interval = DEFAULT_PROCESS_CHECK_INTERVAL_SECONDS
+
+            if runtime_metadata_is_execution_status_source and (
+                self.process_max_retries > 0
+            ):
+                self._push_error(
+                    process_warnings,
+                    "process_max_retries",
+                    f"Process retries {self.process_max_retries} must be 0 when monitoring an external process.",
+                )
+                self.process_max_retries = 0
 
         if self.service:
             if self.process_timeout is not None:
@@ -841,6 +912,10 @@ class ProcWrapperParams(ConfigResolverParams):
 
         super().log_configuration()
 
+        _logger.debug(f"Main container name = {self.main_container_name}")
+        _logger.debug(f"Monitor container name = {self.monitor_container_name}")
+        _logger.debug(f"Sidecar container mode = {self.sidecar_container_mode}")
+
         if self.rollbar_access_token:
             if self.log_secrets:
                 _logger.debug(f"Rollbar API key = '{self.rollbar_access_token}'")
@@ -949,9 +1024,7 @@ class ProcWrapperParams(ConfigResolverParams):
             self.prevent_offline_execution
         ).upper()
 
-    def _override_immutable_from_env(
-        self, env: Dict[str, str], runtime_metadata: Optional[RuntimeMetadata]
-    ) -> None:
+    def _override_immutable_from_env(self, env: Dict[str, str]) -> None:
         self.include_timestamps_in_log = (
             string_to_bool(
                 env.get("PROC_WRAPPER_INCLUDE_TIMESTAMPS_IN_LOG"),
@@ -1940,6 +2013,21 @@ JSON encoded configuration. Defaults to not setting any environment variable."""
         help="""
 The name of the configuration property used to set to the value of the
 JSON encoded environment. Defaults to not setting any property.""",
+    )
+
+    container_group = parser.add_argument_group("container", "Container settings")
+    container_group.add_argument(
+        "--main-container-name",
+        help="""The name of the container that is monitored""",
+    )
+    container_group.add_argument(
+        "--monitor-container-name",
+        help="""The name of the container that will monitor the main container""",
+    )
+    container_group.add_argument(
+        "--sidecar-container-mode",
+        action="store_true",
+        help="""Indicates that the current container is a sidecar container that will monitor the main container""",
     )
 
     rollbar_group = parser.add_argument_group("rollbar", "Rollbar settings")
