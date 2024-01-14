@@ -1,8 +1,12 @@
+import copy
 from datetime import datetime
+from typing import Optional
 
+import pytest
 from pytest_httpserver import HTTPServer
 
-from proc_wrapper import DefaultRuntimeMetadataFetcher
+from proc_wrapper import DefaultRuntimeMetadataFetcher, ProcWrapperParams
+from proc_wrapper.runtime_metadata import AwsLambdaRuntimeMetadataFetcher
 
 from .test_commons import (
     ACCEPT_JSON_HEADERS,
@@ -15,27 +19,56 @@ from .test_commons import (
 )
 
 
-def test_aws_ecs_runtime_metadata(httpserver: HTTPServer):
+@pytest.mark.parametrize(
+    ("main_container_name", "current_container_index", "exit_code"),
+    [
+        (None, 1, None),
+        ("nginx-curl", 1, None),
+        ("nginx-curl", 1, 1),
+        ("nginx-curl", 0, 255),
+    ],
+)
+def test_aws_ecs_runtime_metadata(
+    main_container_name: Optional[str],
+    current_container_index: int,
+    exit_code: Optional[int],
+    httpserver: HTTPServer,
+):
     env = {"ECS_CONTAINER_METADATA_URI": f"http://localhost:{httpserver.port}/aws/ecs"}
 
+    task_response_data = TEST_ECS_TASK_METADATA
+    container_response_data = TEST_ECS_TASK_METADATA["Containers"][
+        current_container_index
+    ]
+
+    params = ProcWrapperParams(embedded_mode=False)
+    params.main_container_name = main_container_name
+
+    if exit_code is not None:
+        task_response_data = copy.deepcopy(task_response_data)
+        task_response_data["Containers"][1]["ExitCode"] = exit_code
+        container_response_data = copy.deepcopy(container_response_data)
+        container_response_data["ExitCode"] = exit_code
+
     task_metadata_handler, _fetch_task_metadata_request_data = make_capturing_handler(
-        response_data=TEST_ECS_TASK_METADATA, status=200
+        response_data=task_response_data, status=200
     )
 
     httpserver.expect_ordered_request(
         "/aws/ecs/task", method="GET", headers=ACCEPT_JSON_HEADERS
     ).respond_with_handler(task_metadata_handler)
 
-    (
-        container_metadata_handler,
-        _fetch_container_metadata_request_data,
-    ) = make_capturing_handler(response_data=TEST_ECS_CONTAINER_METADATA, status=200)
+    if len(task_response_data["Containers"]) > 1:
+        (
+            container_metadata_handler,
+            _fetch_container_metadata_request_data,
+        ) = make_capturing_handler(response_data=container_response_data, status=200)
 
-    httpserver.expect_ordered_request(
-        "/aws/ecs", method="GET", headers=ACCEPT_JSON_HEADERS
-    ).respond_with_handler(container_metadata_handler)
+        httpserver.expect_ordered_request(
+            "/aws/ecs", method="GET", headers=ACCEPT_JSON_HEADERS
+        ).respond_with_handler(container_metadata_handler)
 
-    fetcher = DefaultRuntimeMetadataFetcher()
+    fetcher = DefaultRuntimeMetadataFetcher(params=params)
 
     metadata = fetcher.fetch(env=env)
 
@@ -52,17 +85,17 @@ def test_aws_ecs_runtime_metadata(httpserver: HTTPServer):
     assert em is not None
     assert em["task_arn"] == TEST_ECS_TASK_METADATA["TaskARN"]
 
-    container = em["container"]
-    assert container["docker_id"] == "cd189a933e5849daa93386466019ab50-2495160603"
-    assert container["name"] == "curl"
-    assert container["docker_name"] == "curl"
+    container = em["containers"][1]
     assert (
-        container["image_name"]
-        == "111122223333.dkr.ecr.us-west-2.amazonaws.com/curltest:latest"
+        container["docker_id"]
+        == "43481a6ce4842eec8fe72fc28500c6b52edcc0917f105b83379f88cac1ff3946"
     )
+    assert container["name"] == "nginx-curl"
+    assert container["docker_name"] == "ecs-nginx-5-nginx-curl-ccccb9f49db0dfe0d901"
+    assert container["image_name"] == "nrdlngr/nginx-curl"
     assert (
         container["image_id"]
-        == "sha256:25f3695bedfb454a50f12d127839a68ad3caf91e451c1da073db34c542c4d2cb"
+        == "sha256:2e00ae64383cfc865ba0a2ba37f61b50a120d2d9378559dcd458dc0de47bc165"
     )
     assert container["labels"] == TEST_ECS_CONTAINER_METADATA["Labels"]
 
@@ -76,8 +109,18 @@ def test_aws_ecs_runtime_metadata(httpserver: HTTPServer):
         )
 
         assert x["cluster_arn"] == TEST_ECS_TASK_METADATA["Cluster"]
-        assert x["allocated_cpu_units"] == 256
-        assert x["allocated_memory_mb"] == 512
+        assert x["allocated_cpu_units"] == round(
+            TEST_ECS_TASK_METADATA["Limits"]["CPU"] * 1024
+        )
+        assert x["allocated_memory_mb"] == TEST_ECS_TASK_METADATA["Limits"]["Memory"]
+        assert x["main_container_name"] == TEST_ECS_CONTAINER_METADATA["Name"]
+        assert x["main_container_cpu_units"] == round(
+            TEST_ECS_CONTAINER_METADATA["Limits"]["CPU"] * 1024
+        )
+        assert (
+            x["main_container_memory_mb"]
+            == TEST_ECS_CONTAINER_METADATA["Limits"]["Memory"]
+        )
 
     for aws in [tc.infrastructure_settings, tec.infrastructure_settings]:
         assert aws is not None
@@ -118,6 +161,53 @@ def test_aws_ecs_runtime_metadata(httpserver: HTTPServer):
     assert nw_0 is not None
     assert nw_0.get("ip_v4_addresses") is None
     assert nw_0.get("mac_address") is None
+
+    assert metadata.is_execution_status_source == (current_container_index == 0)
+
+    if exit_code is not None:
+        assert metadata.exit_code == exit_code
+
+    assert metadata.host_addresses == ["192.0.2.3"]
+    assert metadata.host_names == ["ip-10-0-0-222.us-west-2.compute.internal"]
+
+    assert metadata.monitor_process_env_additions is not None
+    assert (
+        metadata.monitor_process_env_additions["PROC_WRAPPER_MAIN_CONTAINER_NAME"]
+        == "nginx-curl"
+    )
+
+    if current_container_index == 0:
+        assert metadata.monitor_host_addresses == ["10.0.2.106"]
+        assert metadata.monitor_host_names == []
+        assert (
+            metadata.monitor_process_env_additions[
+                "PROC_WRAPPER_MONITOR_CONTAINER_NAME"
+            ]
+            == "~internal~ecs~pause"
+        )
+        assert (
+            metadata.monitor_process_env_additions[
+                "PROC_WRAPPER_SIDECAR_CONTAINER_MODE"
+            ]
+            == "TRUE"
+        )
+    else:
+        assert metadata.monitor_host_addresses == ["192.0.2.3"]
+        assert metadata.monitor_host_names == [
+            "ip-10-0-0-222.us-west-2.compute.internal"
+        ]
+        assert (
+            metadata.monitor_process_env_additions[
+                "PROC_WRAPPER_MONITOR_CONTAINER_NAME"
+            ]
+            == "nginx-curl"
+        )
+        assert (
+            metadata.monitor_process_env_additions[
+                "PROC_WRAPPER_SIDECAR_CONTAINER_MODE"
+            ]
+            == "FALSE"
+        )
 
 
 def test_aws_lambda_runtime_metadata():
@@ -165,7 +255,7 @@ def test_aws_lambda_runtime_metadata():
 
     em_client = em["client_context"]["client"]
     client = context.client_context.client
-    for p in DefaultRuntimeMetadataFetcher.AWS_LAMBDA_CLIENT_METADATA_PROPERTIES:
+    for p in AwsLambdaRuntimeMetadataFetcher.AWS_LAMBDA_CLIENT_METADATA_PROPERTIES:
         assert em_client[p] == getattr(client, p)
 
     xray = tec.infrastructure_settings["xray"]
@@ -175,6 +265,8 @@ def test_aws_lambda_runtime_metadata():
     cognito = em["cognito_identity"]
     assert cognito["id"] == context.identity.cognito_identity_id
     assert cognito["pool_id"] == context.identity.cognito_identity_pool_id
+
+    assert metadata.is_execution_status_source is False
 
 
 def test_aws_codebuild_runtime_metadata():
@@ -245,3 +337,5 @@ def test_aws_codebuild_runtime_metadata():
         tec.infrastructure_settings["logging"]["options"]["stream"]
         == "40b92e01-706b-422a-9305-8bdb16f7c269"
     )
+
+    assert metadata.is_execution_status_source is False
