@@ -389,7 +389,9 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             common_props["launch_type"] = launch_type
             common_props["supported_launch_types"] = [launch_type]
 
-        cpu_units, memory_mb = self.extract_cpu_and_memory_limits(task_metadata)
+        cpu_units, memory_mb = self.extract_cpu_and_memory_limits(
+            task_metadata, is_task=True
+        )
 
         if cpu_units is not None:
             common_props["allocated_cpu_units"] = cpu_units
@@ -626,15 +628,19 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         )
 
     def extract_cpu_and_memory_limits(
-        self, task_or_container_metadata: Dict[str, Any]
+        self, task_or_container_metadata: Dict[str, Any], is_task: bool = False
     ) -> Tuple[Optional[int], Optional[int]]:
         limits = task_or_container_metadata.get("Limits")
         cpu_units: Optional[int] = None
         memory_mb: Optional[int] = None
         if isinstance(limits, dict):
-            cpu_fraction = limits.get("CPU")
-            if (cpu_fraction is not None) and isinstance(cpu_fraction, (float, int)):
-                cpu_units = round(cpu_fraction * 1024)
+            cpu_units = limits.get("CPU")
+            if (
+                is_task
+                and (cpu_units is not None)
+                and isinstance(cpu_units, (float, int))
+            ):
+                cpu_units = round(cpu_units * 1024)
 
             memory_mb = limits.get("Memory")
 

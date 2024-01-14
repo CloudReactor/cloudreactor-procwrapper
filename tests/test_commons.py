@@ -52,7 +52,7 @@ TEST_ECS_TASK_METADATA: Dict[str, Any] = {
             },
             "DesiredStatus": "RUNNING",
             "KnownStatus": "RUNNING",
-            "Limits": {"CPU": 0.25, "Memory": 512},
+            "Limits": {"CPU": 256, "Memory": 512},
             "CreatedAt": "2018-02-01T20:55:10.554941919Z",
             "StartedAt": "2018-02-01T20:55:11.064236631Z",
             "Type": "NORMAL",

@@ -114,8 +114,9 @@ def test_aws_ecs_runtime_metadata(
         )
         assert x["allocated_memory_mb"] == TEST_ECS_TASK_METADATA["Limits"]["Memory"]
         assert x["main_container_name"] == TEST_ECS_CONTAINER_METADATA["Name"]
-        assert x["main_container_cpu_units"] == round(
-            TEST_ECS_CONTAINER_METADATA["Limits"]["CPU"] * 1024
+        assert (
+            x["main_container_cpu_units"]
+            == TEST_ECS_CONTAINER_METADATA["Limits"]["CPU"]
         )
         assert (
             x["main_container_memory_mb"]
