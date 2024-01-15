@@ -174,52 +174,13 @@ an auto-created Task, it must have at least the Developer access level.
 
 ## Installation
 
-### Nuitka
-
-Standalone executables built by
-[nuitka](https://nuitka.net/index.html)
-for 64-bit Linux are available, located in `bin/nuitka`. These executables bundle
-python so you don't need to have python installed on your machine. They also
-bundle all optional library dependencies so you can fetch secrets from AWS
-Secrets Manager and extract them with jsonpath-ng, for example.
-
-Compared to executables built by PyInstaller (see below), they start up faster,
-and most likely are more efficient at runtime.
-
-#### RHEL or derivatives
-
-To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
-
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.1/bin/nuitka/al2/5.1.1/proc_wrapper.bin
-    ENTRYPOINT ["proc_wrapper.bin"]
-
-Example Dockerfiles of known working environments are available for
-[Amazon Linux 2](tests/integration/nuitka_executable/docker_context_al2_amd64/)
-and
-[Fedora](tests/integration/nuitka_executable/docker_context_al2_amd64/Dockerfile).
-
-Fedora 27 or later are supported.
-
-#### Debian based systems
-
-On a Debian based (including Ubuntu) machine:
-
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.1/bin/nuitka/debian-amd64/5.1.1/proc_wrapper.bin
-    ENTRYPOINT ["proc_wrapper.bin"]
-
-See the example
-[Dockerfile](tests/integration/nuitka_executable/docker_context_debian_amd64/Dockerfile) for a known working Debian environment.
-
-Debian 10 (Buster) or later are supported.
-
 ### PyInstaller
 
 Standalone executables built by [PyInstaller](https://www.pyinstaller.org/) for 64-bit Linux and Windows are available, located in `bin/pyinstaller`.
 These executables bundle
 python so you don't need to have python installed on your machine. They also
 bundle all optional library dependencies so you can fetch secrets from AWS
-Secrets Manager and extract them with jsonpath-ng, for example. Compared to
-executables built by nuitka, they start up slower but might be more reliable.
+Secrets Manager and extract them with jsonpath-ng, for example.
 
 #### RHEL or derivatives
 
