@@ -793,6 +793,7 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "build_image",
         "batch_identifier",
         "source_repo_url",
+        "source_version",
         "kms_key_id",
         "initiator",
     ]
@@ -801,7 +802,6 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "build_id",
         "batch_build_identifier",
         "public_build_url",
-        "source_version",
         "resolved_source_version",
         "src_dir",
     ]
