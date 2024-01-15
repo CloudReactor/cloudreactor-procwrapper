@@ -186,7 +186,7 @@ Secrets Manager and extract them with jsonpath-ng, for example.
 
 To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.1/bin/pyinstaller/al2/5.1.1/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.2.0/bin/pyinstaller/al2/5.2.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 Example Dockerfiles of known working environments are available for
@@ -200,7 +200,7 @@ Fedora 27 or later are supported.
 
 On a Debian based (including Ubuntu) machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.1.1/bin/pyinstaller/debian-amd64/5.1.1/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.2.0/bin/pyinstaller/debian-amd64/5.2.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
