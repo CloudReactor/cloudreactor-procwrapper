@@ -178,6 +178,7 @@ class ProcWrapper:
         self.timeout_count = 0
         self.timed_out = False
         self.hostname: Optional[str] = None
+        self.refresh_runtime_metadata_interval: Optional[int] = None
         self.process_env: Optional[Dict[str, str]] = None
         self.process: Optional[Popen[bytes]] = None
         self.is_execution_status_from_runtime_metadata = False
@@ -192,6 +193,9 @@ class ProcWrapper:
         self._status_message_so_far: Optional[bytearray] = None
         self.last_update_sent_at: Optional[float] = None
         self.last_app_heartbeat_at: Optional[datetime] = None
+        self.runtime_metadata: Optional[RuntimeMetadata] = None
+        self.runtime_metadata_last_refreshed_at: Optional[float] = None
+        self.runtime_metadata_last_sent_at: Optional[float] = None
 
         self.rollbar_retries_exhausted = False
         self.exit_handler_installed = False
@@ -206,17 +210,16 @@ class ProcWrapper:
             runtime_metadata_fetcher or DefaultRuntimeMetadataFetcher(params=params)
         )
 
-        self.runtime_metadata: Optional[RuntimeMetadata] = None
-        try:
-            self.runtime_metadata = self.runtime_metadata_fetcher.fetch(
-                env=self.env, context=self.runtime_context
-            )
-        except Exception:
-            _logger.exception("Failed to fetch runtime metadata")
+        self._fetch_runtime_metadata_if_necessary(force=True)
 
         if self.runtime_metadata:
             self.is_execution_status_from_runtime_metadata = (
                 self.runtime_metadata.is_execution_status_source
+            )
+
+            self.refresh_runtime_metadata_interval = coalesce(
+                self.params.runtime_metadata_refresh_interval,
+                self.runtime_metadata.default_refresh_interval,
             )
 
         if config_resolver:
@@ -375,12 +378,48 @@ class ProcWrapper:
             last_app_heartbeat_at=last_app_heartbeat_at,
         )
 
+    def _fetch_runtime_metadata_if_necessary(
+        self, force: bool = False
+    ) -> Optional[RuntimeMetadata]:
+        current_time = time.time()
+        if (
+            (not force)
+            and self.runtime_metadata
+            and self.runtime_metadata_last_refreshed_at
+            and (
+                (self.refresh_runtime_metadata_interval is None)
+                or (self.refresh_runtime_metadata_interval < 0)
+                or (
+                    current_time - self.runtime_metadata_last_refreshed_at
+                    <= self.refresh_runtime_metadata_interval
+                )
+            )
+        ):
+            return self.runtime_metadata
+
+        runtime_metadata: Optional[RuntimeMetadata] = None
+
+        try:
+            runtime_metadata = self.runtime_metadata_fetcher.fetch(
+                self.resolved_env, self.runtime_context
+            )
+        except Exception:
+            _logger.exception("Failed to fetch runtime metadata")
+            return None
+
+        if runtime_metadata is None:
+            return None
+
+        self.runtime_metadata = runtime_metadata
+        self.runtime_metadata_last_refreshed_at = current_time
+        return runtime_metadata
+
     def _transfer_runtime_metadata(
         self,
         dest: Dict[str, Any],
         runtime_metadata: Optional[RuntimeMetadata],
-        override_props: Optional[Dict[str, Any]],
         for_task: bool,
+        override_props: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         em_details: Optional[Dict[str, Any]] = None
         infra_settings: Optional[Dict[str, Any]] = None
@@ -473,12 +512,7 @@ class ProcWrapper:
             return
 
         if self.params.send_runtime_metadata or self.params.send_hostname:
-            self.runtime_metadata = (
-                self.runtime_metadata
-                or self.runtime_metadata_fetcher.fetch(
-                    env=self.resolved_env, context=self.runtime_context
-                )
-            )
+            self._fetch_runtime_metadata_if_necessary()
 
         if self.params.send_hostname and (not self.hostname):
             self._compute_hostname()
@@ -664,6 +698,9 @@ class ProcWrapper:
 
                     if status != self.STATUS_RUNNING:
                         self.reported_final_status = True
+
+                    if rm:
+                        self.runtime_metadata_last_sent_at = time.time()
 
                     fd = f.read()
 
@@ -1019,13 +1056,11 @@ class ProcWrapper:
                 if command and self.process:
                     monitor_process_exit_code = self.process.poll()
 
+                runtime_metadata = self._fetch_runtime_metadata_if_necessary()
+
                 if self.is_execution_status_from_runtime_metadata:
-                    runtime_metadata = self.runtime_metadata_fetcher.fetch(
-                        self.resolved_env, self.runtime_context
-                    )
                     if runtime_metadata:
-                        self.runtime_metadata = runtime_metadata
-                        exit_code = self.runtime_metadata.exit_code
+                        exit_code = runtime_metadata.exit_code
                 else:
                     exit_code = monitor_process_exit_code
 
@@ -1054,6 +1089,14 @@ class ProcWrapper:
                                 current_time + self.params.process_check_interval
                             )
 
+                        next_runtime_metadata_refresh_time = math.inf
+                        if self.refresh_runtime_metadata_interval and (
+                            self.refresh_runtime_metadata_interval > 0
+                        ):
+                            next_runtime_metadata_refresh_time = (
+                                self.runtime_metadata_last_refreshed_at or current_time
+                            ) + self.refresh_runtime_metadata_interval
+
                         if self.params.api_heartbeat_interval:
                             if self.last_update_sent_at is not None:
                                 next_heartbeat_time = max(
@@ -1073,7 +1116,9 @@ class ProcWrapper:
                             process_finish_deadline or math.inf,
                             next_heartbeat_time or math.inf,
                             next_process_check_time,
+                            next_runtime_metadata_refresh_time,
                         )
+
                         sleep_duration = sleep_until - current_time
 
                         if sleep_duration > 0:
@@ -1182,21 +1227,14 @@ class ProcWrapper:
         exit_code = None
         notification_required = not self.offline_mode
 
+        runtime_metadata = self._fetch_runtime_metadata_if_necessary(
+            force=self.is_execution_status_from_runtime_metadata
+            or self.params.send_runtime_metadata
+        )
+
         if self.is_execution_status_from_runtime_metadata:
-            try:
-                self.runtime_metadata = (
-                    self.runtime_metadata_fetcher.fetch(
-                        self.resolved_env, self.runtime_context
-                    )
-                    or self.runtime_metadata
-                )
-            except Exception:
-                _logger.exception(
-                    "Failed to fetch runtime metadata after _handle_exit()"
-                )
-            finally:
-                if self.runtime_metadata:
-                    exit_code = self.runtime_metadata.exit_code
+            if runtime_metadata:
+                exit_code = runtime_metadata.exit_code
         elif self.process:
             try:
                 exit_code = self._terminate_or_kill_process()
@@ -1522,6 +1560,26 @@ class ProcWrapper:
                 self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
             ] = unsent_last_app_heartbeat_at.isoformat()
 
+        sending_runtime_metadata = False
+        if (
+            self.params.send_runtime_metadata
+            and self.runtime_metadata
+            and self.runtime_metadata_last_refreshed_at
+            and (
+                (self.runtime_metadata_last_sent_at is None)
+                or (
+                    self.runtime_metadata_last_sent_at
+                    < self.runtime_metadata_last_refreshed_at
+                )
+            )
+        ):
+            sending_runtime_metadata = True
+            self._transfer_runtime_metadata(
+                dest=body,
+                runtime_metadata=self.runtime_metadata,
+                for_task=False,
+            )
+
         url = (
             f"{self.params.api_base_url}/api/v1/task_executions/"
             + quote_plus(str(self.task_execution_uuid))
@@ -1542,7 +1600,12 @@ class ProcWrapper:
 
         with f:
             _logger.debug("Update sent successfully.")
-            self.last_update_sent_at = time.time()
+
+            current_time = time.time()
+            self.last_update_sent_at = current_time
+            if sending_runtime_metadata:
+                self.runtime_metadata_last_sent_at = current_time
+
             self.status_dict = {}
             self.reported_final_status = is_final_update
 

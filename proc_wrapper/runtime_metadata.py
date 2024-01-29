@@ -1,7 +1,7 @@
 import copy
 import json
 import logging
-import time
+import platform
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
@@ -16,6 +16,7 @@ EXECUTION_METHOD_TYPE_AWS_ECS = "AWS ECS"
 EXECUTION_METHOD_TYPE_AWS_LAMBDA = "AWS Lambda"
 EXECUTION_METHOD_TYPE_AWS_CODEBUILD = "AWS CodeBuild"
 
+INFRASTRUCTURE_TYPE_UNKNOWN = "Unknown"
 INFRASTRUCTURE_TYPE_AWS = "AWS"
 
 AWS_ECS_METADATA_TIMEOUT_SECONDS = 60
@@ -28,7 +29,7 @@ _logger.addHandler(logging.NullHandler())
 @dataclass
 class CommonConfiguration:
     execution_method_type: str = EXECUTION_METHOD_TYPE_UNKNOWN
-    infrastructure_type: Optional[str] = None
+    infrastructure_type: Optional[str] = INFRASTRUCTURE_TYPE_UNKNOWN
     infrastructure_settings: Optional[Dict[str, Any]] = None
     allocated_cpu_units: Optional[int] = None
     allocated_memory_mb: Optional[int] = None
@@ -58,6 +59,7 @@ class RuntimeMetadata:
     monitor_host_addresses: Optional[List[str]] = None
     monitor_host_names: Optional[List[str]] = None
     monitor_process_env_additions: Optional[Mapping[str, str]] = None
+    default_refresh_interval: Optional[int] = None
 
 
 class RuntimeMetadataFetcher:
@@ -816,6 +818,8 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "trigger",
     ]
 
+    DEFAULT_RUNTIME_METADATA_REFRESH_INTERVAL_SECONDS = 60
+
     def fetch(
         self, env: Mapping[str, str], context: Optional[Any] = None
     ) -> Optional[RuntimeMetadata]:
@@ -934,14 +938,33 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             task_configuration=task_configuration,
             raw={},
             derived=derived,
+            default_refresh_interval=self.DEFAULT_RUNTIME_METADATA_REFRESH_INTERVAL_SECONDS,
+        )
+
+
+class GenericRuntimeMetadataFetcher(RuntimeMetadataFetcher):
+    def fetch(
+        self, env: Mapping[str, str], context: Optional[Any] = None
+    ) -> Optional[RuntimeMetadata]:
+        host_names: List[str] = []
+
+        uname = platform.uname()
+
+        hostname = uname.node
+        if hostname:
+            host_names.append(hostname)
+
+        return RuntimeMetadata(
+            task_execution_configuration=TaskExecutionConfiguration(),
+            task_configuration=TaskConfiguration(),
+            raw={},
+            derived={},
+            host_names=host_names,
         )
 
 
 class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     def __init__(self, params: Optional[ProcWrapperParams] = None):
-        self.runtime_metadata: Optional[RuntimeMetadata] = None
-        self.fetched_at: Optional[float] = None
-
         self.monitor_container_name = params.monitor_container_name if params else None
         self.main_container_name = params.main_container_name if params else None
         self.sidecar_container_mode = params.sidecar_container_mode if params else None
@@ -953,45 +976,28 @@ class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     ) -> Optional[RuntimeMetadata]:
         _logger.debug("Entering fetch_runtime_metadata() ...")
 
-        # Don't refetch if we have already attempted previously
-        if (self.runtime_metadata or self.fetched_at) and not (
-            self.runtime_metadata and self.runtime_metadata.is_execution_status_source
-        ):
-            _logger.debug(
-                "Runtime metadata already fetched, returning existing metadata."
-            )
-            return self.runtime_metadata
-
         if self.fetcher:
-            self.runtime_metadata = self.fetcher.fetch(env=env, context=context)
-            self.fetched_at = time.time()
-            return self.runtime_metadata
+            return self.fetcher.fetch(env=env, context=context)
 
-        # Do this first for easier simulation
-        fetcher: RuntimeMetadataFetcher = AwsCodeBuildRuntimeMetadataFetcher()
-        self.runtime_metadata = fetcher.fetch(env=env)
-
-        if self.runtime_metadata:
-            self.fetcher = fetcher
-        else:
-            fetcher = AwsEcsRuntimeMetadataFetcher(
+        fetchers = [
+            AwsCodeBuildRuntimeMetadataFetcher(),
+            AwsEcsRuntimeMetadataFetcher(
                 monitor_container_name=self.monitor_container_name,
                 main_container_name=self.main_container_name,
                 sidecar_mode=self.sidecar_container_mode,
-            )
+            ),
+            AwsLambdaRuntimeMetadataFetcher(),
+            GenericRuntimeMetadataFetcher(),
+        ]
 
-            self.runtime_metadata = fetcher.fetch(env=env)
+        runtime_metadata: Optional[RuntimeMetadata] = None
+        for fetcher in fetchers:
+            runtime_metadata = fetcher.fetch(env=env, context=context)
+            if runtime_metadata:
+                self.fetcher = fetcher
+                break
 
-        if self.runtime_metadata:
-            self.fetcher = fetcher
-        else:
-            fetcher = AwsLambdaRuntimeMetadataFetcher()
-            self.runtime_metadata = fetcher.fetch(env=env, context=context)
-
-        if self.runtime_metadata:
-            self.fetcher = fetcher
-
-        self.fetched_at = time.time()
-
-        _logger.debug(f"Done fetching runtime metadata, got {self.runtime_metadata}")
-        return self.runtime_metadata
+        _logger.debug(
+            f"Done fetching runtime metadata, got {runtime_metadata or 'N/A'}"
+        )
+        return runtime_metadata

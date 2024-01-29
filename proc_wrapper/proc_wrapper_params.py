@@ -123,6 +123,7 @@ MUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
     "send_pid",
     "send_hostname",
     "send_runtime_metadata",
+    "runtime_metadata_refresh_interval",
 ]
 
 
@@ -488,6 +489,7 @@ class ProcWrapperParams(ConfigResolverParams):
         self.send_pid: bool = False
         self.send_hostname: bool = False
         self.send_runtime_metadata: bool = True
+        self.runtime_metadata_refresh_interval: Optional[int] = None
 
         self.command: Optional[List[str]] = None
         self.command_line: Optional[str] = None
@@ -873,6 +875,9 @@ class ProcWrapperParams(ConfigResolverParams):
 
         _logger.info(f"Task instance metadata = {self.task_instance_metadata}")
         _logger.info(f"Send runtime metadata = {self.send_runtime_metadata}")
+        _logger.info(
+            f"Runtime metadata refresh interval = {self.runtime_metadata_refresh_interval}"
+        )
 
         _logger.debug(f"Task is a service = {self.service}")
         _logger.debug(f"Max concurrency = {self.max_concurrency}")
@@ -1496,6 +1501,11 @@ class ProcWrapperParams(ConfigResolverParams):
             or False
         )
 
+        self.runtime_metadata_refresh_interval = string_to_int(
+            env.get("PROC_WRAPPER_RUNTIME_METADATA_REFRESH_INTERVAL_SECONDS"),
+            default_value=self.runtime_metadata_refresh_interval,
+        )
+
     @staticmethod
     def _push_error(errors: Dict[str, List[str]], name: str, error: str) -> None:
         error_list = errors.get(name)
@@ -1750,6 +1760,13 @@ misconfigured.""",
         action="store_false",
         dest="send_runtime_metadata",
         help="Do not send metadata about the runtime environment",
+    )
+    api_group.add_argument(
+        "--runtime-metadata-refresh-interval",
+        help="""
+Refresh interval for runtime metadata, in seconds. The default value depends on
+the execution method.
+""",
     )
 
     log_group = parser.add_argument_group("log", "Logging settings")

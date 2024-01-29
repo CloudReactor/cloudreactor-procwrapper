@@ -132,7 +132,7 @@ def expect_task_execution_request(
 
     print(f"Expect order request to {url}")
 
-    httpserver.expect_ordered_request(
+    httpserver.expect_oneshot_request(
         url, method=method, headers=CLIENT_HEADERS
     ).respond_with_handler(handler)
 
@@ -535,7 +535,7 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         _fetch_ecs_task_metadata_request_data,
     ) = make_capturing_handler(response_data=TEST_ECS_TASK_METADATA, status=200)
 
-    httpserver.expect_ordered_request(
+    httpserver.expect_request(
         "/aws/ecs/task", method="GET", headers=ACCEPT_JSON_HEADERS
     ).respond_with_handler(ecs_task_metadata_handler)
 
@@ -544,7 +544,7 @@ def test_ecs_runtime_metadata(auto_create: bool, httpserver: HTTPServer):
         _fetch_ecs_container_metadata_request_data,
     ) = make_capturing_handler(response_data=TEST_ECS_CONTAINER_METADATA, status=200)
 
-    httpserver.expect_ordered_request(
+    httpserver.expect_request(
         "/aws/ecs", method="GET", headers=ACCEPT_JSON_HEADERS
     ).respond_with_handler(ecs_container_metadata_handler)
 
@@ -681,7 +681,7 @@ def test_passive_auto_created_task_with_unknown_em(httpserver: HTTPServer):
     assert crd.get("execution_method_details") is None
 
     task_dict = crd["task"]
-    assert task_dict.get("execution_method_type") is None
+    assert task_dict.get("execution_method_type") == "Unknown"
     assert task_dict.get("execution_method_details") is None
     assert task_dict["was_auto_created"] is True
 

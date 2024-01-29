@@ -268,7 +268,8 @@ Here are all the options:
                         [--api-resume-delay API_RESUME_DELAY] [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT]
                         [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
                         [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY] [--api-request-timeout API_REQUEST_TIMEOUT] [-o]
-                        [-p] [-d DEPLOYMENT] [--send-pid] [--send-hostname] [--no-send-runtime-metadata] [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets]
+                        [-p] [-d DEPLOYMENT] [--send-pid] [--send-hostname] [--no-send-runtime-metadata]
+                        [--runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL] [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets]
                         [--exclude-timestamps-in-log] [-w WORK_DIR] [-c COMMAND_LINE] [--shell-mode {auto,enable,disable}] [--no-strip-shell-wrapping]
                         [--no-process-group-termination] [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES] [--process-retry-delay PROCESS_RETRY_DELAY]
                         [--process-check-interval PROCESS_CHECK_INTERVAL] [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD]
@@ -363,8 +364,8 @@ Here are all the options:
                             Number of seconds to keep retrying Task Execution creation while conflict is detected by the API server. -1 means to keep trying indefinitely.
                             Defaults to 1800 for concurrency limited services, 0 otherwise.
       --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
-                            Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to 60 for concurrency-limited services, 120
-                            otherwise.
+                            Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to 60 for concurrency-limited services,
+                            120 otherwise.
       --api-request-timeout API_REQUEST_TIMEOUT
                             Timeout for contacting API server, in seconds. Defaults to 30.
       -o, --offline-mode    Do not communicate with or rely on an API server
@@ -376,6 +377,8 @@ Here are all the options:
       --send-hostname       Send the hostname to the API server
       --no-send-runtime-metadata
                             Do not send metadata about the runtime environment
+      --runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL
+                            Refresh interval for runtime metadata, in seconds. The default value depends on the execution method.
 
     log:
       Logging settings
@@ -433,10 +436,11 @@ Here are all the options:
 
       -e ENV_LOCATIONS, --env ENV_LOCATIONS
                             Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN containing properties used to populate the environment for embedded mode, or
-                            the process environment for wrapped mode. By default, the file format is assumed to be dotenv. Specify multiple times to include multiple locations.
+                            the process environment for wrapped mode. By default, the file format is assumed to be dotenv. Specify multiple times to include multiple
+                            locations.
       --config CONFIG_LOCATIONS
-                            Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN containing properties used to populate the configuration for embedded mode. By
-                            default, the file format is assumed to be in JSON. Specify multiple times to include multiple locations.
+                            Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN containing properties used to populate the configuration for embedded mode.
+                            By default, the file format is assumed to be in JSON. Specify multiple times to include multiple locations.
       --config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
                             Merge strategy for merging configurations. Defaults to 'DEEP', which does not require mergedeep. Besides the 'SHALLOW' strategy, all other
                             strategies require the mergedeep python package to be installed.
