@@ -107,3 +107,5 @@ UUID so it can be linked to an existing Task Execution started by CloudReactor
 * Support sidecar container mode in AWS ECS
 * Move CodeBuild source version to execution method capability (Task instead of Task Execution)
 * Stop building standalone executable with nuitka because [it doesn't respond to signals properly](https://github.com/Nuitka/Nuitka/issues/2156)
+## v5.2.0 (2024-01-15)
+* Refresh runtime metadata periodically
