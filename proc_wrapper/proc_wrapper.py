@@ -159,6 +159,7 @@ class ProcWrapper:
         self.input_value = input_value
         self.runtime_context = runtime_context
         self.override_params_from_env = override_params_from_env
+        self.override_params_from_config = override_params_from_config
 
         if env_override:
             self.env = dict(env_override)
@@ -197,9 +198,14 @@ class ProcWrapper:
         self.runtime_metadata_last_refreshed_at: Optional[float] = None
         self.runtime_metadata_last_sent_at: Optional[float] = None
 
+        self.resolved_env: Dict[str, str] = self.env
+        self.failed_env_names: List[str] = []
+        self.resolved_config: Dict[str, Any] = {}
+        self.failed_config_props: List[str] = []
+
         self.rollbar_retries_exhausted = False
         self.exit_handler_installed = False
-        self.in_pytest = False
+        self.in_pytest = string_to_bool(os.environ.get("IN_PYTEST")) or False
 
         if params:
             self.params = params
@@ -262,8 +268,6 @@ class ProcWrapper:
 
             if env_override:
                 self.resolved_env.update(env_override)
-
-        self.in_pytest = string_to_bool(os.environ.get("IN_PYTEST")) or False
 
         # Now we have enough info to try to send errors if problems happen below.
 
