@@ -26,7 +26,7 @@ from .common_utils import (
 )
 
 if TYPE_CHECKING:
-    from runtime_metadata import RuntimeMetadata
+    from .runtime_metadata import RuntimeMetadata
 
 DEFAULT_LOG_LEVEL = "INFO"
 
@@ -1960,7 +1960,7 @@ require the mergedeep python package to be installed.
     )
 
     config_group.add_argument(
-        "--overwrite_env_during_resolution",
+        "--overwrite-env-during-resolution",
         action="store_true",
         help="""
 Overwrite existing environment variables when resolving them""",
@@ -1979,7 +1979,7 @@ to never refresh. Defaults to -1.""",
         action="store_false",
         dest="fail_fast_config_resolution",
         help="""
-Exit immediately if an error occurs resolving the configuration""",
+Continue execution even if an error occurs resolving the configuration""",
     )
 
     config_group.add_argument(
