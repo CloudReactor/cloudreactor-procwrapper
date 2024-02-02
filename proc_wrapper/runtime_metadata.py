@@ -2,6 +2,7 @@ import copy
 import json
 import logging
 import platform
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
@@ -24,6 +25,31 @@ AWS_ECS_METADATA_TIMEOUT_SECONDS = 60
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
+
+
+AWS_STS_ROLE_ARN_REGEX = r"^arn:aws:sts::(\d{12}):assumed-role/([^/]+)/[^/]+"
+
+
+def get_current_aws_role_arn() -> Optional[str]:
+    try:
+        import boto3
+
+        sts_client = boto3.client("sts")
+        response = sts_client.get_caller_identity()
+        arn = response.get("Arn")
+        _logger.debug(f"Caller identity ARN: '{arn}'")
+
+        m = re.match(AWS_STS_ROLE_ARN_REGEX, arn)
+        if m:
+            account_id = m.group(1)
+            role_name = m.group(2)
+            return f"arn:aws:iam::{account_id}:role/{role_name}"
+        else:
+            _logger.info(f"Unable to parse AWS role ARN '{arn}'")
+    except Exception:
+        _logger.info("Error getting current AWS role", exc_info=True)
+
+    return None
 
 
 @dataclass
@@ -818,8 +844,6 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "trigger",
     ]
 
-    DEFAULT_RUNTIME_METADATA_REFRESH_INTERVAL_SECONDS = 60
-
     def fetch(
         self, env: Mapping[str, str], context: Optional[Any] = None
     ) -> Optional[RuntimeMetadata]:
@@ -845,6 +869,11 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             attrs=self.AWS_CODEBUILD_EXECUTION_METHOD_CAPABILITY_ATTRIBUTES,
             env_prefix="CODEBUILD_",
         )
+
+        assumed_role_arn = get_current_aws_role_arn()
+
+        if assumed_role_arn:
+            common_props["assumed_role_arn"] = assumed_role_arn
 
         execution_method_capability: Dict[str, Any] = {
             **common_props,
@@ -938,7 +967,6 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             task_configuration=task_configuration,
             raw={},
             derived=derived,
-            default_refresh_interval=self.DEFAULT_RUNTIME_METADATA_REFRESH_INTERVAL_SECONDS,
         )
 
 
