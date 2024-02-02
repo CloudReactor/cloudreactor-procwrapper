@@ -158,7 +158,7 @@ class SecretProvider:
     def supports_value(self, value: str) -> bool:
         return value.startswith(self.value_prefix)
 
-    def cache_key_for_value(self, value: str):
+    def cache_key_for_value(self, value: str) -> str:
         _logger.debug(f"Cache key for input value '{value}'")
 
         value, _format = self.extract_explicit_format(value)
@@ -387,7 +387,7 @@ class AwsS3Data(NamedTuple):
 
 
 class AwsS3SecretProvider(SecretProvider):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name=SECRET_PROVIDER_AWS_S3, value_prefix=AWS_S3_PREFIX)
         self.aws_s3_resource = None
         self.aws_s3_resource_create_attempted_at: Optional[float] = None
