@@ -35,7 +35,7 @@ sphinx-rtd-theme = {version = "^1.0.0", optional = true}
 myst-parser = {version = "^0.17.2", optional = true}
 # Jinja 3.1.0 breaks this version of Sphinx
 # https://github.com/apache/flink/pull/19238
-Jinja2 = {version = "3.0.3"}
+Jinja2 = {version = "3.0.3", optional = true}
 
 [tool.poetry.scripts]
 proc_wrapper = "proc_wrapper.__main__:main"
