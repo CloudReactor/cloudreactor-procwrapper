@@ -1187,6 +1187,10 @@ in AWS ECS Fargate (wrapped mode)
 (embedded mode)
 * [cloudreactor-java-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-java-ecs-quickstart) runs Java code in a Docker container in
 AWS ECS Fargate (wrapped mode)
+* [aws-otel-collector-cloudreactor](https://github.com/CloudReactor/aws-otel-collector-cloudreactor)
+enhances the AWS OTEL collector to report execution status to CloudReactor, and
+can be used as a sidecar container so that the main container doesn't need to
+run proc_wrapper.
 
 ## License
 
