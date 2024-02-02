@@ -107,5 +107,10 @@ UUID so it can be linked to an existing Task Execution started by CloudReactor
 * Support sidecar container mode in AWS ECS
 * Move CodeBuild source version to execution method capability (Task instead of Task Execution)
 * Stop building standalone executable with nuitka because [it doesn't respond to signals properly](https://github.com/Nuitka/Nuitka/issues/2156)
-## v5.2.0 (2024-01-15)
+## v5.3.0 (2024-01-15)
 * Refresh runtime metadata periodically
+## v5.3.1 (2024-02-01)
+* Fix reference of ProcWrapper instance variables before definition in constructor
+* Fix --overwrite-env-during-resolution parameter to be dashed instead of underscored, fix some usage docs
+* Try to get assumed role ARN when running in CodeBuild.
+* Do not refresh CodeBuild metadata as it comes from environment variables that never change
