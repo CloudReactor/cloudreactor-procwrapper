@@ -24,7 +24,7 @@ packages = [
 
 [tool.poetry.urls]
 "Bug Tracker" = "https://github.com/CloudReactor/cloudreactor-procwrapper/issues"
-"Changelog" = "https://cloudreactor-procwrapper.readthedocs.io/changelog.html"
+"Changelog" = "https://cloudreactor-procwrapper.readthedocs.io/en/latest/changelog.html"
 
 [tool.poetry.dependencies]
 python = "^3.8"
