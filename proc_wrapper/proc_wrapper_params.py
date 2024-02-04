@@ -1955,7 +1955,7 @@ to include multiple locations.""",
 Merge strategy for merging configurations.
 Defaults to '{DEFAULT_CONFIG_MERGE_STRATEGY}', which does not require mergedeep.
 Besides the '{CONFIG_MERGE_STRATEGY_SHALLOW}' strategy, all other strategies
-require the mergedeep python package to be installed.
+require the mergedeep extra to be installed.
             """,
     )
 

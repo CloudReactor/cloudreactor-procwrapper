@@ -110,7 +110,7 @@ CloudReactor currently supports four Execution Methods:
 
 1) [AWS ECS (in Fargate)](https://aws.amazon.com/fargate/)
 2) [AWS Lambda](https://aws.amazon.com/lambda/)
-3) [AWS CodeBuild](https://aws.amazon.com/lambda/)
+3) [AWS CodeBuild](https://aws.amazon.com/codebuild/)
 4) Unknown
 
 If a Task is running in AWS ECS, CloudReactor is able to run additional
@@ -134,7 +134,7 @@ such as bare metal servers, VM's, or Kubernetes.
 All Tasks in CloudReactor, regardless of execution method, have their
 history kept and are monitored.
 
-This module detects  the execution method your Task is
+This module detects the execution method your Task is
 running with and sends that information to the API server, provided
 you configure your Task to be auto-created.
 
@@ -179,7 +179,7 @@ an auto-created Task, it must have at least the Developer access level.
 Standalone executables built by [PyInstaller](https://www.pyinstaller.org/) for 64-bit Linux and Windows are available, located in `bin/pyinstaller`.
 These executables bundle
 python so you don't need to have python installed on your machine. They also
-bundle all optional library dependencies so you can fetch secrets from AWS
+bundle all optional extras so you can fetch secrets from AWS
 Secrets Manager and extract them with jsonpath-ng, for example.
 
 #### RHEL or derivatives
@@ -219,16 +219,36 @@ Install this module via pip (or your favorite package manager):
 
 `pip install cloudreactor-procwrapper`
 
-Fetching secrets from AWS Secrets Manager requires that
-[boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) is available to import in your python environment.
+`cloudreactor-procwrapper` doesn't have any required dependencies, but it can
+be installed with the following extras:
 
-JSON Path transformation requires that [jsonpath-ng](https://github.com/h2non/jsonpath-ng)
-be available to import in your python environment.
+`aws`: Support for fetching secrets from AWS Secrets Manager or S3, and
+determining the assumed role, implemented by the
+[boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
+library
 
-You can get the tested versions of both dependencies in
-[proc_wrapper-requirements.in](https://github.com/CloudReactor/cloudreactor-procwrapper/blob/main/proc_wrapper-requirements.in)
-(suitable for use by [pip-tools](https://github.com/jazzband/pip-tools/)) or the resolved requirements in
-[proc_wrapper-requirements.txt](https://github.com/CloudReactor/cloudreactor-procwrapper/blob/main/proc_wrapper-requirements.txt).
+`jsonpath`: Support for secret resolution using JSON Path, implemented by the
+[jsonpath-ng](https://github.com/h2non/jsonpath-ng) library
+
+`yaml`: Support for configuration files in YAML format, implemented by the
+[pyyaml](https://pyyaml.org/) library
+
+`dotenv`: Support for environment variables defined in the dotenv format,
+implemented by the [dotenv](https://github.com/theskumar/python-dotenv) library
+
+`mergedeep`: Support for secret object value merging using alternative
+strategies, implemented by the
+[mergedeep](https://github.com/clarketm/mergedeep) library
+
+Use brackets after `cloudreactor-procwrapper` to enable support for the desired
+functionality. For example, to install AWS support, JSON Path secret resolution,
+and support for dotenv files:
+
+    pip install cloudreactor-procwrapper[aws,jsonpath,dotenv]
+
+Or, to install support for everything:
+
+    pip install cloudreactor-procwrapper[allextras]
 
 ## Usage
 
@@ -449,7 +469,7 @@ Here are all the options:
                             embedded mode. By default, the file format is assumed to be in JSON. Specify multiple times to include multiple locations.
       --config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
                             Merge strategy for merging configurations. Defaults to 'DEEP', which does not require mergedeep. Besides the 'SHALLOW' strategy, all other
-                            strategies require the mergedeep python package to be installed.
+                            strategies require the mergedeep extra to be installed.
       --overwrite-env-during-resolution
                             Overwrite existing environment variables when resolving them
       --config-ttl CONFIG_TTL
@@ -770,13 +790,13 @@ a secret value. Each secret location string has the format:
 Providers indicate the raw source of the secret data. The table below lists the
 supported providers:
 
-| Provider Code 	| Value Prefix              	| Provider                     	| Example Address                                             	| Required libs                                                               	| Notes                                                         	|
+| Provider Code 	| Value Prefix              	| Provider                     	| Example Address                                             	| Required extras            | Notes                                                         	|
 |---------------	|---------------------------	|------------------------------	|-------------------------------------------------------------	|-----------------------------------------------------------------------------	|---------------------------------------------------------------	|
-| `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-2:1234567890:secret:config` 	| [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) 	| Can also include version suffix like `-PPrpY`                 	|
-| `AWS_S3`      	| `arn:aws:s3:::`           	| AWS S3 Object                	| `arn:aws:s3:::examplebucket/staging/app1/config.json`       	| [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) 	|                                                               	|
+| `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-2:1234567890:secret:config` 	| aws 	| Can also include version suffix like `-PPrpY`                 	|
+| `AWS_S3`      	| `arn:aws:s3:::`           	| AWS S3 Object                	| `arn:aws:s3:::examplebucket/staging/app1/config.json`       	| aws 	|                                                               	|
 | `FILE`        	| `file://`                 	| Local file                   	| `file:///home/appuser/app/.env`                                    	|                                                                             	| The default provider if no provider is auto-detected          	|
 | `ENV`         	|                           	| The process environment      	| `SOME_TOKEN`                                                	|                                                                             	| The name of another environment variable                      	|
-| `CONFIG`      	|                           	| The configuration dictionary 	| `$.db`                                                      	| [jsonpath-ng](https://github.com/h2non/jsonpath-ng)                         	| JSON path expression to extract the data in the configuration 	|
+| `CONFIG`      	|                           	| The configuration dictionary 	| `$.db`                                                      	| jsonpath         	| JSON path expression to extract the data in the configuration 	|
 | `PLAIN`       	|                           	| Plaintext                    	| `{"user": "postgres", "password": "badpassword"}`           	|                                                                             	|                                                               	|
 
 If you don't specify an explicit provider prefix in a secret location
@@ -791,11 +811,11 @@ Formats indicate how the raw string data is parsed into a secret value (which ma
 a string, number, boolean, dictionary, or array). The table below lists the
 supported formats:
 
-| Format Code 	| Extensions      	| MIME types                                                                            	| Required libs                                        	| Notes                                            	|
+| Format Code 	| Extensions      	| MIME types                                                                            	| Required extras                                        	| Notes                                            	|
 |-------------	|-----------------	|---------------------------------------------------------------------------------------	|------------------------------------------------------	|--------------------------------------------------	|
-| `dotenv`    	| `.env`          	| None                                                                                  	| [dotenv](https://github.com/theskumar/python-dotenv) 	| Also auto-detected if location includes `.env.`  	|
+| `dotenv`    	| `.env`          	| None                                                                                  	| dotenv 	| Also auto-detected if location includes `.env.`  	|
 | `json`      	| `.json`         	| `application/json`, `text/x-json`                                                     	|                                               	|  	|
-| `yaml`      	| `.yaml`, `.yml` 	| `application/x-yaml`, `application/yaml`, `text/vnd.yaml`, `text/yaml`, `text/x-yaml` 	| [pyyaml](https://pyyaml.org/)                        	| `safe_load()` is used for security               	|
+| `yaml`      	| `.yaml`, `.yml` 	| `application/x-yaml`, `application/yaml`, `text/vnd.yaml`, `text/yaml`, `text/x-yaml` 	| yaml                        	| pyyaml's `safe_load()` is used for security               	|
 
 The format of a secret value can be auto-detected from the extension or by the
 MIME type if available. Otherwise, you may need to an explicit format code
@@ -804,14 +824,13 @@ MIME type if available. Otherwise, you may need to an explicit format code
 #### AWS Secrets Manager / S3 notes
 
 [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
-is used to fetch secrets. It will try to access to AWS Secrets Manager
-or S3 using environment variables `AWS_ACCESS_KEY_ID` and
-`AWS_SECRET_ACCESS_KEY` if they are set, or use the EC2 instance role, ECS task
-role, or Lambda execution role if available.
+is used to fetch secrets when the `aws` extra is installed. It will try to
+access to AWS Secrets Manager or S3 using environment variables
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` if they are set, or use the EC2
+instance role, ECS task role, or Lambda execution role if available.
 
-For Secrets Manager, you can also use "partial ARNs"
-(without the hyphened suffix) as keys.
-In the example above
+For Secrets Manager, you can also use "partial ARNs" (without the hyphened
+suffix) as keys. In the example above
 
     arn:aws:secretsmanager:us-east-2:1234567890:secret:config
 
@@ -849,7 +868,8 @@ you may want to populate the environment variable `DB_USERNAME` with
 `postgres`.
 
 To facilitate this, dictionary fragments can be extracted to individual
-environment variables using [jsonpath-ng](https://github.com/h2non/jsonpath-ng).
+environment variables using [jsonpath-ng](https://github.com/h2non/jsonpath-ng)
+when the `jsonpath` extra is installed.
 To specify that a variable be extracted from a dictionary using
 a JSON Path expression, append `|JP:` followed by the JSON Path expression
 to the secret location string. For example, if the AWS Secrets Manager
@@ -958,9 +978,9 @@ Top-level fetching can potentially fetch multiple dictionaries which are
 merged together in the final environment / configuration dictionary.
 The default merge strategy (`DEEP`) merges recursively, even dictionaries
 in lists. The `SHALLOW` merge strategy just overwrites top-level keys, with later
-secret locations taking precedence. However, if you include the
-[mergedeep](https://github.com/clarketm/mergedeep) library, you can also
-set the merge strategy to one of:
+secret locations taking precedence. However, if you install the
+[mergedeep](https://github.com/clarketm/mergedeep) library with the `mergedeep`
+extra, you can also set the merge strategy to one of:
 
 * `REPLACE`
 * `ADDITIVE`
@@ -1181,12 +1201,12 @@ send updates:
 These projects contain sample Tasks that use this library to report their
 execution status and results to CloudReactor
 
-* [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart) runs python code in a Docker container
-in AWS ECS Fargate (wrapped mode)
-* [cloudreactor-python-lambda-quickstart](https://github.com/CloudReactor/cloudreactor-python-lambda-quickstart) runs python code in AWS Lambda
-(embedded mode)
-* [cloudreactor-java-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-java-ecs-quickstart) runs Java code in a Docker container in
-AWS ECS Fargate (wrapped mode)
+* [cloudreactor-python-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-python-ecs-quickstart)
+runs python code in a Docker container in AWS ECS Fargate (wrapped mode)
+* [cloudreactor-python-lambda-quickstart](https://github.com/CloudReactor/cloudreactor-python-lambda-quickstart)
+runs python code in AWS Lambda (embedded mode)
+* [cloudreactor-java-ecs-quickstart](https://github.com/CloudReactor/cloudreactor-java-ecs-quickstart)
+runs Java code in a Docker container in AWS ECS Fargate (wrapped mode)
 * [aws-otel-collector-cloudreactor](https://github.com/CloudReactor/aws-otel-collector-cloudreactor)
 enhances the AWS OTEL collector to report execution status to CloudReactor, and
 can be used as a sidecar container so that the main container doesn't need to
