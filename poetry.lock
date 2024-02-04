@@ -894,6 +894,20 @@ pycodestyle = ">=2.8.0,<2.9.0"
 pyflakes = ">=2.4.0,<2.5.0"
 
 [[package]]
+name = "freezegun"
+version = "1.4.0"
+description = "Let your Python tests travel through time"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "freezegun-1.4.0-py3-none-any.whl", hash = "sha256:55e0fc3c84ebf0a96a5aa23ff8b53d70246479e9a68863f1fcac5a3e52f19dd6"},
+    {file = "freezegun-1.4.0.tar.gz", hash = "sha256:10939b0ba0ff5adaecf3b06a5c2f73071d9678e507c5eaedb23c761d56ac774b"},
+]
+
+[package.dependencies]
+python-dateutil = ">=2.7"
+
+[[package]]
 name = "idna"
 version = "3.6"
 description = "Internationalized Domain Names in Applications (IDNA)"
@@ -2120,7 +2134,14 @@ files = [
     {file = "xmltodict-0.13.0.tar.gz", hash = "sha256:341595a488e3e01a85a9d8911d8912fd922ede5fecc4dce437eb4b6c8d037e56"},
 ]
 
+[extras]
+boto3 = ["boto3"]
+dotenv = ["python-dotenv"]
+jsonpath = ["jsonpath-ng"]
+mergedeep = ["mergedeep"]
+yaml = ["pyyaml"]
+
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "7b1c73f8c8cdd50c1b4c5c2bc5c82664f03a5fa60e6fb7297a3b0cf5ccad73ca"
+content-hash = "08fcb6e1c21ef63456d978b73f98194de4ad16862f82545405e837863221ced4"
