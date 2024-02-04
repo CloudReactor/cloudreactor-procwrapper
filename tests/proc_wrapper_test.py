@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from typing import Any, Dict, Mapping, Optional
 from urllib.parse import quote_plus
 
 import pytest
 from dateutil.relativedelta import relativedelta
+from freezegun import freeze_time
 from pytest_httpserver import HTTPServer
 
 from proc_wrapper import ProcWrapper, ProcWrapperParams, make_arg_parser
@@ -223,6 +225,39 @@ def test_wrapped_mode_with_server(
         finished_at_str = urd["finished_at"]
         finished_at = datetime.fromisoformat(finished_at_str)
         assert (datetime.utcnow() - finished_at).seconds < 10
+
+
+TEST_DATETIME = datetime(2021, 8, 16, 14, 26, 54, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    """
+    headers, expected_delay_seconds
+    """,
+    [
+        ({"Retry-After": "55"}, 55.0),
+        (
+            {
+                "Retry-After": format_datetime(
+                    TEST_DATETIME + timedelta(seconds=100), usegmt=True
+                )
+            },
+            100.0,
+        ),
+        ({}, None),
+    ],
+)
+@freeze_time(TEST_DATETIME)
+def test_extract_retry_delay_seconds(
+    headers: Dict[str, str], expected_delay_seconds: float
+) -> None:
+    delay_seconds = ProcWrapper._extract_retry_delay_seconds(headers)
+
+    if expected_delay_seconds is None:
+        assert delay_seconds is None
+    else:
+        assert delay_seconds is not None
+        assert abs(delay_seconds - expected_delay_seconds) <= 1.0
 
 
 def callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:

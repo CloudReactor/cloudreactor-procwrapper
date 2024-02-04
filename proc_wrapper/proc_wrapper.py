@@ -30,7 +30,8 @@ import signal
 import socket
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from io import RawIOBase
 from subprocess import Popen, TimeoutExpired
@@ -102,7 +103,7 @@ class ProcWrapper:
     STATUS_EXITED_AFTER_MARKED_DONE = "EXITED_AFTER_MARKED_DONE"
     STATUS_ABORTED = "ABORTED"
 
-    _ALLOWED_FINAL_STATUSES = set(
+    _ALLOWED_FINAL_STATUSES = frozenset(
         [
             STATUS_SUCCEEDED,
             STATUS_FAILED,
@@ -121,14 +122,17 @@ class ProcWrapper:
         403: 77,  # permission denied
     }
 
-    _RETRYABLE_HTTP_STATUS_CODES = set(
+    _RETRYABLE_HTTP_STATUS_CODES = frozenset(
         [
+            HTTPStatus.TOO_MANY_REQUESTS.value,
             HTTPStatus.SERVICE_UNAVAILABLE.value,
             HTTPStatus.BAD_GATEWAY.value,
-            HTTPStatus.INTERNAL_SERVER_ERROR.value,
             HTTPStatus.GATEWAY_TIMEOUT.value,
         ]
     )
+
+    _MIN_HTTP_REQUEST_DELAY_SECONDS = 5
+    _MAX_HTTP_REQUEST_DELAY_SECONDS = 600
 
     _STATUS_BUFFER_SIZE = 4096
 
@@ -1714,6 +1718,15 @@ class ProcWrapper:
 
                     self.last_api_request_failed_at = time.time()
 
+                    retry_delay = coalesce(
+                        self._extract_retry_delay_seconds(http_error.headers),
+                        retry_delay,
+                    )
+                    retry_delay = min(
+                        max(retry_delay, self._MIN_HTTP_REQUEST_DELAY_SECONDS),
+                        self._MAX_HTTP_REQUEST_DELAY_SECONDS,
+                    )
+
                     error_message = f"Endpoint temporarily not available, status code = {status_code}"
                     _logger.warning(error_message)
 
@@ -1722,7 +1735,7 @@ class ProcWrapper:
                         if not self.was_conflict:
                             self.was_conflict = True
                             deadline = self._compute_successful_request_deadline(
-                                first_attempt_at,
+                                first_attempt_at=first_attempt_at,
                                 is_task_execution_creation_request=True,
                                 for_task_execution_creation_conflict=True,
                             )
@@ -1806,6 +1819,33 @@ class ProcWrapper:
             "Exhausted retry timeout, not sending any more API requests.",
             api_request_data,
         )
+        return None
+
+    @staticmethod
+    def _extract_retry_delay_seconds(headers) -> Optional[float]:
+        retry_after = headers.get("Retry-After")
+        if retry_after:
+            retry_delay: Optional[float] = None
+            try:
+                retry_delay = float(retry_after)
+            except ValueError:
+                try:
+                    retry_after_date = parsedate_to_datetime(retry_after)
+                    retry_delay = (
+                        retry_after_date - datetime.now(timezone.utc)
+                    ).total_seconds()
+                except Exception:
+                    _logger.warning(
+                        f"Can't parse Retry-After header value '{retry_after}'",
+                        exc_info=True,
+                    )
+                    return None
+
+            _logger.info(
+                f"Computed retry delay {retry_delay} from Retry-After header {retry_after}"
+            )
+            return retry_delay
+
         return None
 
     def _refresh_api_server_retries_exhausted(self) -> bool:
