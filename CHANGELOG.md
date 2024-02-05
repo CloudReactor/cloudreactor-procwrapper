@@ -105,12 +105,21 @@ UUID so it can be linked to an existing Task Execution started by CloudReactor
 * Send build and deploy Task Execution UUIDs
 ## v5.2.0 (2024-01-15)
 * Support sidecar container mode in AWS ECS
-* Move CodeBuild source version to execution method capability (Task instead of Task Execution)
-* Stop building standalone executable with nuitka because [it doesn't respond to signals properly](https://github.com/Nuitka/Nuitka/issues/2156)
+* Move CodeBuild source version to execution method capability (Task instead of
+Task Execution)
+* Stop building standalone executable with nuitka because [it doesn't respond to
+signals properly](https://github.com/Nuitka/Nuitka/issues/2156)
 ## v5.3.0 (2024-01-15)
 * Refresh runtime metadata periodically
 ## v5.3.1 (2024-02-01)
-* Fix reference of ProcWrapper instance variables before definition in constructor
-* Fix --overwrite-env-during-resolution parameter to be dashed instead of underscored, fix some usage docs
+* Fix reference of ProcWrapper instance variables before definition in
+constructor
+* Fix --overwrite-env-during-resolution parameter to be dashed instead of
+underscored, fix some usage docs
 * Try to get assumed role ARN when running in CodeBuild.
-* Do not refresh CodeBuild metadata as it comes from environment variables that never change
+* Do not refresh CodeBuild metadata as it comes from environment variables that
+never change
+## v5.3.2 (2024-02-04)
+* Do not retry 500 response status, handle Retry-After header for retryable
+statuses (now including 429 Too Many Requests)
+* Fix dependencies to separate extras, not include Jinja2 version constraint
