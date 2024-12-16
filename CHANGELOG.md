@@ -123,3 +123,5 @@ never change
 * Do not retry 500 response status, handle Retry-After header for retryable
 statuses (now including 429 Too Many Requests)
 * Fix dependencies to separate extras, not include Jinja2 version constraint
+## v5.4.0 (2024-12-16)
+* Support sampling to avoid calling API server every time a Task executes

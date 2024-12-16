@@ -1,4 +1,4 @@
-__version__ = "5.3.2"
+__version__ = "5.4.0"
 
 
 from .config_resolver import ConfigResolver  # noqa: F401
