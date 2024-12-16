@@ -278,36 +278,27 @@ Or, if you have python installed:
 Here are all the options:
 
     usage: proc_wrapper [-h] [-v] [-n TASK_NAME] [--task-uuid TASK_UUID] [-a] [--auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME]
-                        [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID] [--auto-create-task-props AUTO_CREATE_TASK_PROPS]
-                        [--force-task-active] [--task-execution-uuid TASK_EXECUTION_UUID] [--task-version-number TASK_VERSION_NUMBER]
-                        [--task-version-text TASK_VERSION_TEXT] [--task-version-signature TASK_VERSION_SIGNATURE]
-                        [--build-task-execution-uuid BUILD_TASK_EXECUTION_UUID] [--deployment-task-execution-uuid DEPLOYMENT_TASK_EXECUTION_UUID]
-                        [--execution-method-props EXECUTION_METHOD_PROPS] [--task-instance-metadata TASK_INSTANCE_METADATA] [-s] [--schedule SCHEDULE]
-                        [--max-concurrency MAX_CONCURRENCY] [--max-conflicting-age MAX_CONFLICTING_AGE] [--api-base-url API_BASE_URL] [-k API_KEY]
-                        [--api-heartbeat-interval API_HEARTBEAT_INTERVAL] [--api-error-timeout API_ERROR_TIMEOUT]
-                        [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT] [--api-retry-delay API_RETRY_DELAY] [--api-resume-delay API_RESUME_DELAY]
-                        [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT]
-                        [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
-                        [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY]
-                        [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-p] [-d DEPLOYMENT] [--send-pid] [--send-hostname] [--no-send-runtime-metadata]
-                        [--runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL] [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets]
-                        [--exclude-timestamps-in-log] [-w WORK_DIR] [-c COMMAND_LINE] [--shell-mode {auto,enable,disable}] [--no-strip-shell-wrapping]
-                        [--no-process-group-termination] [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES] [--process-retry-delay PROCESS_RETRY_DELAY]
-                        [--process-check-interval PROCESS_CHECK_INTERVAL] [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD]
-                        [--enable-status-update-listener] [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
-                        [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES] [--status-update-interval STATUS_UPDATE_INTERVAL] [-e ENV_LOCATIONS]
-                        [--config CONFIG_LOCATIONS] [--config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}]
-                        [--overwrite-env-during-resolution] [--config-ttl CONFIG_TTL] [--no-fail-fast-config-resolution]
-                        [--resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX] [--resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX]
-                        [--resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX]
-                        [--resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX] [--env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG]
-                        [--config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV] [--main-container-name MAIN_CONTAINER_NAME]
-                        [--monitor-container-name MONITOR_CONTAINER_NAME] [--sidecar-container-mode] [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
-                        [--rollbar-retries ROLLBAR_RETRIES] [--rollbar-retry-delay ROLLBAR_RETRY_DELAY] [--rollbar-timeout ROLLBAR_TIMEOUT]
+                        [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID] [--auto-create-task-props AUTO_CREATE_TASK_PROPS] [--force-task-active] [--task-execution-uuid TASK_EXECUTION_UUID]
+                        [--task-version-number TASK_VERSION_NUMBER] [--task-version-text TASK_VERSION_TEXT] [--task-version-signature TASK_VERSION_SIGNATURE] [--build-task-execution-uuid BUILD_TASK_EXECUTION_UUID]
+                        [--deployment-task-execution-uuid DEPLOYMENT_TASK_EXECUTION_UUID] [--execution-method-props EXECUTION_METHOD_PROPS] [--task-instance-metadata TASK_INSTANCE_METADATA] [-s] [--schedule SCHEDULE]
+                        [--max-concurrency MAX_CONCURRENCY] [--max-conflicting-age MAX_CONFLICTING_AGE] [--api-base-url API_BASE_URL] [-k API_KEY] [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
+                        [--api-error-timeout API_ERROR_TIMEOUT] [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT] [--api-retry-delay API_RETRY_DELAY] [--api-resume-delay API_RESUME_DELAY]
+                        [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT] [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
+                        [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY] [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-p] [-m API_MANAGED_PROBABILITY]
+                        [--api-failure-report-probability API_FAILURE_REPORT_PROBABILITY] [--api-timeout-report-probability API_TIMEOUT_REPORT_PROBABILITY] [-d DEPLOYMENT] [--send-pid] [--send-hostname]
+                        [--no-send-runtime-metadata] [--runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL] [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets] [--exclude-timestamps-in-log] [-w WORK_DIR]
+                        [-c COMMAND_LINE] [--shell-mode {auto,enable,disable}] [--no-strip-shell-wrapping] [--no-process-group-termination] [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES] [--process-retry-delay PROCESS_RETRY_DELAY]
+                        [--process-check-interval PROCESS_CHECK_INTERVAL] [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD] [--enable-status-update-listener]
+                        [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT] [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES] [--status-update-interval STATUS_UPDATE_INTERVAL] [-e ENV_LOCATIONS]
+                        [--config CONFIG_LOCATIONS] [--config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}] [--overwrite-env-during-resolution] [--config-ttl CONFIG_TTL]
+                        [--no-fail-fast-config-resolution] [--resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX] [--resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX]
+                        [--resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX] [--resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX]
+                        [--env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG] [--config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV] [--main-container-name MAIN_CONTAINER_NAME]
+                        [--monitor-container-name MONITOR_CONTAINER_NAME] [--sidecar-container-mode] [--rollbar-access-token ROLLBAR_ACCESS_TOKEN] [--rollbar-retries ROLLBAR_RETRIES] [--rollbar-retry-delay ROLLBAR_RETRY_DELAY]
+                        [--rollbar-timeout ROLLBAR_TIMEOUT]
                         ...
 
-    Wraps the execution of processes so that a service API endpoint (CloudReactor) is optionally informed of the progress. Also implements retries, timeouts, and
-    secret injection into the environment.
+    Wraps the execution of processes so that a service API endpoint (CloudReactor) is optionally informed of the progress. Also implements retries, timeouts, and secret injection into the environment.
 
     positional arguments:
       command
@@ -326,16 +317,13 @@ Here are all the options:
       -a, --auto-create-task
                             Create the Task even if not known by the API server
       --auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
-                            Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-
-                            creating the Task). Defaults to the deployment name if the Run Environment UUID is not specified.
+                            Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run
+                            Environment UUID is not specified.
       --auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID
-                            UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-
-                            creating the Task)
+                            UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task)
       --auto-create-task-props AUTO_CREATE_TASK_PROPS
-                            Additional properties of the auto-created Task, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create for the
-                            schema.
-      --force-task-active   Indicates that the auto-created Task should be scheduled and made a service by the API server, if applicable. Otherwise, auto-created
-                            Tasks are marked passive.
+                            Additional properties of the auto-created Task, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create for the schema.
+      --force-task-active   Indicates that the auto-created Task should be scheduled and made a service by the API server, if applicable. Otherwise, auto-created Tasks are marked passive.
       --task-execution-uuid TASK_EXECUTION_UUID
                             UUID of Task Execution to attach to
       --task-version-number TASK_VERSION_NUMBER
@@ -349,8 +337,7 @@ Here are all the options:
       --deployment-task-execution-uuid DEPLOYMENT_TASK_EXECUTION_UUID
                             UUID of Task Execution that deployed this Task to the Runtime Environment
       --execution-method-props EXECUTION_METHOD_PROPS
-                            Additional properties of the execution method, in JSON format. See
-                            https://apidocs.cloudreactor.io/#operation/api_v1_task_executions_create for the schema.
+                            Additional properties of the execution method, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_task_executions_create for the schema.
       --task-instance-metadata TASK_INSTANCE_METADATA
                             Additional metadata about the Task instance, in JSON format
       -s, --service         Indicate that this is a Task that should run indefinitely
@@ -358,8 +345,7 @@ Here are all the options:
       --max-concurrency MAX_CONCURRENCY
                             Maximum number of concurrent Task Executions of the same Task. Defaults to 1.
       --max-conflicting-age MAX_CONFLICTING_AGE
-                            Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit. Defaults to the heartbeat interval, plus 60 seconds for
-                            services that send heartbeats. Otherwise, defaults to no limit.
+                            Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit. Defaults to the heartbeat interval, plus 60 seconds for services that send heartbeats. Otherwise, defaults to no limit.
 
     api:
       API client settings
@@ -369,31 +355,33 @@ Here are all the options:
       -k API_KEY, --api-key API_KEY
                             API key. Must have at least the Task access level, or Developer access level for auto-created Tasks.
       --api-heartbeat-interval API_HEARTBEAT_INTERVAL
-                            Number of seconds to wait between sending heartbeats to the API server. -1 means to not send heartbeats. Defaults to 30 for concurrency
-                            limited services, 300 otherwise.
+                            Number of seconds to wait between sending heartbeats to the API server. -1 means to not send heartbeats. Defaults to 30 for concurrency limited services, 300 otherwise.
       --api-error-timeout API_ERROR_TIMEOUT
                             Number of seconds to wait while receiving recoverable errors from the API server. Defaults to 300.
       --api-final-update-timeout API_FINAL_UPDATE_TIMEOUT
-                            Number of seconds to wait while receiving recoverable errors from the API server when sending the final update before exiting. Defaults to
-                            1800.
+                            Number of seconds to wait while receiving recoverable errors from the API server when sending the final update before exiting. Defaults to 1800.
       --api-retry-delay API_RETRY_DELAY
                             Number of seconds to wait before retrying an API request. Defaults to 120.
       --api-resume-delay API_RESUME_DELAY
                             Number of seconds to wait before resuming API requests, after retries are exhausted. Defaults to 600. -1 means to never resume.
       --api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT
-                            Number of seconds to keep retrying Task Execution creation while receiving error responses from the API server. -1 means to keep trying
-                            indefinitely. Defaults to 300.
+                            Number of seconds to keep retrying Task Execution creation while receiving error responses from the API server. -1 means to keep trying indefinitely. Defaults to 300.
       --api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT
-                            Number of seconds to keep retrying Task Execution creation while conflict is detected by the API server. -1 means to keep trying
-                            indefinitely. Defaults to 1800 for concurrency limited services, 0 otherwise.
+                            Number of seconds to keep retrying Task Execution creation while conflict is detected by the API server. -1 means to keep trying indefinitely. Defaults to 1800 for concurrency limited services, 0
+                            otherwise.
       --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
-                            Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to 60 for concurrency-limited
-                            services, 120 otherwise.
+                            Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to 60 for concurrency-limited services, 120 otherwise.
       --api-request-timeout API_REQUEST_TIMEOUT
                             Timeout for contacting API server, in seconds. Defaults to 30.
       -o, --offline-mode    Do not communicate with or rely on an API server
       -p, --prevent-offline-execution
                             Do not start processes if the API server is unavailable or the wrapper is misconfigured.
+      -m API_MANAGED_PROBABILITY, --api-managed-probability API_MANAGED_PROBABILITY
+                            Sample notifications to the API server with a given probability when starting an execution. Defaults to 1.0 (always send notifications).
+      --api-failure-report-probability API_FAILURE_REPORT_PROBABILITY
+                            If the notification of an execution was not previously sent on startup and the execution fails, notify the API server with the given probability. Defaults to 1.0 (always send failure notifications).
+      --api-timeout-report-probability API_TIMEOUT_REPORT_PROBABILITY
+                            If the notification of an execution was not previously sent on startup and the execution times out, notify the API server with given probability. Defaults to 1.0 (always send timeout notifications).
       -d DEPLOYMENT, --deployment DEPLOYMENT
                             Deployment name (production, staging, etc.)
       --send-pid            Send the process ID to the API server
@@ -410,8 +398,7 @@ Here are all the options:
                             Log level
       --log-secrets         Log sensitive information
       --exclude-timestamps-in-log
-                            Exclude timestamps in log (possibly because the log stream will be enriched by timestamps automatically by a logging service like AWS
-                            CloudWatch Logs)
+                            Exclude timestamps in log (possibly because the log stream will be enriched by timestamps automatically by a logging service like AWS CloudWatch Logs)
 
     process:
       Process settings
@@ -421,17 +408,15 @@ Here are all the options:
       -c COMMAND_LINE, --command-line COMMAND_LINE
                             Command line to execute
       --shell-mode {auto,enable,disable}
-                            Indicates if the process command should be executed in a shell. Executing in a shell allows shell scripts, commands, and expressions to be
-                            used, with the disadvantage that termination signals may not be propagated to child processes. Options are: enable -- Force the command to
-                            be executed in a shell; disable -- Force the command to be executed without a shell; auto -- Auto-detect the shell mode by analyzing the
-                            command.
+                            Indicates if the process command should be executed in a shell. Executing in a shell allows shell scripts, commands, and expressions to be used, with the disadvantage that termination signals may not
+                            be propagated to child processes. Options are: enable -- Force the command to be executed in a shell; disable -- Force the command to be executed without a shell; auto -- Auto-detect the shell mode by
+                            analyzing the command.
       --no-strip-shell-wrapping
-                            Do not strip the command-line of shell wrapping like "/bin/sh -c" that can be introduced by Docker when using shell form of ENTRYPOINT and
-                            CMD.
+                            Do not strip the command-line of shell wrapping like "/bin/sh -c" that can be introduced by Docker when using shell form of ENTRYPOINT and CMD.
       --no-process-group-termination
-                            Send termination and kill signals to the wrapped process only, instead of its process group (which is the default). Sending to the process
-                            group allows all child processes to receive the signals, even if the wrapped process does not forward signals. However, if your wrapped
-                            process manually handles and forwards signals to its child processes, you probably want to send signals to only your wrapped process.
+                            Send termination and kill signals to the wrapped process only, instead of its process group (which is the default). Sending to the process group allows all child processes to receive the signals, even
+                            if the wrapped process does not forward signals. However, if your wrapped process manually handles and forwards signals to its child processes, you probably want to send signals to only your wrapped
+                            process.
       -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
                             Timeout for process completion, in seconds. -1 means no timeout, which is the default.
       -r PROCESS_MAX_RETRIES, --process-max-retries PROCESS_MAX_RETRIES
@@ -447,51 +432,41 @@ Here are all the options:
       Status update settings
 
       --enable-status-update-listener
-                            Listen for status updates from the process, sent on the status socket port via UDP. If not specified, status update messages will not be
-                            read.
+                            Listen for status updates from the process, sent on the status socket port via UDP. If not specified, status update messages will not be read.
       --status-update-socket-port STATUS_UPDATE_SOCKET_PORT
                             The port used to receive status updates from the process. Defaults to 2373.
       --status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES
                             The maximum number of bytes status update messages can be. Defaults to 65536.
       --status-update-interval STATUS_UPDATE_INTERVAL
-                            Minimum of number of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with
-                            heartbeats. Defaults to -1.
+                            Minimum of number of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.
 
     configuration:
       Environment/configuration resolution settings
 
       -e ENV_LOCATIONS, --env ENV_LOCATIONS
-                            Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN containing properties used to populate the environment for embedded
-                            mode, or the process environment for wrapped mode. By default, the file format is assumed to be dotenv. Specify multiple times to include
-                            multiple locations.
+                            Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN containing properties used to populate the environment for embedded mode, or the process environment for wrapped mode. By default,
+                            the file format is assumed to be dotenv. Specify multiple times to include multiple locations.
       --config CONFIG_LOCATIONS
-                            Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN containing properties used to populate the configuration for
-                            embedded mode. By default, the file format is assumed to be in JSON. Specify multiple times to include multiple locations.
+                            Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN containing properties used to populate the configuration for embedded mode. By default, the file format is assumed to be in JSON.
+                            Specify multiple times to include multiple locations.
       --config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
-                            Merge strategy for merging configurations. Defaults to 'DEEP', which does not require mergedeep. Besides the 'SHALLOW' strategy, all other
-                            strategies require the mergedeep extra to be installed.
+                            Merge strategy for merging configurations. Defaults to 'DEEP', which does not require mergedeep. Besides the 'SHALLOW' strategy, all other strategies require the mergedeep extra to be installed.
       --overwrite-env-during-resolution
                             Overwrite existing environment variables when resolving them
       --config-ttl CONFIG_TTL
-                            Number of seconds to cache resolved environment variables and configuration properties instead of refreshing them when a process restarts.
-                            -1 means to never refresh. Defaults to -1.
+                            Number of seconds to cache resolved environment variables and configuration properties instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.
       --no-fail-fast-config-resolution
                             Continue execution even if an error occurs resolving the configuration
       --resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX
-                            Required prefix for names of environment variables that should resolved. The prefix will be removed in the resolved variable name.
-                            Defaults to ''.
+                            Required prefix for names of environment variables that should resolved. The prefix will be removed in the resolved variable name. Defaults to ''.
       --resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX
-                            Required suffix for names of environment variables that should resolved. The suffix will be removed in the resolved variable name.
-                            Defaults to '_FOR_PROC_WRAPPER_TO_RESOLVE'.
+                            Required suffix for names of environment variables that should resolved. The suffix will be removed in the resolved variable name. Defaults to '_FOR_PROC_WRAPPER_TO_RESOLVE'.
       --resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX
-                            Required prefix for names of configuration properties that should resolved. The prefix will be removed in the resolved property name.
-                            Defaults to ''.
+                            Required prefix for names of configuration properties that should resolved. The prefix will be removed in the resolved property name. Defaults to ''.
       --resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX
-                            Required suffix for names of configuration properties that should resolved. The suffix will be removed in the resolved property name.
-                            Defaults to '__to_resolve'.
+                            Required suffix for names of configuration properties that should resolved. The suffix will be removed in the resolved property name. Defaults to '__to_resolve'.
       --env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG
-                            The name of the environment variable used to set to the value of the JSON encoded configuration. Defaults to not setting any environment
-                            variable.
+                            The name of the environment variable used to set to the value of the JSON encoded configuration. Defaults to not setting any environment variable.
       --config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV
                             The name of the configuration property used to set to the value of the JSON encoded environment. Defaults to not setting any property.
 
@@ -516,6 +491,7 @@ Here are all the options:
                             Number of seconds to wait before retrying a Rollbar request. Defaults to 120.
       --rollbar-timeout ROLLBAR_TIMEOUT
                             Timeout for contacting Rollbar server, in seconds. Defaults to 30.
+
 
 
 These environment variables take precedence over command-line arguments:
@@ -551,6 +527,9 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_FINAL_UPDATE_TIMEOUT_SECONDS
 * PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_MANAGED_PROBABILITY
+* PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY
+* PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY
 * PROC_WRAPPER_ENV_LOCATIONS (comma-separated list of locations)
 * PROC_WRAPPER_CONFIG_LOCATIONS (comma-separated list of locations)
 * PROC_WRAPPER_OVERWRITE_ENV_WITH_SECRETS (TRUE or FALSE)
@@ -603,6 +582,9 @@ except that these properties are copied/overridden:
 * PROC_WRAPPER_API_RETRY_DELAY_SECONDS
 * PROC_WRAPPER_API_RESUME_DELAY_SECONDS
 * PROC_WRAPPER_API_REQUEST_TIMEOUT_SECONDS
+* PROC_WRAPPER_API_MANAGED_PROBABILITY
+* PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY
+* PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY
 * PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN
 * PROC_WRAPPER_ROLLBAR_TIMEOUT_SECONDS
 * PROC_WRAPPER_ROLLBAR_RETRIES
@@ -699,56 +681,59 @@ contains the key `proc_wrapper_params` and its value is a dictionary, the
 keys and values in the dictionary will be used to to set these attributes in
 `ProcWrapperParams`:
 
-| Key                              	| Type      	| Mutable 	| Uses Resolved Config 	|
-|----------------------------------	|-----------	|---------	|----------------------	|
-| log_secrets                      	| bool      	| No      	| No                   	|
-| env_locations                    	| list[str] 	| No      	| No                   	|
-| config_locations                 	| list[str] 	| No      	| No                   	|
-| config_merge_strategy            	| str       	| No      	| No                   	|
-| overwrite_env_during_resolution  	| bool      	| No      	| No                   	|
-| max_config_resolution_depth      	| int       	| No      	| No                   	|
-| max_config_resolution_iterations 	| int       	| No      	| No                   	|
-| config_ttl                       	| int       	| No      	| No                   	|
-| fail_fast_config_resolution      	| bool      	| No      	| No                   	|
-| resolved_env_var_name_prefix     	| str       	| No      	| No                   	|
-| resolved_env_var_name_suffix     	| str       	| No      	| No                   	|
-| resolved_config_property_name_prefix | str     	| No      	| No                   	|
-| resolved_config_property_name_suffix | str    	| No      	| No                   	|
-| schedule                          | str       	| No      	| Yes                  	|
-| max_concurrency                   | int       	| No      	| Yes                  	|
-| max_conflicting_age               | int       	| No      	| Yes                  	|
-| offline_mode                      | bool       	| No      	| Yes                  	|
-| prevent_offline_execution         | bool       	| No      	| Yes                  	|
-| service                           | bool       	| No      	| Yes                  	|
-| deployment                        | str       	| No      	| Yes                  	|
-| api_base_url                      | str       	| No      	| Yes                  	|
-| api_heartbeat_interval            | int       	| No      	| Yes                  	|
-| enable_status_listener            | bool      	| No      	| Yes                  	|
-| status_update_socket_port         | int        	| No      	| Yes                  	|
-| status_update_message_max_bytes   | int        	| No      	| Yes                  	|
-| status_update_interval            | int        	| No      	| Yes                  	|
-| log_level                         | str        	| No      	| Yes                  	|
-| include_timestamps_in_log         | bool      	| No      	| Yes                  	|
-| api_key                           | str        	| Yes     	| Yes                  	|
-| api_request_timeout               | int        	| Yes      	| Yes                  	|
-| api_error_timeout                 | int        	| Yes     	| Yes                  	|
-| api_retry_delay                   | int        	| Yes     	| Yes                  	|
-| api_resume_delay                  | int        	| Yes     	| Yes                  	|
-| api_task_execution_creation_error_timeout | int | Yes     	| Yes                  	|
-| api_task_execution_creation_conflict_timeout | int | Yes    | Yes                  	|
-| api_task_execution_creation_conflict_retry_delay | int| Yes	| Yes                  	|
-| process_timeout                   | int        	| Yes     	| Yes                  	|
-| process_max_retries               | int        	| Yes     	| Yes                  	|
-| process_retry_delay               | int        	| Yes     	| Yes                  	|
-| command                           | list[str]  	| Yes     	| Yes                  	|
-| command_line                      | str        	| Yes     	| Yes                  	|
-| shell_mode                        | bool      	| Yes     	| Yes                  	|
-| strip_shell_wrapping              | bool      	| Yes     	| Yes                  	|
-| work_dir                          | str       	| Yes     	| Yes                  	|
-| process_termination_grace_period  | int       	| Yes     	| Yes                  	|
-| send_pid                          | bool      	| Yes     	| Yes                  	|
-| send_hostname                     | bool      	| Yes     	| Yes                  	|
-| send_runtime_metadata             | bool      	| Yes     	| Yes                  	|
+| Key                              	               | Type      	| Mutable 	| Uses Resolved Config 	 |
+|--------------------------------------------------|-----------	|---------	|------------------------|
+| log_secrets                      	               | bool      	| No      	| No                   	 |
+| env_locations                    	               | list[str] 	| No      	| No                   	 |
+| config_locations                 	               | list[str] 	| No      	| No                   	 |
+| config_merge_strategy            	               | str       	| No      	| No                   	 |
+| overwrite_env_during_resolution  	               | bool      	| No      	| No                   	 |
+| max_config_resolution_depth      	               | int       	| No      	| No                   	 |
+| max_config_resolution_iterations 	               | int       	| No      	| No                   	 |
+| config_ttl                       	               | int       	| No      	| No                   	 |
+| fail_fast_config_resolution      	               | bool      	| No      	| No                   	 |
+| resolved_env_var_name_prefix     	               | str       	| No      	| No                   	 |
+| resolved_env_var_name_suffix     	               | str       	| No      	| No                   	 |
+| resolved_config_property_name_prefix             | str     	| No      	| No                   	 |
+| resolved_config_property_name_suffix             | str    	| No      	| No                   	 |
+| schedule                                         | str       	| No      	| Yes                  	 |
+| max_concurrency                                  | int       	| No      	| Yes                  	 |
+| max_conflicting_age                              | int       	| No      	| Yes                  	 |
+| offline_mode                                     | bool       	| No      	| Yes                  	 |
+| prevent_offline_execution                        | bool       	| No      	| Yes                  	 |
+| service                                          | bool       	| No      	| Yes                  	 |
+| deployment                                       | str       	| No      	| Yes                  	 |
+| api_base_url                                     | str       	| No      	| Yes                  	 |
+| api_heartbeat_interval                           | int       	| No      	| Yes                  	 |
+| enable_status_listener                           | bool      	| No      	| Yes                  	 |
+| status_update_socket_port                        | int        	| No      	| Yes                  	 |
+| status_update_message_max_bytes                  | int        	| No      	| Yes                  	 |
+| status_update_interval                           | int        	| No      	| Yes                  	 |
+| log_level                                        | str        	| No      	| Yes                  	 |
+| include_timestamps_in_log                        | bool      	| No      	| Yes                  	 |
+| api_key                                          | str        	| Yes     	| Yes                  	 |
+| api_request_timeout                              | int        	| Yes      	| Yes                  	 |
+| api_error_timeout                                | int        	| Yes     	| Yes                  	 |
+| api_retry_delay                                  | int        	| Yes     	| Yes                  	 |
+| api_resume_delay                                 | int        	| Yes     	| Yes                  	 |
+| api_task_execution_creation_error_timeout        | int | Yes     	| Yes                  	 |
+| api_task_execution_creation_conflict_timeout     | int | Yes    | Yes                  	 |
+| api_task_execution_creation_conflict_retry_delay | int| Yes	| Yes                  	 |
+| api-managed-probability                          | float         | No        | Yes                    |
+| api-failure-report-probability                   | float         | No        | Yes                    |
+| api-timeout-report-probability                   | float         | No        | Yes                    |
+| process_timeout                                  | int        	| Yes     	| Yes                  	 |
+| process_max_retries                              | int        	| Yes     	| Yes                  	 |
+| process_retry_delay                              | int        	| Yes     	| Yes                  	 |
+| command                                          | list[str]  	| Yes     	| Yes                  	 |
+| command_line                                     | str        	| Yes     	| Yes                  	 |
+| shell_mode                                       | bool      	| Yes     	| Yes                  	 |
+| strip_shell_wrapping                             | bool      	| Yes     	| Yes                  	 |
+| work_dir                                         | str       	| Yes     	| Yes                  	 |
+| process_termination_grace_period                 | int       	| Yes     	| Yes                  	 |
+| send_pid                                         | bool      	| Yes     	| Yes                  	 |
+| send_hostname                                    | bool      	| Yes     	| Yes                  	 |
+| send_runtime_metadata                            | bool      	| Yes     	| Yes                  	 |
 
 Keys that are marked with "Mutable" -- "No" in the table above can be
 overridden when the configuration is reloaded after the `config_ttl` expires.
@@ -1195,6 +1180,25 @@ send updates:
 
     proc_wrapper = ProcWrapper(params=params)
     proc_wrapper.managed_call(fun, {"a": 1, "b": 2})
+
+## Sampling
+
+In case the wrapped process or embedded function will be execution very frequently,
+it may be advantageous to skip notifications to the API server in order to avoid the
+overhead (delay, bandwidth) of communication with the API server, or to reduce usage of
+API credits. For this purpose, you can configure proc_wrapper to communicate with the API
+server with a  certain probability using the `api-managed-probability` setting. If a
+generated random  number between 0 and 1 is above the probability threshold, the initial
+notification to create a Task Execution will be skipped. If the wrapped process or
+embedded function succeeds, no communication with the API server will be sent.
+
+However, if the wrapped process or embedded function fails, proc_wrapper will communicate
+with the API server with probability `api-failure-notification-probability`, creating
+a Task Exection at that point with a `FAILED` status. Similarly, if the wrapped process
+times out, proc_wrapper will communicate  with the API server with probability
+`api-timeout-notification-probability`, creating
+a Task Exection at that point with a `TERMINATED_AFTER_TIME_OUT` status.
+(Currently, timing out embedded functions is not supported.)
 
 ## Example Projects
 

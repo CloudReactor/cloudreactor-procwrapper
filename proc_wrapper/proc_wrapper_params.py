@@ -23,6 +23,7 @@ from .common_utils import (
     encode_int,
     string_to_bool,
     string_to_int,
+    string_to_float,
 )
 
 if TYPE_CHECKING:
@@ -83,6 +84,9 @@ CONFIG_RESOLVER_PROPERTIES_COPIED_FROM_CONFIG = [
 ]
 
 IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
+    "api_managed_probability",
+    "api_failure_report_probability",
+    "api_timeout_report_probability",
     "schedule",
     "max_concurrency",
     "max_conflicting_age",
@@ -486,6 +490,9 @@ class ProcWrapperParams(ConfigResolverParams):
             DEFAULT_API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY_SECONDS
         )
         self.api_request_timeout: Optional[int] = DEFAULT_API_REQUEST_TIMEOUT_SECONDS
+        self.api_managed_probability: float = 1.0
+        self.api_failure_report_probability: float = 1.0
+        self.api_timeout_report_probability: float = 1.0
         self.send_pid: bool = False
         self.send_hostname: bool = False
         self.send_runtime_metadata: bool = True
@@ -493,9 +500,9 @@ class ProcWrapperParams(ConfigResolverParams):
 
         self.command: Optional[List[str]] = None
         self.command_line: Optional[str] = None
-        self.shell_mode = SHELL_MODE_AUTO
-        self.strip_shell_wrapping = True
-        self.process_group_termination = True
+        self.shell_mode: str = SHELL_MODE_AUTO
+        self.strip_shell_wrapping: bool = True
+        self.process_group_termination: bool = True
         self.work_dir: str = "."
 
         self.process_timeout: Optional[int] = None
@@ -685,20 +692,13 @@ class ProcWrapperParams(ConfigResolverParams):
         # into the input.
         return None
 
-    def validation_errors(
+    def sanitize_and_validate(
         self, runtime_metadata: Optional["RuntimeMetadata"] = None
     ) -> ProcWrapperParamValidationErrors:
         process_errors: Dict[str, List[str]] = {}
         process_warnings: Dict[str, List[str]] = {}
         task_errors: Dict[str, List[str]] = {}
         task_warnings: Dict[str, List[str]] = {}
-
-        errors = ProcWrapperParamValidationErrors(
-            process_errors=process_errors,
-            process_warnings=process_warnings,
-            task_errors=task_errors,
-            task_warnings=task_warnings,
-        )
 
         if not self.embedded_mode:
             runtime_metadata_is_execution_status_source = (
@@ -751,6 +751,16 @@ class ProcWrapperParams(ConfigResolverParams):
             )
             self.process_timeout = None
 
+        if self.task_execution_uuid and (self.api_managed_probability < 1.0):
+            _logger.info(f"API managed probability was set to 1.0 since Task Execution UUID was provided.")
+            self.api_managed_probability = 1.0
+
+        if (not self.offline_mode) and ((self.api_managed_probability <= 0.0) and \
+            (self.api_failure_report_probability <= 0.0) and \
+            (self.api_timeout_report_probability <= 0.0)):
+            _logger.info("Setting offline mode to true since all report probabilities are 0")
+            self.offline_mode = True
+
         if self.offline_mode:
             if self.prevent_offline_execution:
                 self._push_error(
@@ -759,13 +769,21 @@ class ProcWrapperParams(ConfigResolverParams):
                     "Offline mode and offline execution prevention cannot both be enabled.",
                 )
         else:
-            if not self.api_key:
-                self._push_error(task_errors, "api_key", "No API key specified.")
-
             if (not self.task_uuid) and (not self.task_name):
                 self._push_error(
                     task_errors, "task_name", "No Task UUID or name specified."
                 )
+
+            if not self.api_key:
+                self._push_error(task_errors, "api_key", "No API key specified.")
+
+            if self.prevent_offline_execution and (self.api_managed_probability < 1.0):
+                self._push_error(task_errors, "prevent_offline_execution",
+                                 "API managed probability must be 1.0 when preventing offline execution.")
+
+            self._validate_probability(task_errors, self.api_managed_probability, "api_managed_probability")
+            self._validate_probability(task_errors, self.api_failure_report_probability, "api_failure_report_probability")
+            self._validate_probability(task_errors, self.api_timeout_report_probability, "api_timeout_report_probability")
 
             if self.auto_create_task:
                 if not (
@@ -792,7 +810,12 @@ class ProcWrapperParams(ConfigResolverParams):
                     )
                     self.task_is_passive = True
 
-        return errors
+        return ProcWrapperParamValidationErrors(
+            process_errors=process_errors,
+            process_warnings=process_warnings,
+            task_errors=task_errors,
+            task_warnings=task_warnings,
+        )
 
     def run_mode_label(self) -> str:
         return "embedded" if self.embedded_mode else "wrapped"
@@ -897,6 +920,10 @@ class ProcWrapperParams(ConfigResolverParams):
             if self.log_secrets:
                 _logger.debug(f"API key = '{self.api_key}'")
 
+            _logger.debug(f"API managed probability = {self.api_managed_probability}")
+            _logger.debug(f"API failure report probability = {self.api_failure_report_probability}")
+            _logger.debug(f"API timeout report probability = {self.api_timeout_report_probability}")
+
             _logger.debug(f"API error timeout = {self.api_error_timeout}")
             _logger.debug(f"API retry delay = {self.api_retry_delay}")
             _logger.debug(f"API resume delay = {self.api_resume_delay}")
@@ -957,6 +984,9 @@ class ProcWrapperParams(ConfigResolverParams):
         if not self.offline_mode:
             env["PROC_WRAPPER_API_BASE_URL"] = self.api_base_url
             env["PROC_WRAPPER_API_KEY"] = str(self.api_key)
+            env["PROC_WRAPPER_API_MANAGED_PROBABILITY"] = str(self.api_managed_probability)
+            env["PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY"] = str(self.api_failure_report_probability)
+            env["PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY"] = str(self.api_timeout_report_probability)
             env["PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS"] = str(
                 encode_int(self.api_error_timeout, empty_value=-1)
             )
@@ -1185,6 +1215,21 @@ class ProcWrapperParams(ConfigResolverParams):
 
         api_base_url = env.get("PROC_WRAPPER_API_BASE_URL") or self.api_base_url
         self.api_base_url = api_base_url.rstrip("/")
+
+        self.api_managed_probability = string_to_float(
+            env.get("PROC_WRAPPER_API_MANAGED_PROBABILITY"),
+            default_value=self.api_managed_probability
+        )
+
+        self.api_failure_report_probability = string_to_float(
+            env.get("PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY"),
+            default_value=self.api_failure_report_probability
+        )
+
+        self.api_timeout_report_probability = string_to_float(
+            env.get("PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY"),
+            default_value=self.api_timeout_report_probability
+        )
 
         # Properties to be reported to CloudReactor
         self.schedule = env.get("PROC_WRAPPER_SCHEDULE") or self.schedule
@@ -1515,6 +1560,12 @@ class ProcWrapperParams(ConfigResolverParams):
             error_list.append(error)
 
 
+    @classmethod
+    def _validate_probability(cls, errors: Dict[str, List[str]], p: float, param_name: str) -> None:
+        if p < 0.0 or p > 1.0:
+            cls._push_error(errors, param_name, "Probability must be between 0.0 and 1.0")
+
+
 def json_encoded(s: str):
     return json.loads(s)
 
@@ -1743,6 +1794,36 @@ Timeout for contacting API server, in seconds. Defaults to
         help="""
 Do not start processes if the API server is unavailable or the wrapper is
 misconfigured.""",
+    )
+    api_group.add_argument(
+        "-m",
+        "--api-managed-probability",
+        type=float,
+        default=1.0,
+        dest="api_managed_probability",
+        help="""
+Sample notifications to the API server with a given probability when starting
+an execution. Defaults to 1.0 (always send notifications).""",
+    )
+    api_group.add_argument(
+        "--api-failure-report-probability",
+        type=float,
+        default=1.0,
+        dest="api_failure_report_probability",
+        help="""
+If the notification of an execution was not previously sent on startup and the
+execution fails, notify the API server with the given probability. Defaults to
+1.0 (always send failure notifications).""",
+    )
+    api_group.add_argument(
+        "--api-timeout-report-probability",
+        type=float,
+        default=1.0,
+        dest="api_timeout_report_probability",
+        help="""
+If the notification of an execution was not previously sent on startup and the
+execution times out, notify the API server with given probability. Defaults to
+1.0 (always send timeout notifications).""",
     )
     api_group.add_argument(
         "-d", "--deployment", help="Deployment name (production, staging, etc.)"

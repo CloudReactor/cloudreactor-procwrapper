@@ -51,6 +51,27 @@ def encode_int(x: Optional[int], empty_value: Optional[int] = None) -> Optional[
         return x
 
 
+def string_to_float(
+    s: Optional[Any],
+    default_value: Optional[float] = None,
+    negative_value: Optional[float] = None,
+) -> Optional[float]:
+    if s is None:
+        return default_value
+    else:
+        trimmed = str(s).strip()
+
+        if trimmed == "":
+            return default_value
+
+        x = float(trimmed)
+
+        if x < 0.0:
+            return negative_value
+
+        return x
+
+
 def strip_after(s: str, partial_suffix: str) -> Tuple[str, Optional[str]]:
     index = s.find(partial_suffix)
     if index >= 0:

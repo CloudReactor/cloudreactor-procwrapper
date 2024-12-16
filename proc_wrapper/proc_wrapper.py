@@ -26,6 +26,7 @@ import json
 import logging
 import math
 import os
+import random
 import signal
 import socket
 import sys
@@ -151,7 +152,7 @@ class ProcWrapper:
         params: Optional[ProcWrapperParams] = None,
         runtime_metadata_fetcher: Optional[RuntimeMetadataFetcher] = None,
         config_resolver: Optional[ConfigResolver] = None,
-        env_override: Optional[Mapping[str, Any]] = None,
+        config_override: Optional[Mapping[str, Any]] = None,
         override_params_from_env: bool = True,
         runtime_context: Optional[Any] = None,
         input_value: Optional[Any] = None,
@@ -165,29 +166,31 @@ class ProcWrapper:
         self.override_params_from_env = override_params_from_env
         self.override_params_from_config = override_params_from_config
 
-        if env_override:
-            self.env = dict(env_override)
+        if config_override:
+            self.env = dict(config_override)
         else:
             self.env = os.environ.copy()
 
         self.param_errors: Optional[ProcWrapperParamValidationErrors] = None
-        self.offline_mode = False
+        self.offline_mode: bool = False
+        self.started_at: Optional[datetime] = None
+        self.skip_start_notification: bool = False
         self.task_uuid: Optional[str] = None
         self.task_name: Optional[str] = None
         self.task_execution_uuid: Optional[str] = None
-        self.was_conflict = False
-        self.called_exit = False
-        self.reported_final_status = False
-        self.attempt_count = 0
-        self.failed_count = 0
-        self.timeout_count = 0
-        self.timed_out = False
+        self.was_conflict: bool = False
+        self.called_exit: bool = False
+        self.reported_final_status: bool = False
+        self.attempt_count: int = 0
+        self.failed_count: int = 0
+        self.timeout_count: int = 0
+        self.timed_out: bool = False
         self.hostname: Optional[str] = None
         self.refresh_runtime_metadata_interval: Optional[int] = None
         self.process_env: Optional[Dict[str, str]] = None
         self.process: Optional[Popen[bytes]] = None
-        self.is_execution_status_from_runtime_metadata = False
-        self.api_server_retries_exhausted = False
+        self.is_execution_status_from_runtime_metadata: bool = False
+        self.api_server_retries_exhausted: bool = False
         self.last_api_request_failed_at: Optional[float] = None
         self.last_api_request_data: Optional[Dict[str, Any]] = None
         self.config_last_reloaded_at: Optional[float] = None
@@ -250,28 +253,17 @@ class ProcWrapper:
             want_env=True, want_config=self.params.embedded_mode
         )
 
-        if override_params_from_env:
-            self.params.override_params_from_env(
-                env=self.resolved_env, mutable_only=False
-            )
-
         self.override_params_from_config = coalesce(
             override_params_from_config, self.params.embedded_mode
         )
 
-        if self.override_params_from_config:
-            env_override = self.params.override_params_from_config(
-                config=self.resolved_config, mutable_only=False
-            )
-
-            if env_override:
-                self.resolved_env.update(env_override)
+        self._override_params_from_env_and_config(mutable_only=False)
 
         if override_params_from_input:
-            env_override = self.params.override_params_from_input(input=input_value)
+            config_override = self.params.override_params_from_input(input=input_value)
 
-            if env_override:
-                self.resolved_env.update(env_override)
+            if config_override:
+                self.resolved_config.update(config_override)
 
         # Now we have enough info to try to send errors if problems happen below.
 
@@ -509,7 +501,17 @@ class ProcWrapper:
         else:
             return "127.0.0.1"
 
-    def _create_or_update_task_execution(self) -> None:
+    def _create_or_update_task_execution(
+        self,
+        status: Optional[str] = None,
+        failed_attempts: Optional[int] = None,
+        timed_out_attempts: Optional[int] = None,
+        exit_code: Optional[int] = None,
+        pid: Optional[int] = None,
+        finished_at: Optional[datetime] = None,
+        extra_runtime_metadata: Optional[Mapping[str, Any]] = None,
+        output_value: Optional[Any] = None
+    ) -> bool:
         """
         Make a request to the API server to create a Task Execution
         for this Task. Retry and wait between requests if so configured
@@ -517,15 +519,9 @@ class ProcWrapper:
         """
 
         if self.offline_mode:
-            return
+            return False
 
-        if self.params.send_runtime_metadata or self.params.send_hostname:
-            self._fetch_runtime_metadata_if_necessary()
-
-        if self.params.send_hostname and (not self.hostname):
-            self._compute_hostname()
-
-        status = ProcWrapper.STATUS_RUNNING
+        status = status or ProcWrapper.STATUS_RUNNING
         stop_reason: Optional[str] = None
 
         if self.param_errors:
@@ -536,6 +532,32 @@ class ProcWrapper:
                 status = ProcWrapper.STATUS_ABORTED
                 # TODO: use a reason that indicate misconfiguration
                 stop_reason = "FAILED_TO_START"
+
+
+        is_running = (status == ProcWrapper.STATUS_RUNNING)
+        should_send = True
+
+        if not self.task_execution_uuid:
+            if is_running or (status == ProcWrapper.STATUS_SUCCEEDED):
+                should_send = not self.skip_start_notification
+            elif status == ProcWrapper.STATUS_TERMINATED_AFTER_TIME_OUT:
+                should_send = (self.params.api_timeout_report_probability >= 1.0) or \
+                        (random.random() < self.params.api_timeout_report_probability)
+            else:
+                should_send = (self.params.api_failure_report_probability >= 1.0) or \
+                        (random.random() < self.params.api_failure_report_probability)
+
+        if not should_send:
+            _logger.info("Skipping Task Execution creation")
+            return False
+
+        need_hostname = (self.params.send_hostname and (self.hostname is None))
+
+        if self.params.send_runtime_metadata or need_hostname:
+            self._fetch_runtime_metadata_if_necessary(force=not is_running)
+
+        if need_hostname:
+            self._compute_hostname()
 
         try:
             url = f"{self.params.api_base_url}/api/v1/task_executions/"
@@ -548,6 +570,9 @@ class ProcWrapper:
                 "heartbeat_interval_seconds": encode_int(
                     self.params.api_heartbeat_interval, empty_value=-1
                 ),
+                "api_managed_probability": self.params.api_managed_probability,
+                "api_failure_report_probability": self.params.api_failure_report_probability,
+                "api_timeout_report_probability": self.params.api_timeout_report_probability,
             }
 
             body = {
@@ -601,6 +626,20 @@ class ProcWrapper:
                 "embedded_mode": self.params.embedded_mode,
             }
 
+            # If we are creating or updating a Task Execution after skipping the initial
+            # notification, include the post-execution properties
+            if self.skip_start_notification:
+                body['started_at'] = self.started_at.isoformat()
+
+                should_send_runtime_metadata = self._should_send_runtime_metadata()
+
+                # Do not include runtime metadata since it will be set later, unconditionally
+                body.update(self._make_update_body(status=status, failed_attempts=failed_attempts,
+                    timed_out_attempts=timed_out_attempts, exit_code=exit_code, pid=pid,
+                    finished_at=finished_at, output_value=output_value,
+                    include_runtime_metadata=False,
+                    extra_runtime_metadata=extra_runtime_metadata))
+
             if self.params.build_task_execution_uuid:
                 body["build"] = {
                     "task_execution": {"uuid": self.params.build_task_execution_uuid}
@@ -622,7 +661,7 @@ class ProcWrapper:
 
             if self.task_execution_uuid:
                 # Manually started
-                url += self.task_execution_uuid + "/"
+                url += quote_plus(self.task_execution_uuid) + "/"
                 http_method = "PATCH"
             else:
                 if self.params.auto_create_task_props:
@@ -697,46 +736,54 @@ class ProcWrapper:
 
             req = Request(url, data=data, headers=headers, method=http_method)
 
-            f = self._send_api_request(req, is_task_execution_creation_request=True)
+            is_final_update = status != self.STATUS_RUNNING
+
+            f = self._send_api_request(req, is_task_execution_creation_request=True,
+                is_final_update=is_final_update)
+
             if f is None:
                 _logger.warning("Task Execution creation request failed non-fatally")
-            else:
-                with f:
-                    _logger.info("Task Execution creation request was successful.")
+                return False
 
-                    if status != self.STATUS_RUNNING:
-                        self.reported_final_status = True
+            with f:
+                fd = f.read()
 
-                    if rm:
-                        self.runtime_metadata_last_sent_at = time.time()
+                if not fd:
+                    raise RuntimeError(
+                        "Unexpected None result of reading Task Execution creation response"
+                    )
 
-                    fd = f.read()
+                response_body = fd.decode("utf-8")
+                _logger.debug(f"Got creation response '{response_body}'")
 
-                    if not fd:
-                        raise RuntimeError(
-                            "Unexpected None result of reading Task Execution creation response"
-                        )
+                response_dict = json.loads(response_body)
 
-                    response_body = fd.decode("utf-8")
-                    _logger.debug(f"Got creation response '{response_body}'")
+                _logger.info("Task Execution creation request was successful.")
 
-                    response_dict = json.loads(response_body)
+                if is_final_update:
+                    self.reported_final_status = True
 
-                    if not self.task_execution_uuid:
-                        self.task_execution_uuid = response_dict.get("uuid")
-                        self._reconfigure_logger()
+                if rm:
+                    self.runtime_metadata_last_sent_at = time.time()
 
-                    self.task_uuid = self.task_uuid or response_dict["task"]["uuid"]
-                    self.task_name = self.task_name or response_dict["task"]["name"]
+                if not self.task_execution_uuid:
+                    self.task_execution_uuid = response_dict.get("uuid")
+                    self._reconfigure_logger()
 
+                self.task_uuid = self.task_uuid or response_dict["task"]["uuid"]
+                self.task_name = self.task_name or response_dict["task"]["name"]
+
+            return True
         except Exception as ex:
             _logger.exception(
-                "request_process_start_if_max_concurrency_ok() failed with exception"
+                "_create_or_update_task_execution() failed with exception"
             )
             if self.params.prevent_offline_execution:
                 raise ex
 
             _logger.info("Not preventing offline execution, so continuing")
+
+            return False
 
     def _update_status(
         self,
@@ -784,8 +831,11 @@ class ProcWrapper:
         if extra_status_props:
             self.status_dict.update(extra_status_props)
 
-        # These are important updates that should be sent no matter what.
-        if not (
+        if self.skip_start_notification:
+            should_send = False
+        # These are important updates that should be sent as long as we are notifying the API
+        # server at all.
+        elif not (
             (failed_attempts is None)
             and (timed_out_attempts is None)
             and (pid is None)
@@ -812,6 +862,7 @@ class ProcWrapper:
         timed_out_attempts: Optional[int] = None,
         exit_code: Optional[int] = None,
         pid: Optional[int] = None,
+        output_value: Optional[Any] = None
     ) -> None:
         """Send the final result to the API Server."""
 
@@ -828,16 +879,33 @@ class ProcWrapper:
             else:
                 exit_code = self._EXIT_CODE_GENERIC_ERROR
 
-        self.send_update(
-            status=status,
-            failed_attempts=failed_attempts,
-            timed_out_attempts=timed_out_attempts,
-            exit_code=exit_code,
-            pid=pid,
-            finished_at=datetime.utcnow(),
-        )
+        finished_at = datetime.utcnow()
 
-    def managed_call(self, fun, data: Any = None):
+        if self.skip_start_notification:
+            # We did not create the Task Execution with the API server when we
+            # started, but we may need to create it now on failure or timeout.
+            if status != ProcWrapper.STATUS_SUCCEEDED:
+                self._create_or_update_task_execution(
+                    status=status,
+                    failed_attempts=failed_attempts,
+                    timed_out_attempts=timed_out_attempts,
+                    exit_code=exit_code,
+                    pid=pid,
+                    finished_at=finished_at,
+                    output_value=output_value
+                )
+        else:
+            self.send_update(
+                status=status,
+                failed_attempts=failed_attempts,
+                timed_out_attempts=timed_out_attempts,
+                exit_code=exit_code,
+                pid=pid,
+                finished_at=finished_at,
+                output_value=output_value
+            )
+
+    def managed_call(self, fun, data: Optional[Any] = None) -> Optional[Any]:
         """
         Call the argument object, which must be callable, doing retries as necessary,
         and wrapping with calls to the API server.
@@ -850,21 +918,23 @@ class ProcWrapper:
                 f"Failed to resolve one or more environment variables: {self.failed_env_names}"
             )
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-            return
+            return None
 
         if self.failed_config_props:
             _logger.critical(
                 f"Failed to resolve one or more config props: {self.failed_config_props}"
             )
             self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
-            return
+            return None
 
         self._reload_params()
         self.log_configuration(initial=True)
 
+        self.started_at = datetime.utcnow()
+
         if not self._setup_task_execution():
             self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
-            return
+            return None
 
         rv = None
         success = False
@@ -879,9 +949,7 @@ class ProcWrapper:
             try:
                 rv = fun(self, data, self.resolved_config)
 
-                _logger.info("Managed function succeeded")
-
-                # TODO: log and send return value back to server
+                _logger.info(f"Managed function succeeded, return value = {rv}")
 
                 success = True
             except Exception as ex:
@@ -907,6 +975,7 @@ class ProcWrapper:
                 try:
                     self.send_completion(
                         status=ProcWrapper.STATUS_SUCCEEDED,
+                        output_value=rv
                     )
                 except Exception:
                     _logger.warning(
@@ -920,6 +989,21 @@ class ProcWrapper:
         )
 
         raise saved_ex
+
+    def _override_params_from_env_and_config(self, mutable_only: bool) -> None:
+        if self.override_params_from_env:
+            self.params.override_params_from_env(
+                env=self.resolved_env, mutable_only=mutable_only
+            )
+
+        if self.override_params_from_config:
+            config_override = self.params.override_params_from_config(
+                config=self.resolved_config, mutable_only=mutable_only
+            )
+
+            if config_override:
+                self.resolved_config.update(config_override)
+
 
     def _reload_params(self) -> None:
         (
@@ -936,20 +1020,9 @@ class ProcWrapper:
             env=self.resolved_env, context=self.runtime_context
         )
 
-        if self.override_params_from_env:
-            self.params.override_params_from_env(
-                env=self.resolved_env, mutable_only=True
-            )
+        self._override_params_from_env_and_config(mutable_only=True)
 
-        if self.override_params_from_config:
-            env_override = self.params.override_params_from_config(
-                config=self.resolved_config, mutable_only=True
-            )
-
-            if env_override:
-                self.resolved_env.update(env_override)
-
-        self.param_errors = self.params.validation_errors(
+        self.param_errors = self.params.sanitize_and_validate(
             runtime_metadata=self.runtime_metadata
         )
 
@@ -963,6 +1036,11 @@ class ProcWrapper:
             (self.param_errors is not None)
             and not self.param_errors.can_start_task_execution()
         )
+        self.skip_start_notification = self.offline_mode or \
+                                       (self.params.api_managed_probability <= 0.0) or (
+            (self.params.api_managed_probability < 1.0) and \
+            (random.random() > self.params.api_managed_probability))
+
         self.attempt_count = 0
         self.timeout_count = 0
 
@@ -971,6 +1049,8 @@ class ProcWrapper:
 
         if self.offline_mode:
             _logger.info("Starting in offline mode ...")
+        elif self.skip_start_notification:
+            _logger.info("Skipping API server notification ...")
         else:
             self._create_or_update_task_execution()
 
@@ -981,12 +1061,8 @@ class ProcWrapper:
                 return False
             else:
                 _logger.info(
-                    f"Created Task Execution {self.task_execution_uuid}, starting now."
+                     f"Created Task Execution {self.task_execution_uuid}, starting now."
                 )
-
-                if self.params.enable_status_update_listener:
-                    self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
-                    self._status_message_so_far = bytearray()
 
         return True
 
@@ -1009,20 +1085,21 @@ class ProcWrapper:
 
         command, shell = self.params.resolve_command_and_shell_flag()
 
+        self.started_at = datetime.utcnow()
+
         should_run = self._setup_task_execution()
 
         if not should_run:
             return self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
 
         if (not self.offline_mode) and self.params.enable_status_update_listener:
-            self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
-            self._status_message_so_far = bytearray()
+            self._open_status_socket()
+        else:
+            _logger.info("Not opening status socket.")
 
         first_attempt_started_at: Optional[float] = None
         latest_attempt_started_at: Optional[float] = None
         exit_code: Optional[int] = None
-
-        self._open_status_socket()
 
         while self.attempt_count < self.max_execution_attempts:
             self.attempt_count += 1
@@ -1048,11 +1125,17 @@ class ProcWrapper:
             if first_attempt_started_at is None:
                 first_attempt_started_at = latest_attempt_started_at
 
+            monitor_process_exit_code: Optional[int] = None
+
             if command and (self.process is None):
                 _logger.info(
                     f"Running process (attempt {self.attempt_count}/{self.max_execution_attempts}) ..."
                 )
-                self._start_command(command=command, shell=shell)
+                try:
+                    self._start_command(command=command, shell=shell)
+                except Exception as e:
+                    _logger.exception(f"Failed to start command '{command}'")
+                    monitor_process_exit_code = self._EXIT_CODE_CONFIGURATION_ERROR
 
             done_polling = False
             while not done_polling:
@@ -1060,8 +1143,7 @@ class ProcWrapper:
 
                 current_time = time.time()
 
-                monitor_process_exit_code: Optional[int] = None
-                if command and self.process:
+                if command and self.process and (monitor_process_exit_code is None):
                     monitor_process_exit_code = self.process.poll()
 
                 runtime_metadata = self._fetch_runtime_metadata_if_necessary()
@@ -1233,7 +1315,7 @@ class ProcWrapper:
         self.called_exit = True
 
         exit_code = None
-        notification_required = not self.offline_mode
+        error_notification_required = not (self.offline_mode or self.skip_start_notification)
 
         runtime_metadata = self._fetch_runtime_metadata_if_necessary(
             force=self.is_execution_status_from_runtime_metadata
@@ -1260,12 +1342,12 @@ class ProcWrapper:
             status = self.STATUS_SUCCEEDED
 
         try:
-            if self.task_execution_uuid and (not self.reported_final_status):
+            if (self.task_execution_uuid or self.skip_start_notification) and (not self.reported_final_status):
                 if self.was_conflict:
                     _logger.debug(
                         "Task execution update conflict detected, not notifying because server-side should have notified already."
                     )
-                    notification_required = False
+                    error_notification_required = False
                     status = self.STATUS_ABORTED
 
                 if not self.offline_mode and not self.api_server_retries_exhausted:
@@ -1275,13 +1357,13 @@ class ProcWrapper:
                         timed_out_attempts=self.timeout_count,
                         exit_code=exit_code,
                     )
-                    notification_required = False
+                    error_notification_required = False
         except Exception:
             _logger.exception("Exception in final update")
         finally:
             self._close_status_socket()
 
-        if notification_required:
+        if error_notification_required:
             error_message = "API Server not configured"
 
             if self.api_server_retries_exhausted:
@@ -1377,9 +1459,8 @@ class ProcWrapper:
             self._update_status(pid=pid)
 
     def _open_status_socket(self) -> Optional[socket.socket]:
-        if self.offline_mode or (not self.params.enable_status_update_listener):
-            _logger.info("Not opening status socket.")
-            return None
+        self._status_buffer = bytearray(self._STATUS_BUFFER_SIZE)
+        self._status_message_so_far = bytearray()
 
         try:
             _logger.info("Opening status update socket ...")
@@ -1513,6 +1594,7 @@ class ProcWrapper:
         exit_code: Optional[int] = None,
         pid: Optional[int] = None,
         finished_at: Optional[datetime] = None,
+        output_value: Optional[Any] = None,
         extra_props: Optional[Mapping[str, Any]] = None,
     ) -> bool:
         """
@@ -1525,7 +1607,7 @@ class ProcWrapper:
         This method is NOT meant to be called directly.
         """
 
-        if self.offline_mode:
+        if self.offline_mode or self.skip_start_notification:
             return False
 
         if not self.task_execution_uuid:
@@ -1534,59 +1616,13 @@ class ProcWrapper:
             )
             return False
 
-        if status is None:
-            status = self.STATUS_RUNNING
+        should_send_runtime_metadata = self._should_send_runtime_metadata()
 
-        body: Dict[str, Any] = {"status": status}
-
-        body.update(self.status_dict)
-
-        if failed_attempts:
-            body["failed_attempts"] = failed_attempts
-
-        if timed_out_attempts:
-            body["timed_out_attempts"] = timed_out_attempts
-
-        if exit_code is not None:
-            body["exit_code"] = exit_code
-
-        if pid is not None:
-            body["pid"] = pid
-
-        if finished_at:
-            body["finished_at"] = finished_at.isoformat()
-
-        if extra_props:
-            body["other_runtime_metadata"] = extra_props
-
-        unsent_last_app_heartbeat_at = self.status_dict.get(
-            self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
-        )
-
-        if unsent_last_app_heartbeat_at:
-            body[
-                self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
-            ] = unsent_last_app_heartbeat_at.isoformat()
-
-        sending_runtime_metadata = False
-        if (
-            self.params.send_runtime_metadata
-            and self.runtime_metadata
-            and self.runtime_metadata_last_refreshed_at
-            and (
-                (self.runtime_metadata_last_sent_at is None)
-                or (
-                    self.runtime_metadata_last_sent_at
-                    < self.runtime_metadata_last_refreshed_at
-                )
-            )
-        ):
-            sending_runtime_metadata = True
-            self._transfer_runtime_metadata(
-                dest=body,
-                runtime_metadata=self.runtime_metadata,
-                for_task=False,
-            )
+        body = self._make_update_body(status=status, failed_attempts=failed_attempts,
+            timed_out_attempts=timed_out_attempts, exit_code=exit_code, pid=pid,
+            finished_at=finished_at, output_value=output_value,
+            include_runtime_metadata=should_send_runtime_metadata,
+            extra_runtime_metadata=extra_props)
 
         url = (
             f"{self.params.api_base_url}/api/v1/task_executions/"
@@ -1611,13 +1647,85 @@ class ProcWrapper:
 
             current_time = time.time()
             self.last_update_sent_at = current_time
-            if sending_runtime_metadata:
+            if should_send_runtime_metadata:
                 self.runtime_metadata_last_sent_at = current_time
 
             self.status_dict = {}
             self.reported_final_status = is_final_update
 
         return True
+
+    def _should_send_runtime_metadata(self) -> bool:
+        return (
+            self.params.send_runtime_metadata
+            and self.runtime_metadata
+            and self.runtime_metadata_last_refreshed_at
+            and (
+                (self.runtime_metadata_last_sent_at is None)
+                or (
+                    self.runtime_metadata_last_sent_at
+                    < self.runtime_metadata_last_refreshed_at
+                )
+            )
+        )
+
+    def _make_update_body(
+        self,
+        status: Optional[str] = None,
+        failed_attempts: Optional[int] = None,
+        timed_out_attempts: Optional[int] = None,
+        exit_code: Optional[int] = None,
+        pid: Optional[int] = None,
+        finished_at: Optional[datetime] = None,
+        output_value: Optional[Any] = None,
+        include_runtime_metadata: bool = False,
+        extra_runtime_metadata: Optional[Mapping[str, Any]] = None
+    ) -> Dict[str, Any]:
+        if status is None:
+            status = self.STATUS_RUNNING
+
+        body: Dict[str, Any] = {"status": status}
+
+        body.update(self.status_dict)
+
+        unsent_last_app_heartbeat_at = self.status_dict.get(
+            self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
+        )
+
+        if unsent_last_app_heartbeat_at:
+            body[
+                self._STATUS_UPDATE_KEY_LAST_APP_HEARTBEAT_AT
+            ] = unsent_last_app_heartbeat_at.isoformat()
+
+        if failed_attempts:
+            body["failed_attempts"] = failed_attempts
+
+        if timed_out_attempts:
+            body["timed_out_attempts"] = timed_out_attempts
+
+        if exit_code is not None:
+            body["exit_code"] = exit_code
+
+        if pid is not None:
+            body["pid"] = pid
+
+        if finished_at:
+            body["finished_at"] = finished_at.isoformat()
+
+        if output_value is not None:
+            body["output_value"] = output_value
+
+        if extra_runtime_metadata:
+            body["other_runtime_metadata"] = extra_runtime_metadata
+
+        if include_runtime_metadata:
+            self._transfer_runtime_metadata(
+                dest=body,
+                runtime_metadata=self.runtime_metadata,
+                for_task=False,
+            )
+
+        return body
 
     def _compute_successful_request_deadline(
         self,
@@ -1648,7 +1756,7 @@ class ProcWrapper:
         is_final_update: bool = False,
     ) -> Optional[RawIOBase]:
         _logger.debug(
-            f"Sending {req.method} request with body '{str(req.data)}' to {req.full_url} ...."
+            f"Sending {req.method} request with body {str(req.data)} to {req.full_url} ...."
         )
 
         self._refresh_api_server_retries_exhausted()
