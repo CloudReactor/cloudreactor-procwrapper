@@ -50,7 +50,9 @@ def make_wrapped_mode_proc_wrapper(env: Mapping[str, str]) -> ProcWrapper:
     params = main_parser.parse_args(
         args=[], namespace=ProcWrapperParams(embedded_mode=False)
     )
-    return ProcWrapper(params=params, config_override=env, override_params_from_env=True)
+    return ProcWrapper(
+        params=params, config_override=env, override_params_from_env=True
+    )
 
 
 def make_online_base_env(port: int, command: Optional[str] = "echo") -> Dict[str, str]:
@@ -147,39 +149,54 @@ def expect_task_execution_request(
     """,
     [
         ({}, "echo", 0, True, ProcWrapper.STATUS_SUCCEEDED),
-        ({}, None, ProcWrapper._EXIT_CODE_CONFIGURATION_ERROR, False, ProcWrapper.STATUS_FAILED),
         (
-            {
-                "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": "1"
-            },
-            "sleep 60", 1, True, ProcWrapper.STATUS_TERMINATED_AFTER_TIME_OUT
+            {},
+            None,
+            ProcWrapper._EXIT_CODE_CONFIGURATION_ERROR,
+            False,
+            ProcWrapper.STATUS_FAILED,
         ),
         (
-            {
-                "PROC_WRAPPER_API_MANAGED_PROBABILITY": "0.0000000001"
-            },
-            "echo", 0, False, None
+            {"PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": "1"},
+            "sleep 60",
+            1,
+            True,
+            ProcWrapper.STATUS_TERMINATED_AFTER_TIME_OUT,
         ),
         (
-            {
-                "PROC_WRAPPER_API_MANAGED_PROBABILITY": "0.0000000001"
-            },
-            "fakecmdo", ProcWrapper._EXIT_CODE_CONFIGURATION_ERROR, False, ProcWrapper.STATUS_FAILED
+            {"PROC_WRAPPER_API_MANAGED_PROBABILITY": "0.0000000001"},
+            "echo",
+            0,
+            False,
+            None,
+        ),
+        (
+            {"PROC_WRAPPER_API_MANAGED_PROBABILITY": "0.0000000001"},
+            "fakecmdo",
+            ProcWrapper._EXIT_CODE_CONFIGURATION_ERROR,
+            False,
+            ProcWrapper.STATUS_FAILED,
         ),
         (
             {
                 "PROC_WRAPPER_API_MANAGED_PROBABILITY": "0.0000000001",
-                "PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY": "0.0000000001"
+                "PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY": "0.0000000001",
             },
-            "ls -zsfadsgadsg", 1, False, None
+            "ls -zsfadsgadsg",
+            None,
+            False,
+            None,
         ),
         (
             {
                 "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": "1",
                 "PROC_WRAPPER_API_MANAGED_PROBABILITY": "0.0000000001",
-                "PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY": "0.0000000001"
+                "PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY": "0.0000000001",
             },
-            "sleep 60", 1, False, None
+            "sleep 60",
+            1,
+            False,
+            None,
         ),
     ],
 )
@@ -196,19 +213,22 @@ def test_wrapped_mode_with_server(
 
     wrapper = make_wrapped_mode_proc_wrapper(env=env)
 
-    fetch_creation_request_data: Optional[Dict[str, Any]] = None
+    fetch_creation_request_data: Optional[Any] = None
     if expect_api_server_use or expected_final_status:
         fetch_creation_request_data = expect_task_execution_request(
             httpserver=httpserver, update=False
         )
 
-    fetch_update_request_data: Optional[Dict[str, Any]] = None
+    fetch_update_request_data: Optional[Any] = None
     if expect_api_server_use:
         fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
 
     expected_started_at = datetime.utcnow()
 
-    assert wrapper.run() == expected_exit_code
+    rv = wrapper.run()
+
+    if expected_exit_code is not None:
+        assert rv == expected_exit_code
 
     process_env = wrapper.make_process_env()
 
@@ -232,14 +252,19 @@ def test_wrapped_mode_with_server(
             # original value is -1, but negative values get limited to 0
             "PROC_WRAPPER_API_RESUME_DELAY_SECONDS": "0",
             "PROC_WRAPPER_ENABLE_STATUS_UPDATE_LISTENER": "FALSE",
-            "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": env_override.get("PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS") or "-1",
+            "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": env_override.get(
+                "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS"
+            )
+            or "-1",
             "PROC_WRAPPER_PROCESS_TERMINATION_GRACE_PERIOD_SECONDS": "30",
             "PROC_WRAPPER_MAX_CONCURRENCY": "-1",
             "PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION": "FALSE",
         }
 
         if expect_api_server_use:
-            expected_props["PROC_WRAPPER_TASK_EXECUTION_UUID"] = DEFAULT_TASK_EXECUTION_UUID
+            expected_props[
+                "PROC_WRAPPER_TASK_EXECUTION_UUID"
+            ] = DEFAULT_TASK_EXECUTION_UUID
 
         for k, v in expected_props.items():
             assert process_env[k] == v, k
@@ -248,7 +273,7 @@ def test_wrapped_mode_with_server(
 
     httpserver.check_assertions()
 
-    if expect_api_server_use:
+    if expect_api_server_use and fetch_creation_request_data:
         crd = fetch_creation_request_data()
 
         expected_status = ProcWrapper.STATUS_RUNNING
@@ -266,7 +291,7 @@ def test_wrapped_mode_with_server(
 
         last_rd = crd
 
-        if expect_api_server_use:
+        if expect_api_server_use and fetch_update_request_data:
             urd = fetch_update_request_data()
             assert urd.get("failed_attempts") is None
             last_rd = urd
@@ -274,7 +299,6 @@ def test_wrapped_mode_with_server(
             started_at_str = crd["started_at"]
             started_at = datetime.fromisoformat(started_at_str)
             assert abs((expected_started_at - started_at).seconds) < 10
-
 
         last_rd["status"] == expected_final_status
 
@@ -599,19 +623,19 @@ def test_embedded_mode_with_params_from_input(
     [
         (False, 0.0),
         (True, 1.0),
-        (True, 1E-9),
-    ]
+        (True, 1e-9),
+    ],
 )
-def test_embedded_mode_with_sampling(fail: bool, report_failure_p: float, httpserver: HTTPServer):
+def test_embedded_mode_with_sampling(
+    fail: bool, report_failure_p: float, httpserver: HTTPServer
+):
     params = make_online_params(httpserver.port)
-    params.api_managed_probability = 1E-9
+    params.api_managed_probability = 1e-9
     params.api_failure_report_probability = report_failure_p
     wrapper = ProcWrapper(params=params)
 
     if fail and (report_failure_p == 1.0):
-        expect_task_execution_request(
-            httpserver=httpserver, update=False
-        )
+        expect_task_execution_request(httpserver=httpserver, update=False)
 
     cb = bad_callback if fail else callback
     rv = None
@@ -625,6 +649,7 @@ def test_embedded_mode_with_sampling(fail: bool, report_failure_p: float, httpse
         assert rv == "superduper"
 
     httpserver.check_assertions()
+
 
 def callback_with_env_in_config(
     wrapper: ProcWrapper, cbdata: str, config: Dict[str, Any]

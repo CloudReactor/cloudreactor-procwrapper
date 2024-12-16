@@ -22,8 +22,8 @@ from .common_utils import (
     coalesce,
     encode_int,
     string_to_bool,
-    string_to_int,
     string_to_float,
+    string_to_int,
 )
 
 if TYPE_CHECKING:
@@ -752,13 +752,19 @@ class ProcWrapperParams(ConfigResolverParams):
             self.process_timeout = None
 
         if self.task_execution_uuid and (self.api_managed_probability < 1.0):
-            _logger.info(f"API managed probability was set to 1.0 since Task Execution UUID was provided.")
+            _logger.info(
+                "API managed probability was set to 1.0 since Task Execution UUID was provided."
+            )
             self.api_managed_probability = 1.0
 
-        if (not self.offline_mode) and ((self.api_managed_probability <= 0.0) and \
-            (self.api_failure_report_probability <= 0.0) and \
-            (self.api_timeout_report_probability <= 0.0)):
-            _logger.info("Setting offline mode to true since all report probabilities are 0")
+        if (not self.offline_mode) and (
+            (self.api_managed_probability <= 0.0)
+            and (self.api_failure_report_probability <= 0.0)
+            and (self.api_timeout_report_probability <= 0.0)
+        ):
+            _logger.info(
+                "Setting offline mode to true since all report probabilities are 0"
+            )
             self.offline_mode = True
 
         if self.offline_mode:
@@ -778,12 +784,25 @@ class ProcWrapperParams(ConfigResolverParams):
                 self._push_error(task_errors, "api_key", "No API key specified.")
 
             if self.prevent_offline_execution and (self.api_managed_probability < 1.0):
-                self._push_error(task_errors, "prevent_offline_execution",
-                                 "API managed probability must be 1.0 when preventing offline execution.")
+                self._push_error(
+                    task_errors,
+                    "prevent_offline_execution",
+                    "API managed probability must be 1.0 when preventing offline execution.",
+                )
 
-            self._validate_probability(task_errors, self.api_managed_probability, "api_managed_probability")
-            self._validate_probability(task_errors, self.api_failure_report_probability, "api_failure_report_probability")
-            self._validate_probability(task_errors, self.api_timeout_report_probability, "api_timeout_report_probability")
+            self._validate_probability(
+                task_errors, self.api_managed_probability, "api_managed_probability"
+            )
+            self._validate_probability(
+                task_errors,
+                self.api_failure_report_probability,
+                "api_failure_report_probability",
+            )
+            self._validate_probability(
+                task_errors,
+                self.api_timeout_report_probability,
+                "api_timeout_report_probability",
+            )
 
             if self.auto_create_task:
                 if not (
@@ -921,8 +940,12 @@ class ProcWrapperParams(ConfigResolverParams):
                 _logger.debug(f"API key = '{self.api_key}'")
 
             _logger.debug(f"API managed probability = {self.api_managed_probability}")
-            _logger.debug(f"API failure report probability = {self.api_failure_report_probability}")
-            _logger.debug(f"API timeout report probability = {self.api_timeout_report_probability}")
+            _logger.debug(
+                f"API failure report probability = {self.api_failure_report_probability}"
+            )
+            _logger.debug(
+                f"API timeout report probability = {self.api_timeout_report_probability}"
+            )
 
             _logger.debug(f"API error timeout = {self.api_error_timeout}")
             _logger.debug(f"API retry delay = {self.api_retry_delay}")
@@ -984,9 +1007,15 @@ class ProcWrapperParams(ConfigResolverParams):
         if not self.offline_mode:
             env["PROC_WRAPPER_API_BASE_URL"] = self.api_base_url
             env["PROC_WRAPPER_API_KEY"] = str(self.api_key)
-            env["PROC_WRAPPER_API_MANAGED_PROBABILITY"] = str(self.api_managed_probability)
-            env["PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY"] = str(self.api_failure_report_probability)
-            env["PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY"] = str(self.api_timeout_report_probability)
+            env["PROC_WRAPPER_API_MANAGED_PROBABILITY"] = str(
+                self.api_managed_probability
+            )
+            env["PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY"] = str(
+                self.api_failure_report_probability
+            )
+            env["PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY"] = str(
+                self.api_timeout_report_probability
+            )
             env["PROC_WRAPPER_API_ERROR_TIMEOUT_SECONDS"] = str(
                 encode_int(self.api_error_timeout, empty_value=-1)
             )
@@ -1216,19 +1245,26 @@ class ProcWrapperParams(ConfigResolverParams):
         api_base_url = env.get("PROC_WRAPPER_API_BASE_URL") or self.api_base_url
         self.api_base_url = api_base_url.rstrip("/")
 
-        self.api_managed_probability = string_to_float(
-            env.get("PROC_WRAPPER_API_MANAGED_PROBABILITY"),
-            default_value=self.api_managed_probability
+        self.api_managed_probability = coalesce(
+            string_to_float(
+                env.get("PROC_WRAPPER_API_MANAGED_PROBABILITY"),
+                default_value=self.api_managed_probability,
+            ),
+            1.0,
         )
 
-        self.api_failure_report_probability = string_to_float(
-            env.get("PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY"),
-            default_value=self.api_failure_report_probability
+        self.api_failure_report_probability = coalesce(
+            string_to_float(
+                env.get("PROC_WRAPPER_API_FAILURE_REPORT_PROBABILITY"),
+                default_value=self.api_failure_report_probability,
+            )
         )
 
-        self.api_timeout_report_probability = string_to_float(
-            env.get("PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY"),
-            default_value=self.api_timeout_report_probability
+        self.api_timeout_report_probability = coalesce(
+            string_to_float(
+                env.get("PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY"),
+                default_value=self.api_timeout_report_probability,
+            )
         )
 
         # Properties to be reported to CloudReactor
@@ -1559,11 +1595,14 @@ class ProcWrapperParams(ConfigResolverParams):
         else:
             error_list.append(error)
 
-
     @classmethod
-    def _validate_probability(cls, errors: Dict[str, List[str]], p: float, param_name: str) -> None:
+    def _validate_probability(
+        cls, errors: Dict[str, List[str]], p: float, param_name: str
+    ) -> None:
         if p < 0.0 or p > 1.0:
-            cls._push_error(errors, param_name, "Probability must be between 0.0 and 1.0")
+            cls._push_error(
+                errors, param_name, "Probability must be between 0.0 and 1.0"
+            )
 
 
 def json_encoded(s: str):
