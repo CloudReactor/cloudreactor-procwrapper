@@ -54,19 +54,19 @@ functions)
 First, secrets and other configuration are fetched and resolved from
 providers like AWS Secrets Manager, AWS S3, or the local filesystem.
 
-Just before your code runs, the module requests the API server to create a
+Just before your code runs, the module requests the Task Management server to create a
 Task Execution associated with the Task name or UUID which you pass to the
 module.
-The API server may reject the request if too many instances of the Task are
+the Task Management server may reject the request if too many instances of the Task are
 currently running, but otherwise records that a Task Execution has started.
 The module then passes control to your code.
 
-While your code is running, it may report progress to the API server,
-and the API server may signal that your Task stop execution (due to
+While your code is running, it may report progress to the Task Management server,
+and the Task Management server may signal that your Task stop execution (due to
 user manually stopping the Task Execution), in which
 case the module terminates your code and exits.
 
-After your code finishes, the module informs the API server of
+After your code finishes, the module informs the Task Management server of
 the exit code or result. CloudReactor monitors Tasks to ensure they
 are still responsive, and keeps a history of the Executions of Tasks,
 allowing you to view failures and run durations in the past.
@@ -86,9 +86,9 @@ However, it may not be possible or desired to change your deployment process.
 Instead, you may configure the Task to be *auto-created*.
 
 Auto-created Tasks are created the first time your Task runs.
-This means there is no need to inform the API server of the Task details
+This means there is no need to inform the Task Management server of the Task details
 (during deployment) before it runs.
-Instead, each time the module runs, it informs the API server of the
+Instead, each time the module runs, it informs the Task Management server of the
 Task details at the same time as it requests the creation of a Task Execution.
 One disadvantage of auto-created Tasks is that they are not available
 in the CloudReactor dashboard until the first time they run.
@@ -118,7 +118,7 @@ Task Executions, provided the details of running the Task is provided
 during deployment with the AWS ECS CloudReactor Deployer, or if the
 Task is configured to be auto-created, and this module is run. In the
 second case, this module uses the ECS Metadata endpoint to detect
-the ECS Task settings, and sends them to the API server. CloudReactor
+the ECS Task settings, and sends them to the Task Management server. CloudReactor
 can also schedule Tasks or setup long-running services using Tasks,
 provided they are run in AWS ECS.
 
@@ -135,7 +135,7 @@ All Tasks in CloudReactor, regardless of execution method, have their
 history kept and are monitored.
 
 This module detects the execution method your Task is
-running with and sends that information to the API server, provided
+running with and sends that information to the Task Management server, provided
 you configure your Task to be auto-created.
 
 ### Passive Tasks
@@ -147,7 +147,7 @@ However, Tasks marked as services or that have a schedule will still be
 monitored by CloudReactor, which will send notifications if
 a service Task goes down or a Task does not run on schedule.
 
-The module reports to the API server that auto-created Tasks are passive,
+The module reports to the Task Management server that auto-created Tasks are passive,
 unless you specify the `--force-task-passive` commmand-line option or
 set the environment variable `PROC_WRAPPER_TASK_IS_PASSIVE` to `FALSE`.
 If a Task uses the Unknown Execution Method, it must be marked as passive,
@@ -186,7 +186,7 @@ Secrets Manager and extract them with jsonpath-ng, for example.
 
 To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.4.0/bin/pyinstaller/al2/5.4.0/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.5.0/bin/pyinstaller/al2/5.5.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 Example Dockerfiles of known working environments are available for
@@ -200,7 +200,7 @@ Fedora 27 or later are supported.
 
 On a Debian based (including Ubuntu) machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.4.0/bin/pyinstaller/debian-amd64/5.4.0/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.5.0/bin/pyinstaller/debian-amd64/5.5.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
@@ -315,7 +315,7 @@ Here are all the options:
       --task-uuid TASK_UUID
                             UUID of Task (either the Task Name or the Task UUID must be specified)
       -a, --auto-create-task
-                            Create the Task even if not known by the API server
+                            Create the Task even if not known by the Task Management server
       --auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
                             Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run
                             Environment UUID is not specified.
@@ -323,7 +323,7 @@ Here are all the options:
                             UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task)
       --auto-create-task-props AUTO_CREATE_TASK_PROPS
                             Additional properties of the auto-created Task, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create for the schema.
-      --force-task-active   Indicates that the auto-created Task should be scheduled and made a service by the API server, if applicable. Otherwise, auto-created Tasks are marked passive.
+      --force-task-active   Indicates that the auto-created Task should be scheduled and made a service by the Task Management server, if applicable. Otherwise, auto-created Tasks are marked passive.
       --task-execution-uuid TASK_EXECUTION_UUID
                             UUID of Task Execution to attach to
       --task-version-number TASK_VERSION_NUMBER
@@ -341,7 +341,7 @@ Here are all the options:
       --task-instance-metadata TASK_INSTANCE_METADATA
                             Additional metadata about the Task instance, in JSON format
       -s, --service         Indicate that this is a Task that should run indefinitely
-      --schedule SCHEDULE   Run schedule reported to the API server
+      --schedule SCHEDULE   Run schedule reported to the Task Management server
       --max-concurrency MAX_CONCURRENCY
                             Maximum number of concurrent Task Executions of the same Task. Defaults to 1.
       --max-conflicting-age MAX_CONFLICTING_AGE
@@ -355,19 +355,19 @@ Here are all the options:
       -k API_KEY, --api-key API_KEY
                             API key. Must have at least the Task access level, or Developer access level for auto-created Tasks.
       --api-heartbeat-interval API_HEARTBEAT_INTERVAL
-                            Number of seconds to wait between sending heartbeats to the API server. -1 means to not send heartbeats. Defaults to 30 for concurrency limited services, 300 otherwise.
+                            Number of seconds to wait between sending heartbeats to the Task Management server. -1 means to not send heartbeats. Defaults to 30 for concurrency limited services, 300 otherwise.
       --api-error-timeout API_ERROR_TIMEOUT
-                            Number of seconds to wait while receiving recoverable errors from the API server. Defaults to 300.
+                            Number of seconds to wait while receiving recoverable errors from the Task Management server. Defaults to 300.
       --api-final-update-timeout API_FINAL_UPDATE_TIMEOUT
-                            Number of seconds to wait while receiving recoverable errors from the API server when sending the final update before exiting. Defaults to 1800.
+                            Number of seconds to wait while receiving recoverable errors from the Task Management server when sending the final update before exiting. Defaults to 1800.
       --api-retry-delay API_RETRY_DELAY
                             Number of seconds to wait before retrying an API request. Defaults to 120.
       --api-resume-delay API_RESUME_DELAY
                             Number of seconds to wait before resuming API requests, after retries are exhausted. Defaults to 600. -1 means to never resume.
       --api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT
-                            Number of seconds to keep retrying Task Execution creation while receiving error responses from the API server. -1 means to keep trying indefinitely. Defaults to 300.
+                            Number of seconds to keep retrying Task Execution creation while receiving error responses from the Task Management server. -1 means to keep trying indefinitely. Defaults to 300.
       --api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT
-                            Number of seconds to keep retrying Task Execution creation while conflict is detected by the API server. -1 means to keep trying indefinitely. Defaults to 1800 for concurrency limited services, 0
+                            Number of seconds to keep retrying Task Execution creation while conflict is detected by the Task Management server. -1 means to keep trying indefinitely. Defaults to 1800 for concurrency limited services, 0
                             otherwise.
       --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
                             Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to 60 for concurrency-limited services, 120 otherwise.
@@ -375,17 +375,17 @@ Here are all the options:
                             Timeout for contacting API server, in seconds. Defaults to 30.
       -o, --offline-mode    Do not communicate with or rely on an API server
       -p, --prevent-offline-execution
-                            Do not start processes if the API server is unavailable or the wrapper is misconfigured.
+                            Do not start processes if the Task Management server is unavailable or the wrapper is misconfigured.
       -m API_MANAGED_PROBABILITY, --api-managed-probability API_MANAGED_PROBABILITY
-                            Sample notifications to the API server with a given probability when starting an execution. Defaults to 1.0 (always send notifications).
+                            Sample notifications to the Task Management server with a given probability when starting an execution. Defaults to 1.0 (always send notifications).
       --api-failure-report-probability API_FAILURE_REPORT_PROBABILITY
-                            If the notification of an execution was not previously sent on startup and the execution fails, notify the API server with the given probability. Defaults to 1.0 (always send failure notifications).
+                            If the notification of an execution was not previously sent on startup and the execution fails, notify the Task Management server with the given probability. Defaults to 1.0 (always send failure notifications).
       --api-timeout-report-probability API_TIMEOUT_REPORT_PROBABILITY
-                            If the notification of an execution was not previously sent on startup and the execution times out, notify the API server with given probability. Defaults to 1.0 (always send timeout notifications).
+                            If the notification of an execution was not previously sent on startup and the execution times out, notify the Task Management server with given probability. Defaults to 1.0 (always send timeout notifications).
       -d DEPLOYMENT, --deployment DEPLOYMENT
                             Deployment name (production, staging, etc.)
-      --send-pid            Send the process ID to the API server
-      --send-hostname       Send the hostname to the API server
+      --send-pid            Send the process ID to the Task Management server
+      --send-hostname       Send the hostname to the Task Management server
       --no-send-runtime-metadata
                             Do not send metadata about the runtime environment
       --runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL
@@ -438,7 +438,7 @@ Here are all the options:
       --status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES
                             The maximum number of bytes status update messages can be. Defaults to 65536.
       --status-update-interval STATUS_UPDATE_INTERVAL
-                            Minimum of number of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.
+                            Minimum of number of seconds to wait between sending status updates to the Task Management server. -1 means to not send status updates except with heartbeats. Defaults to -1.
 
     configuration:
       Environment/configuration resolution settings
@@ -719,9 +719,9 @@ keys and values in the dictionary will be used to to set these attributes in
 | api_task_execution_creation_error_timeout        | int | Yes     	| Yes                  	 |
 | api_task_execution_creation_conflict_timeout     | int | Yes    | Yes                  	 |
 | api_task_execution_creation_conflict_retry_delay | int| Yes	| Yes                  	 |
-| api-managed-probability                          | float         | No        | Yes                    |
-| api-failure-report-probability                   | float         | No        | Yes                    |
-| api-timeout-report-probability                   | float         | No        | Yes                    |
+| api_managed_probability                          | float         | No        | Yes                    |
+| api_failure_report_probability                   | float         | No        | Yes                    |
+| api_timeout_report_probability                   | float         | No        | Yes                    |
 | process_timeout                                  | int        	| Yes     	| Yes                  	 |
 | process_max_retries                              | int        	| Yes     	| Yes                  	 |
 | process_retry_delay                              | int        	| Yes     	| Yes                  	 |
@@ -890,7 +890,7 @@ with the JSON encoded value:
     { "username": "postgres", "password": "nohackme" }
 
 Then to extract the username to the environment variable DB_USERNAME you
-you would add the environment variable DB_USER_FOR_PROC_WRAPPER_TO_RESOLVE
+would add the environment variable DB_USER_FOR_PROC_WRAPPER_TO_RESOLVE
 set to
 
     ENV:DB_CONFIG|JP:$.username
@@ -899,7 +899,7 @@ set to
 
 Now let's use secret location strings to
 inject the values into the environment (for wrapped mode)
-and/or the the configuration dictionary (for embedded mode). proc_wrapper
+and/or the configuration dictionary (for embedded mode). proc_wrapper
 supports two methods of secret injection which can be combined together:
 
 * Top-level fetching
@@ -1183,19 +1183,19 @@ send updates:
 
 ## Sampling
 
-In case the wrapped process or embedded function will be execution very frequently,
-it may be advantageous to skip notifications to the API server in order to avoid the
-overhead (delay, bandwidth) of communication with the API server, or to reduce usage of
+In case the wrapped process or embedded function will be executed very frequently,
+it may be advantageous to skip notifications to the Task Management server in order to avoid the
+overhead (delay, bandwidth) of communication with the Task Management server, or to reduce usage of
 API credits. For this purpose, you can configure proc_wrapper to communicate with the API
 server with a  certain probability using the `api-managed-probability` setting. If a
 generated random  number between 0 and 1 is above the probability threshold, the initial
 notification to create a Task Execution will be skipped. If the wrapped process or
-embedded function succeeds, no communication with the API server will be sent.
+embedded function succeeds, no communication with the Task Management server will be sent.
 
 However, if the wrapped process or embedded function fails, proc_wrapper will communicate
-with the API server with probability `api-failure-notification-probability`, creating
+with the Task Management server with probability `api-failure-notification-probability`, creating
 a Task Exection at that point with a `FAILED` status. Similarly, if the wrapped process
-times out, proc_wrapper will communicate  with the API server with probability
+times out, proc_wrapper will communicate  with the Task Management server with probability
 `api-timeout-notification-probability`, creating
 a Task Exection at that point with a `TERMINATED_AFTER_TIME_OUT` status.
 (Currently, timing out embedded functions is not supported.)
