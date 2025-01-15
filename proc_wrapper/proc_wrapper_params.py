@@ -1425,7 +1425,7 @@ class ProcWrapperParams(ConfigResolverParams):
         task_instance_metadata_str = env.get("PROC_WRAPPER_TASK_INSTANCE_METADATA")
 
         # This could be logged for debugging, so still load it even if we
-        # don't send it to the API server.
+        # don't send it to the Task Management server.
         if task_instance_metadata_str:
             try:
                 self.task_instance_metadata = json.loads(task_instance_metadata_str)
@@ -1642,7 +1642,7 @@ UUID of Task (either the Task Name or the Task UUID must be specified)""",
         "-a",
         "--auto-create-task",
         action="store_true",
-        help="Create the Task even if not known by the API server",
+        help="Create the Task even if not known by the Task Management server",
     )
     task_group.add_argument(
         "--auto-create-task-run-environment-name",
@@ -1671,7 +1671,7 @@ schema.""",
         const=True,
         help="""
 Indicates that the auto-created Task should be scheduled and made a service by
-the API server, if applicable. Otherwise, auto-created Tasks are marked
+the Task Management server, if applicable. Otherwise, auto-created Tasks are marked
 passive.""",
     )
     task_group.add_argument(
@@ -1716,7 +1716,7 @@ for the schema.""",
         help="Indicate that this is a Task that should run indefinitely",
     )
     task_group.add_argument(
-        "--schedule", help="Run schedule reported to the API server"
+        "--schedule", help="Run schedule reported to the Task Management server"
     )
     task_group.add_argument(
         "--max-concurrency",
@@ -1750,7 +1750,7 @@ auto-created Tasks.""",
         "--api-heartbeat-interval",
         default=UNSET_INT_VALUE,
         help=f"""
-Number of seconds to wait between sending heartbeats to the API server.
+Number of seconds to wait between sending heartbeats to the Task Management server.
 -1 means to not send heartbeats.
 Defaults to {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_HEARTBEAT_INTERVAL_SECONDS}
 for concurrency limited services, {DEFAULT_API_HEARTBEAT_INTERVAL_SECONDS}
@@ -1767,7 +1767,7 @@ server. Defaults to {DEFAULT_API_ERROR_TIMEOUT_SECONDS}.""",
         "--api-final-update-timeout",
         default=DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS,
         help=f"""
-Number of seconds to wait while receiving recoverable errors from the API server
+Number of seconds to wait while receiving recoverable errors from the Task Management server
 when sending the final update before exiting. Defaults to
 {DEFAULT_API_FINAL_UPDATE_TIMEOUT_SECONDS}.""",
     )
@@ -1790,7 +1790,7 @@ exhausted. Defaults to {DEFAULT_API_RESUME_DELAY_SECONDS}.
         "--api-task-execution-creation-error-timeout",
         help=f"""
 Number of seconds to keep retrying Task Execution creation while receiving
-error responses from the API server. -1 means to keep trying indefinitely.
+error responses from the Task Management server. -1 means to keep trying indefinitely.
 Defaults to {DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS}.""",
     )
     api_group.add_argument(
@@ -1798,7 +1798,7 @@ Defaults to {DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS}.""",
         default=DEFAULT_API_TASK_EXECUTION_CREATION_TIMEOUT_SECONDS,
         help=f"""
 Number of seconds to keep retrying Task Execution creation while conflict is
-detected by the API server. -1 means to keep trying indefinitely. Defaults to
+detected by the Task Management server. -1 means to keep trying indefinitely. Defaults to
 {DEFAULT_API_CONCURRENCY_LIMITED_SERVICE_CREATION_TIMEOUT_SECONDS} for
 concurrency limited services, 0 otherwise.""",
     )
@@ -1831,7 +1831,7 @@ Timeout for contacting API server, in seconds. Defaults to
         "--prevent-offline-execution",
         action="store_true",
         help="""
-Do not start processes if the API server is unavailable or the wrapper is
+Do not start processes if the Task Management server is unavailable or the wrapper is
 misconfigured.""",
     )
     api_group.add_argument(
@@ -1841,7 +1841,7 @@ misconfigured.""",
         default=1.0,
         dest="api_managed_probability",
         help="""
-Sample notifications to the API server with a given probability when starting
+Sample notifications to the Task Management server with a given probability when starting
 an execution. Defaults to 1.0 (always send notifications).""",
     )
     api_group.add_argument(
@@ -1851,7 +1851,7 @@ an execution. Defaults to 1.0 (always send notifications).""",
         dest="api_failure_report_probability",
         help="""
 If the notification of an execution was not previously sent on startup and the
-execution fails, notify the API server with the given probability. Defaults to
+execution fails, notify the Task Management server with the given probability. Defaults to
 1.0 (always send failure notifications).""",
     )
     api_group.add_argument(
@@ -1861,19 +1861,21 @@ execution fails, notify the API server with the given probability. Defaults to
         dest="api_timeout_report_probability",
         help="""
 If the notification of an execution was not previously sent on startup and the
-execution times out, notify the API server with given probability. Defaults to
+execution times out, notify the Task Management server with given probability. Defaults to
 1.0 (always send timeout notifications).""",
     )
     api_group.add_argument(
         "-d", "--deployment", help="Deployment name (production, staging, etc.)"
     )
     api_group.add_argument(
-        "--send-pid", action="store_true", help="Send the process ID to the API server"
+        "--send-pid",
+        action="store_true",
+        help="Send the process ID to the Task Management server",
     )
     api_group.add_argument(
         "--send-hostname",
         action="store_true",
-        help="Send the hostname to the API server",
+        help="Send the hostname to the Task Management server",
     )
     api_group.add_argument(
         "--no-send-runtime-metadata",

@@ -147,6 +147,10 @@ class ProcWrapper:
         "ip_v4_addresses",
     ]
 
+    _SEND_RESULT_SUCCESS = 1
+    _SEND_RESULT_NON_FATAL_FAILURE = 2
+    _SEND_RESULT_SKIPPED = 3
+
     def __init__(
         self,
         params: Optional[ProcWrapperParams] = None,
@@ -360,12 +364,13 @@ class ProcWrapper:
         last_status_message: Optional[str] = None,
         extra_status_props: Optional[Dict[str, Any]] = None,
         last_app_heartbeat_at: Optional[datetime] = None,
-    ) -> bool:
+    ) -> int:
         """
-        Update the status of the process. Send to the Task management
+        Update the status of the Task. Send to the Task management
         server if the last status was sent more than status_update_interval
-        seconds ago. Return true if the update was actually sent, instead of
-        buffered.
+        seconds ago.
+
+        Return a _STATUS_XXX constant indicating the result of the update.
         """
         return self._update_status(
             success_count=success_count,
@@ -511,15 +516,17 @@ class ProcWrapper:
         finished_at: Optional[datetime] = None,
         extra_runtime_metadata: Optional[Mapping[str, Any]] = None,
         output_value: Optional[Any] = None,
-    ) -> bool:
+    ) -> int:
         """
-        Make a request to the API server to create a Task Execution
+        Make a request to the Task Management server to create a Task Execution
         for this Task. Retry and wait between requests if so configured
         and the maximum concurrency has not already been reached.
+
+        Return a _SEND_RESULT_XXX constant indicating the result of the request.
         """
 
         if self.offline_mode:
-            return False
+            return self._SEND_RESULT_SKIPPED
 
         status = status or ProcWrapper.STATUS_RUNNING
         stop_reason: Optional[str] = None
@@ -550,7 +557,7 @@ class ProcWrapper:
 
         if not should_send:
             _logger.info("Skipping Task Execution creation")
-            return False
+            return self._SEND_RESULT_SKIPPED
 
         need_hostname = self.params.send_hostname and (self.hostname is None)
 
@@ -754,7 +761,7 @@ class ProcWrapper:
 
             if f is None:
                 _logger.warning("Task Execution creation request failed non-fatally")
-                return False
+                return self._SEND_RESULT_NON_FATAL_FAILURE
 
             with f:
                 fd = f.read()
@@ -784,7 +791,7 @@ class ProcWrapper:
                 self.task_uuid = self.task_uuid or response_dict["task"]["uuid"]
                 self.task_name = self.task_name or response_dict["task"]["name"]
 
-            return True
+            return self._SEND_RESULT_SUCCESS
         except Exception as ex:
             _logger.exception(
                 "_create_or_update_task_execution() failed with exception"
@@ -794,7 +801,7 @@ class ProcWrapper:
 
             _logger.info("Not preventing offline execution, so continuing")
 
-            return False
+            return self._SEND_RESULT_NON_FATAL_FAILURE
 
     def _update_status(
         self,
@@ -810,14 +817,20 @@ class ProcWrapper:
         extra_status_props: Optional[Dict[str, Any]] = None,
         is_app_update: bool = False,
         last_app_heartbeat_at: Optional[datetime] = None,
-    ) -> bool:
+    ) -> int:
+        """
+        Send the data about the Task to the Task Management service.
+
+        Return a _STATUS_XXX constant indicating the result of the update.
+        """
+
         _logger.debug(f"_update_status(), is_app_update = {is_app_update}")
 
         if is_app_update:
             self.last_app_heartbeat_at = last_app_heartbeat_at or datetime.utcnow()
 
         if self.offline_mode:
-            return False
+            return self._SEND_RESULT_SKIPPED
 
         if is_app_update:
             self.status_dict[
@@ -864,7 +877,7 @@ class ProcWrapper:
                 pid=pid,
             )
 
-        return False
+        return self._SEND_RESULT_SKIPPED
 
     def send_completion(
         self,
@@ -874,15 +887,18 @@ class ProcWrapper:
         exit_code: Optional[int] = None,
         pid: Optional[int] = None,
         output_value: Optional[Any] = None,
-    ) -> None:
-        """Send the final result to the API Server."""
+    ) -> int:
+        """
+        Send the final result to the Task Management Server.
+        Return a _STATUS_XXX constant indicating the result of the update.
+        """
 
         if self.offline_mode:
-            return
+            return self._SEND_RESULT_SKIPPED
 
         if status not in self._ALLOWED_FINAL_STATUSES:
             self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
-            return
+            return self._SEND_RESULT_SKIPPED
 
         if (exit_code is None) and (not self.params.embedded_mode):
             if status == self.STATUS_SUCCEEDED:
@@ -893,10 +909,15 @@ class ProcWrapper:
         finished_at = datetime.utcnow()
 
         if self.skip_start_notification:
-            # We did not create the Task Execution with the API server when we
+            # We did not create the Task Execution with the Task Management server when we
             # started, but we may need to create it now on failure or timeout.
-            if status != ProcWrapper.STATUS_SUCCEEDED:
-                self._create_or_update_task_execution(
+            if status == ProcWrapper.STATUS_SUCCEEDED:
+                _logger.debug("send_completion(): skipping Task Execution creation")
+                return self._SEND_RESULT_SKIPPED
+            else:
+                _logger.debug("send_completion(): attempting Task Execution creation")
+
+                return self._create_or_update_task_execution(
                     status=status,
                     failed_attempts=failed_attempts,
                     timed_out_attempts=timed_out_attempts,
@@ -905,8 +926,9 @@ class ProcWrapper:
                     finished_at=finished_at,
                     output_value=output_value,
                 )
+
         else:
-            self.send_update(
+            return self.send_update(
                 status=status,
                 failed_attempts=failed_attempts,
                 timed_out_attempts=timed_out_attempts,
@@ -919,7 +941,7 @@ class ProcWrapper:
     def managed_call(self, fun, data: Optional[Any] = None) -> Optional[Any]:
         """
         Call the argument object, which must be callable, doing retries as necessary,
-        and wrapping with calls to the API server.
+        and wrapping with calls to the Task Management server.
         """
         if not callable(fun):
             raise RuntimeError("managed_call() argument is not callable")
@@ -989,7 +1011,8 @@ class ProcWrapper:
                     )
                 except Exception:
                     _logger.warning(
-                        "Failed to send completion to the API server", exc_info=True
+                        "Failed to send completion to the Task Management server",
+                        exc_info=True,
                     )
 
                 return rv
@@ -1327,9 +1350,18 @@ class ProcWrapper:
 
         self.called_exit = True
 
-        exit_code = None
-        error_notification_required = not (
+        if self.was_conflict:
+            _logger.debug(
+                "Task execution update conflict detected, not notifying because server-side should have notified already."
+            )
+            return
+
+        error_notification_required = (not self.reported_final_status) and not (
             self.offline_mode or self.skip_start_notification
+        )
+
+        print(
+            f"{error_notification_required=}, {self.skip_start_notification=}, {self.reported_final_status=}"
         )
 
         runtime_metadata = self._fetch_runtime_metadata_if_necessary(
@@ -1337,6 +1369,7 @@ class ProcWrapper:
             or self.params.send_runtime_metadata
         )
 
+        exit_code: Optional[int] = None
         if self.is_execution_status_from_runtime_metadata:
             if runtime_metadata:
                 exit_code = runtime_metadata.exit_code
@@ -1357,24 +1390,32 @@ class ProcWrapper:
             status = self.STATUS_SUCCEEDED
 
         try:
-            if (self.task_execution_uuid or self.skip_start_notification) and (
-                not self.reported_final_status
+            if (
+                not (
+                    self.reported_final_status
+                    or self.offline_mode
+                    or self.api_server_retries_exhausted
+                )
+            ) and (
+                self.task_execution_uuid
+                or (self.skip_start_notification and (status != self.STATUS_SUCCEEDED))
             ):
-                if self.was_conflict:
-                    _logger.debug(
-                        "Task execution update conflict detected, not notifying because server-side should have notified already."
-                    )
-                    error_notification_required = False
-                    status = self.STATUS_ABORTED
+                _logger.debug("Sending completion to API server after process exit ...")
+                send_result = self.send_completion(
+                    status=status,
+                    failed_attempts=self.failed_count,
+                    timed_out_attempts=self.timeout_count,
+                    exit_code=exit_code,
+                )
 
-                if not self.offline_mode and not self.api_server_retries_exhausted:
-                    self.send_completion(
-                        status=status,
-                        failed_attempts=self.failed_count,
-                        timed_out_attempts=self.timeout_count,
-                        exit_code=exit_code,
-                    )
-                    error_notification_required = False
+                error_notification_required = (
+                    send_result != self._SEND_RESULT_SUCCESS
+                ) and (send_result != self._SEND_RESULT_SKIPPED)
+
+            else:
+                _logger.debug(
+                    "Skipping send of completion to API server after process exit ..."
+                )
         except Exception:
             _logger.exception("Exception in final update")
         finally:
@@ -1383,10 +1424,12 @@ class ProcWrapper:
         if error_notification_required:
             error_message = "API Server not configured"
 
-            if self.api_server_retries_exhausted:
+            if self.was_conflict:
+                error_message = "Failed to get permission to start Task due to conflict"
+            elif self.api_server_retries_exhausted:
                 error_message = "API Server not responding properly"
             elif not self.task_execution_uuid:
-                error_message = "Failed to get permission to start Task"
+                error_message = "Exited before API Server notified of start"
 
             self._report_error(error_message, self.last_api_request_data)
 
@@ -1613,25 +1656,27 @@ class ProcWrapper:
         finished_at: Optional[datetime] = None,
         output_value: Optional[Any] = None,
         extra_props: Optional[Mapping[str, Any]] = None,
-    ) -> bool:
+    ) -> int:
         """
-        Send an update to the API server immediately. If status is omitted, it
+        Send an update to the Task Management server immediately. If status is omitted, it
         will default to STATUS_RUNNING.
 
         The caller may want to coalesce multiple updates together in order to
         save bandwidth / API usage.
 
+        Return a _STATUS_XXX constant indicating the result of the update.
+
         This method is NOT meant to be called directly.
         """
 
         if self.offline_mode or self.skip_start_notification:
-            return False
+            return self._SEND_RESULT_SKIPPED
 
         if not self.task_execution_uuid:
             _logger.debug(
-                "_send_update() skipping update since no Task Execution UUID was available"
+                "send_update() skipping update since no Task Execution UUID was available"
             )
-            return False
+            return self._SEND_RESULT_SKIPPED
 
         should_send_runtime_metadata = self._should_send_runtime_metadata()
 
@@ -1655,18 +1700,18 @@ class ProcWrapper:
         headers = self._make_headers()
         text_data = json.dumps(body)
         data = text_data.encode("utf-8")
-        is_final_update = status != self.STATUS_RUNNING
+        is_final_update = bool(status) and (status != self.STATUS_RUNNING)
 
         _logger.debug(f"Sending update '{text_data}' ...")
 
         req = Request(url, data=data, headers=headers, method="PATCH")
         f = self._send_api_request(req, is_final_update=is_final_update)
         if f is None:
-            _logger.debug("Update request failed non-fatally")
-            return False
+            _logger.info("Update request failed non-fatally")
+            return self._SEND_RESULT_NON_FATAL_FAILURE
 
         with f:
-            _logger.debug("Update sent successfully.")
+            _logger.info("Update sent successfully.")
 
             current_time = time.time()
             self.last_update_sent_at = current_time
@@ -1676,7 +1721,7 @@ class ProcWrapper:
             self.status_dict = {}
             self.reported_final_status = is_final_update
 
-        return True
+        return self._SEND_RESULT_SUCCESS
 
     def _should_send_runtime_metadata(self) -> bool:
         return bool(
@@ -1778,6 +1823,10 @@ class ProcWrapper:
         is_task_execution_creation_request: bool = False,
         is_final_update: bool = False,
     ) -> Optional[RawIOBase]:
+        """
+        Send an API request, with retries and error handling.
+        """
+
         _logger.debug(
             f"Sending {req.method} request with body {str(req.data)} to {req.full_url} ...."
         )
@@ -1934,6 +1983,8 @@ class ProcWrapper:
                 _logger.debug(f"Sleeping {retry_delay} seconds after request error ...")
                 time.sleep(retry_delay)
                 _logger.debug("Done sleeping after request error.")
+
+        self.api_server_retries_exhausted = True
 
         if is_task_execution_creation_request and (
             self.params.prevent_offline_execution or self.was_conflict
