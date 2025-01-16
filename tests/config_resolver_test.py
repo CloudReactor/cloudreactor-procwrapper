@@ -6,7 +6,7 @@ import boto3
 import botocore
 import pytest
 import yaml
-from moto import mock_s3, mock_secretsmanager
+from moto import mock_s3, mock_secretsmanager, mock_ssm
 
 from proc_wrapper import (
     CONFIG_MERGE_STRATEGY_SHALLOW,
@@ -85,6 +85,17 @@ def test_resolve_env_from_config():
     assert bad_vars == []
 
 
+def put_aws_ssm_secret(
+    ssm_client, name: str, value: str, typ: Optional[str] = None
+) -> str:
+    typ = typ or "string"
+    response = ssm_client.put_parameter(
+        Name=name, Value=value, Type=typ, Overwrite=True
+    )
+
+    return f"ssm:{name}:{response['Version']}"
+
+
 def put_aws_sm_secret(sm_client, name: str, value: str) -> str:
     return sm_client.create_secret(
         Name=name,
@@ -148,6 +159,65 @@ def test_env_in_aws_secrets_manager():
         assert resolved_env["USERNAME"] == "theuser"
         assert resolved_env["PASSWORD"] == "thepass"
         assert bad_vars == []
+
+
+def test_env_in_aws_parameter_store():
+    # Disable botocore DEBUG logging because it leaks secrets
+    logging.getLogger("botocore").setLevel(logging.INFO)
+
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+
+    params = ConfigResolverParams()
+
+    with mock_ssm():
+        ssm = boto3.client("ssm")
+        ssm_id = put_aws_ssm_secret(
+            ssm_client=ssm,
+            name="envs",
+            value="""
+            USERNAME=theuser
+            PASSWORD=thepass
+        """,
+        )
+
+        # Test with and without the version suffix
+        for location in ["ssm:envs", ssm_id]:
+            params.env_locations = [location]
+
+            resolver = ConfigResolver(params=params, env_override=env_override)
+
+            resolved_env, bad_vars = resolver.fetch_and_resolve_env()
+            assert resolved_env["USERNAME"] == "theuser"
+            assert resolved_env["PASSWORD"] == "thepass"
+            assert bad_vars == []
+
+
+def test_string_list_in_aws_parameter_store():
+    # Disable botocore DEBUG logging because it leaks secrets
+    logging.getLogger("botocore").setLevel(logging.INFO)
+
+    env_override = RESOLVE_ENV_BASE_ENV.copy()
+
+    params = ConfigResolverParams()
+
+    with mock_ssm():
+        ssm = boto3.client("ssm")
+        ssm_id = put_aws_ssm_secret(
+            ssm_client=ssm, name="hosts", value="""host1,host2""", typ="StringList"
+        )
+
+        # Test with and without the version suffix
+        for location in ["ssm:hosts", ssm_id]:
+            params.initial_config = {"hosts__to_resolve": ssm_id}
+
+            resolver = ConfigResolver(params=params, env_override=env_override)
+
+            resolved_config, bad = resolver.fetch_and_resolve_config()
+
+            hosts = resolved_config.get("hosts")
+            expected_hosts = ["host1", "host2"]
+            assert hosts == expected_hosts
+            assert len(bad) == 0
 
 
 @pytest.mark.parametrize(

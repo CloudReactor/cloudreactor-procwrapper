@@ -37,9 +37,8 @@ Available as a standalone executable or as a python module.
 * Runs either processes started with a command line or a python function you
 supply
 * Implements retries and time limits
-* Injects secrets from AWS Secrets Manager, AWS S3, or local files and extracts
-them into the process environment (for command-lines) or configuration (for
-functions)
+* Injects secrets from AWS Secrets Manager, AWS Systems Manager Parameter Store (SSM),
+AWS S3, or local files and extracts them into the process environment (for command-lines) or configuration (for functions)
 * When used with the CloudReactor service:
   * Reports when a process/function starts and when it exits, along with the
   exit code and runtime metadata (if running in AWS ECS, AWS Lambda, or AWS CodeBuild)
@@ -222,7 +221,8 @@ Install this module via pip (or your favorite package manager):
 `cloudreactor-procwrapper` doesn't have any required dependencies, but it can
 be installed with the following extras:
 
-`aws`: Support for fetching secrets from AWS Secrets Manager or S3, and
+`aws`: Support for fetching secrets from AWS Secrets Manager,
+Systems Manager Parameter Store (SSM), or S3, and
 determining the assumed role, implemented by the
 [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 library
@@ -747,8 +747,9 @@ A common requirement is that deployed code / images do not contain secrets
 internally which could be decompiled. Instead, programs should fetch secrets
 from an external source in a secure manner. If your program runs in AWS, it
 can make use of AWS's roles that have permission to access data in
-Secrets Manager or S3. However, in many scenarios, having your program access
-AWS directly has the following disadvantages:
+Secrets Manager, Systems Manager Parameter Store, or S3. However, in many
+scenarios, having your program access AWS directly has the following
+disadvantages:
 
 1) Your program becomes coupled to AWS, so it is difficult to run locally or
 switch to another infrastructure provider
@@ -759,7 +760,9 @@ use, so secret fetching is done in a non-uniform way
 Therefore, proc_wrapper implements Secret Fetching and Resolution to solve
 these problems so your programs don't have to. Both usage modes can fetch secrets from
 [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/),
-AWS S3, or the local filesystem, and optionally extract embedded data
+[AWS Systems Manager Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html),
+AWS S3, or the local filesystem, and optionally
+extract embedded data
 into the environment or a configuration dictionary. The environment is used to
 pass values to processes run in wrapped mode,
 while the configuration dictionary is passed to the callback function in
@@ -777,7 +780,8 @@ supported providers:
 
 | Provider Code 	| Value Prefix              	| Provider                     	| Example Address                                             	| Required extras            | Notes                                                         	|
 |---------------	|---------------------------	|------------------------------	|-------------------------------------------------------------	|-----------------------------------------------------------------------------	|---------------------------------------------------------------	|
-| `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-2:1234567890:secret:config` 	| aws 	| Can also include version suffix like `-PPrpY`                 	|
+| `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-2:1234567890:secret:config` 	| aws 	| Can also include version suffix like `-PPrpY`|
+| `AWS_SSM`      	| `ssm:` 	                   | AWS Systems Manager Parameter Store | `ssm:config` 	| aws 	| Can also include version suffix like `:36`|
 | `AWS_S3`      	| `arn:aws:s3:::`           	| AWS S3 Object                	| `arn:aws:s3:::examplebucket/staging/app1/config.json`       	| aws 	|                                                               	|
 | `FILE`        	| `file://`                 	| Local file                   	| `file:///home/appuser/app/.env`                                    	|                                                                             	| The default provider if no provider is auto-detected          	|
 | `ENV`         	|                           	| The process environment      	| `SOME_TOKEN`                                                	|                                                                             	| The name of another environment variable                      	|
@@ -806,13 +810,14 @@ The format of a secret value can be auto-detected from the extension or by the
 MIME type if available. Otherwise, you may need to an explicit format code
 (e.g. `!yaml`).
 
-#### AWS Secrets Manager / S3 notes
+#### AWS Secrets Manager / SSM / S3 notes
 
 [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 is used to fetch secrets when the `aws` extra is installed. It will try to
-access to AWS Secrets Manager or S3 using environment variables
-`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` if they are set, or use the EC2
-instance role, ECS task role, or Lambda execution role if available.
+access to AWS Secrets Manager, Systems Manager Parameter Store, and S3 using
+environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` if they
+are set, or use the EC2 instance role, ECS task role, or Lambda execution role
+if available.
 
 For Secrets Manager, you can also use "partial ARNs" (without the hyphened
 suffix) as keys. In the example above
@@ -825,6 +830,9 @@ This allows you to get the latest version of the secret.
 If the secret was stored in Secrets Manager as binary, the
 corresponding value will be set to the Base-64 encoded value.
 
+For SSM, you can include/exclude a version suffix like `:14` to either pin
+the version (if included) or get the latest version (if excluded).
+
 If you're deploying a python function using AWS Lambda, note that boto3 is
 already included in the available packages, so there's no need to include it
 (unless the bundled version isn't compatible). Also we strongly encourage you
@@ -836,7 +844,7 @@ to your code if you are using proc_wrapper for secrets resolution. This
 prevent secrets from Secrets Manager from being leaked. For details, see this
 [issue](https://github.com/boto/boto3/issues/2292).
 
-### Secret Tranformation
+### Secret Transformation
 
 Fetching secrets can be relatively expensive and it makes sense to group related
 secrets together. Therefore it is common to store dictionaries (formatted

@@ -2044,11 +2044,11 @@ server. -1 means to not send status updates except with heartbeats. Defaults to
         action="append",
         dest="env_locations",
         help="""
-    Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN
-    containing properties used to populate the environment for embedded mode,
-    or the process environment for wrapped mode. By default, the file format
-    is assumed to be dotenv. Specify multiple times to include multiple
-    locations.""",
+    Location of either local file, AWS S3 ARN, AWS Secrets Manager ARN, or
+    AWS Systems Manager Parameter Store identifier containing properties used
+    to populate the environment for embedded mode, or the process environment
+    for wrapped mode. By default, the file format is assumed to be dotenv.
+    Specify multiple times to include multiple locations.""",
     )
 
     config_group.add_argument(
@@ -2056,10 +2056,10 @@ server. -1 means to not send status updates except with heartbeats. Defaults to
         action="append",
         dest="config_locations",
         help="""
-Location of either local file, AWS S3 ARN, or AWS Secrets Manager ARN
-containing properties used to populate the configuration for embedded mode.
-By default, the file format is assumed to be in JSON. Specify multiple times
-to include multiple locations.""",
+Location of either local file, AWS S3 ARN, AWS Secrets Manager ARN, or
+AWS Systems Manager Parameter Store identifier containing properties used to
+populate the configuration for embedded mode. By default, the file format is
+assumed to be in JSON. Specify multiple times to include multiple locations.""",
     )
 
     config_group.add_argument(

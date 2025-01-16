@@ -29,10 +29,12 @@ SECRET_PROVIDER_PLAIN = "PLAIN"
 SECRET_PROVIDER_ENV = "ENV"
 SECRET_PROVIDER_CONFIG = "CONFIG"
 SECRET_PROVIDER_FILE = "FILE"
+SECRET_PROVIDER_AWS_SYSTEMS_MANAGER_PARAMETER_STORE = "AWS_SSM"
 SECRET_PROVIDER_AWS_SECRETS_MANAGER = "AWS_SM"
 SECRET_PROVIDER_AWS_S3 = "AWS_S3"
 
 SECRET_PROVIDER_FILE_VALUE_PREFIX = "file://"
+AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX = "ssm:"
 AWS_SECRETS_MANAGER_PREFIX = "arn:aws:secretsmanager:"
 AWS_S3_PREFIX = "arn:aws:s3:::"
 
@@ -172,7 +174,7 @@ class SecretProvider:
 
     def fetch_data(
         self, location: str, config: Dict[str, Any], env: Dict[str, str]
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         if location.startswith(self.name + ":"):
             location = location[len(self.name) + 1 :]
 
@@ -192,10 +194,10 @@ class SecretProvider:
     def extract_explicit_format(self, location: str) -> Tuple[str, Optional[str]]:
         explicit_format: Optional[str] = None
         if self.format_separator:
-            upper_full_location = location.lower()
+            lower_full_location = location.lower()
             for trial_format in ALL_SUPPORTED_FORMATS:
                 search_string = self.format_separator + trial_format
-                if upper_full_location.endswith(search_string):
+                if lower_full_location.endswith(search_string):
                     location = location[0 : -len(search_string)]
                     explicit_format = trial_format
                     break
@@ -208,7 +210,7 @@ class SecretProvider:
         config: Dict[str, Any],
         env: Dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         raise NotImplementedError()
 
     def guess_format_from_location(self, location: str) -> Optional[str]:
@@ -243,7 +245,7 @@ class PlainSecretProvider(SecretProvider):
         config: Dict[str, Any],
         env: Dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         return (location, explicit_format, None)
 
 
@@ -257,7 +259,7 @@ class EnvSecretProvider(SecretProvider):
         config: Dict[str, Any],
         env: Dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         string_value = env.get(location)
 
         if string_value is None:
@@ -279,7 +281,7 @@ class ConfigSecretProvider(SecretProvider):
         config: Dict[str, Any],
         env: Dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         transformed = transform_value(
             parsed_value=config,
             string_value="<config>",
@@ -312,7 +314,7 @@ class AwsSecretsManagerSecretProvider(SecretProvider):
         config: Dict[str, Any],
         env: Dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         if not self.aws_region_name:
             raise RuntimeError(
                 "Can't use AWS Secrets Manager without AWS region setting"
@@ -353,6 +355,64 @@ class AwsSecretsManagerSecretProvider(SecretProvider):
         return self.aws_secrets_manager_client
 
 
+class AwsSystemsManagerParameterStoreSecretProvider(SecretProvider):
+    def __init__(self):
+        super().__init__(
+            name=SECRET_PROVIDER_AWS_SYSTEMS_MANAGER_PARAMETER_STORE,
+            value_prefix=AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX,
+        )
+        self.aws_ssm_client = None
+        self.aws_ssm_client_create_attempted_at: Optional[float] = None
+
+    def fetch_internal(
+        self,
+        location: str,
+        config: Dict[str, Any],
+        env: Dict[str, str],
+        explicit_format: Optional[str],
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
+        client = self.get_or_create_aws_ssm_client()
+
+        if client is None:
+            raise RuntimeError("Can't create AWS SSM client")
+
+        if location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX):
+            location = location[len(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX) :]
+
+        _logger.info(f"Looking up SSM parameter '{location}'")
+        response = client.get_parameter(Name=location, WithDecryption=True)
+
+        parameter_obj = response["Parameter"]
+        raw_value = parameter_obj["Value"]
+        value_type = parameter_obj["Type"]
+
+        if value_type == "StringList":
+            parsed_value = raw_value.split(",")
+            string_value = json.dumps(parsed_value)
+            return (string_value, FORMAT_JSON, parsed_value)
+        else:
+            return (raw_value, None, None)
+
+    def get_or_create_aws_ssm_client(self):
+        if not self.aws_ssm_client:
+            if self.aws_ssm_client_create_attempted_at:
+                return None
+
+            self.aws_ssm_client_create_attempted_at = time.time()
+
+            try:
+                import boto3
+            except ImportError as import_error:
+                _logger.exception(
+                    "boto3 is not available to import, please install it in your python environment"
+                )
+                raise import_error
+
+            self.aws_ssm_client = boto3.client(service_name="ssm")
+
+        return self.aws_ssm_client
+
+
 class FileSecretProvider(SecretProvider):
     def __init__(self, value_prefix: str):
         super().__init__(
@@ -368,7 +428,7 @@ class FileSecretProvider(SecretProvider):
         config: Dict[str, Any],
         env: Dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         if location.startswith(FILE_URL_PREFIX):
             location = location[FILE_URL_PREFIX_LENGTH:]
 
@@ -398,7 +458,7 @@ class AwsS3SecretProvider(SecretProvider):
         config: Dict[str, Any],
         env: Dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         s3_data = self.fetch_aws_s3_data(location)
 
         format: Optional[str] = None
@@ -539,6 +599,7 @@ class ConfigResolver:
             EnvSecretProvider(),
             ConfigSecretProvider(log_secrets=self.params.log_secrets),
             AwsSecretsManagerSecretProvider(aws_region_name=aws_region_name),
+            AwsSystemsManagerParameterStoreSecretProvider(),
             AwsS3SecretProvider(),
             FileSecretProvider(value_prefix=FILE_URL_PREFIX),
             FileSecretProvider(value_prefix=""),
