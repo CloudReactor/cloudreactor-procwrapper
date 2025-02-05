@@ -32,11 +32,13 @@ SECRET_PROVIDER_FILE = "FILE"
 SECRET_PROVIDER_AWS_SYSTEMS_MANAGER_PARAMETER_STORE = "AWS_SSM"
 SECRET_PROVIDER_AWS_SECRETS_MANAGER = "AWS_SM"
 SECRET_PROVIDER_AWS_S3 = "AWS_S3"
+SECRET_PROVIDER_AWS_APP_CONFIG = "AWS_APP_CONFIG"
 
 SECRET_PROVIDER_FILE_VALUE_PREFIX = "file://"
 AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX = "ssm:"
 AWS_SECRETS_MANAGER_PREFIX = "arn:aws:secretsmanager:"
 AWS_S3_PREFIX = "arn:aws:s3:::"
+AWS_APP_CONFIG_PREFIX = "aws:appconfig:"
 
 DEFAULT_TRANSFORM_SEPARATOR = "|"
 SELF_TRANSFORM_VALUE = "SELF"
@@ -295,7 +297,41 @@ class ConfigSecretProvider(SecretProvider):
         return (json.dumps(transformed), FORMAT_JSON, transformed)
 
 
-class AwsSecretsManagerSecretProvider(SecretProvider):
+class FileSecretProvider(SecretProvider):
+    def __init__(self, value_prefix: str):
+        super().__init__(
+            name=SECRET_PROVIDER_FILE, value_prefix=value_prefix, should_cache=True
+        )
+
+    def supports_value(self, value: str) -> bool:
+        return len(value.strip()) > 0
+
+    def fetch_internal(
+        self,
+        location: str,
+        config: Dict[str, Any],
+        env: Dict[str, str],
+        explicit_format: Optional[str],
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
+        if location.startswith(FILE_URL_PREFIX):
+            location = location[FILE_URL_PREFIX_LENGTH:]
+
+        # TODO: allow different encodings
+        with open(location, "r", encoding="utf-8") as f:
+            return (f.read(), None, None)
+
+
+class AwsSecretProvider(SecretProvider):
+    def __init__(self, name: str, value_prefix: str):
+        super().__init__(name=name, value_prefix=value_prefix, should_cache=True)
+
+    def make_client_config(self) -> Any:
+        from botocore.config import Config
+
+        return Config(retries={"max_attempts": 5, "mode": "standard"})
+
+
+class AwsSecretsManagerSecretProvider(AwsSecretProvider):
     def __init__(self, aws_region_name: str):
         super().__init__(
             name=SECRET_PROVIDER_AWS_SECRETS_MANAGER,
@@ -325,13 +361,16 @@ class AwsSecretsManagerSecretProvider(SecretProvider):
         if client is None:
             raise RuntimeError("Can't create AWS Secrets Manager client")
 
-        _logger.info(f"Looking up Secrets Manager secret '{location}'")
-        response = client.get_secret_value(SecretId=location)
+        try:
+            _logger.info(f"Looking up Secrets Manager secret '{location}'")
+            response = client.get_secret_value(SecretId=location)
 
-        # Binary secrets are left Base-64 encoded
-        string_value = response.get("SecretString") or response["SecretBinary"]
+            # Binary secrets are left Base-64 encoded
+            string_value = response.get("SecretString") or response["SecretBinary"]
 
-        return (string_value, None, None)
+            return (string_value, explicit_format, None)
+        finally:
+            client.close()
 
     def get_or_create_aws_secrets_manager_client(self):
         if not self.aws_secrets_manager_client:
@@ -349,13 +388,15 @@ class AwsSecretsManagerSecretProvider(SecretProvider):
                 raise import_error
 
             self.aws_secrets_manager_client = boto3.client(
-                service_name="secretsmanager", region_name=self.aws_region_name
+                service_name="secretsmanager",
+                config=self.make_client_config(),
+                region_name=self.aws_region_name,
             )
 
         return self.aws_secrets_manager_client
 
 
-class AwsSystemsManagerParameterStoreSecretProvider(SecretProvider):
+class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
     def __init__(self):
         super().__init__(
             name=SECRET_PROVIDER_AWS_SYSTEMS_MANAGER_PARAMETER_STORE,
@@ -376,22 +417,25 @@ class AwsSystemsManagerParameterStoreSecretProvider(SecretProvider):
         if client is None:
             raise RuntimeError("Can't create AWS SSM client")
 
-        if location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX):
-            location = location[len(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX) :]
+        try:
+            if location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX):
+                location = location[len(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX) :]
 
-        _logger.info(f"Looking up SSM parameter '{location}'")
-        response = client.get_parameter(Name=location, WithDecryption=True)
+            _logger.info(f"Looking up SSM parameter '{location}'")
+            response = client.get_parameter(Name=location, WithDecryption=True)
 
-        parameter_obj = response["Parameter"]
-        raw_value = parameter_obj["Value"]
-        value_type = parameter_obj["Type"]
+            parameter_obj = response["Parameter"]
+            raw_value = parameter_obj["Value"]
+            value_type = parameter_obj["Type"]
 
-        if value_type == "StringList":
-            parsed_value = raw_value.split(",")
-            string_value = json.dumps(parsed_value)
-            return (string_value, FORMAT_JSON, parsed_value)
-        else:
-            return (raw_value, None, None)
+            if value_type == "StringList":
+                parsed_value = raw_value.split(",")
+                string_value = json.dumps(parsed_value)
+                return (string_value, FORMAT_JSON, parsed_value)
+            else:
+                return (raw_value, explicit_format, None)
+        finally:
+            client.close()
 
     def get_or_create_aws_ssm_client(self):
         if not self.aws_ssm_client:
@@ -408,19 +452,21 @@ class AwsSystemsManagerParameterStoreSecretProvider(SecretProvider):
                 )
                 raise import_error
 
-            self.aws_ssm_client = boto3.client(service_name="ssm")
+            self.aws_ssm_client = boto3.client(
+                service_name="ssm", config=self.make_client_config()
+            )
 
         return self.aws_ssm_client
 
 
-class FileSecretProvider(SecretProvider):
-    def __init__(self, value_prefix: str):
+class AwsAppConfigSecretProvider(AwsSecretProvider):
+    def __init__(self):
         super().__init__(
-            name=SECRET_PROVIDER_FILE, value_prefix=value_prefix, should_cache=True
+            name=SECRET_PROVIDER_AWS_APP_CONFIG,
+            value_prefix=AWS_APP_CONFIG_PREFIX,
         )
-
-    def supports_value(self, value: str) -> bool:
-        return len(value.strip()) > 0
+        self.aws_app_config_client = None
+        self.aws_app_config_client_create_attempted_at: Optional[float] = None
 
     def fetch_internal(
         self,
@@ -429,12 +475,75 @@ class FileSecretProvider(SecretProvider):
         env: Dict[str, str],
         explicit_format: Optional[str],
     ) -> Tuple[str, Optional[str], Optional[Any]]:
-        if location.startswith(FILE_URL_PREFIX):
-            location = location[FILE_URL_PREFIX_LENGTH:]
+        client = self.get_or_create_aws_app_config_client()
 
-        # TODO: allow different encodings
-        with open(location, "r", encoding="utf-8") as f:
-            return (f.read(), None, None)
+        if client is None:
+            raise RuntimeError("Can't create AWS AppConfig client")
+
+        try:
+            if location.startswith(AWS_APP_CONFIG_PREFIX):
+                location = location[len(AWS_APP_CONFIG_PREFIX) :]
+
+            ids = location.split("/")
+
+            if len(ids) != 3:
+                raise ValueError(f"Invalid AWS AppConfig location '{location}'")
+
+            _logger.info(
+                f"Starting AWS AppConfig configuration session for '{location}'"
+            )
+
+            app_id, env_id, config_profile_id = ids
+            response = client.start_configuration_session(
+                ApplicationIdentifier=app_id,
+                EnvironmentIdentifier=env_id,
+                ConfigurationProfileIdentifier=config_profile_id,
+            )
+
+            token = response.get("InitialConfigurationToken")
+
+            if token is None:
+                raise RuntimeError("Failed to get initial configuration token")
+
+            response = client.get_latest_configuration(ConfigurationToken=token)
+
+            format: Optional[str] = None
+            content_type = response.get("ContentType")
+            if content_type:
+                format = MIME_TYPE_TO_FORMAT.get(content_type)
+
+            version = response.get("VersionLabel")
+
+            _logger.info(
+                f"Got version '{version}' and content type '{content_type}' for AWS AppConfig location '{location}'"
+            )
+
+            raw_value = str(response["Configuration"])
+
+            return (raw_value, explicit_format or format, None)
+        finally:
+            client.close()
+
+    def get_or_create_aws_app_config_client(self):
+        if not self.aws_app_config_client:
+            if self.aws_app_config_client_create_attempted_at:
+                return None
+
+            self.aws_app_config_client_create_attempted_at = time.time()
+
+            try:
+                import boto3
+            except ImportError as import_error:
+                _logger.exception(
+                    "boto3 is not available to import, please install it in your python environment"
+                )
+                raise import_error
+
+            self.aws_app_config_client = boto3.client(
+                "appconfigdata", config=self.make_client_config()
+            )
+
+        return self.aws_app_config_client
 
 
 class AwsS3Data(NamedTuple):
@@ -446,7 +555,7 @@ class AwsS3Data(NamedTuple):
     expires_at: Optional[float]
 
 
-class AwsS3SecretProvider(SecretProvider):
+class AwsS3SecretProvider(AwsSecretProvider):
     def __init__(self) -> None:
         super().__init__(name=SECRET_PROVIDER_AWS_S3, value_prefix=AWS_S3_PREFIX)
         self.aws_s3_resource = None
@@ -482,7 +591,9 @@ class AwsS3SecretProvider(SecretProvider):
                 )
                 raise import_error
 
-            self.aws_s3_resource = boto3.resource("s3")
+            self.aws_s3_resource = boto3.resource(
+                "s3", config=self.make_client_config()
+            )
 
         return self.aws_s3_resource
 
@@ -508,12 +619,16 @@ class AwsS3SecretProvider(SecretProvider):
 
         content_encoding = obj.content_encoding
 
+        # Get rid of ",aws-chunked" suffix
+        if content_encoding and (content_encoding.find(",") >= 0):
+            content_encoding, _ = content_encoding.split(",")
+
         _logger.info(
             f"Got content encoding of '{content_encoding}' for S3 ARN {s3_arn}"
         )
 
         response = obj.get()
-        data = response["Body"].read().decode(obj.content_encoding or "utf-8")
+        data = response["Body"].read().decode(content_encoding or "utf-8")
 
         return AwsS3Data(
             body=data,
@@ -600,6 +715,7 @@ class ConfigResolver:
             ConfigSecretProvider(log_secrets=self.params.log_secrets),
             AwsSecretsManagerSecretProvider(aws_region_name=aws_region_name),
             AwsSystemsManagerParameterStoreSecretProvider(),
+            AwsAppConfigSecretProvider(),
             AwsS3SecretProvider(),
             FileSecretProvider(value_prefix=FILE_URL_PREFIX),
             FileSecretProvider(value_prefix=""),

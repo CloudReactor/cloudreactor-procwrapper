@@ -38,7 +38,8 @@ Available as a standalone executable or as a python module.
 supply
 * Implements retries and time limits
 * Injects secrets from AWS Secrets Manager, AWS Systems Manager Parameter Store (SSM),
-AWS S3, or local files and extracts them into the process environment (for command-lines) or configuration (for functions)
+AWS AppConfig, AWS S3, or local files and extracts them into the process
+environment (for command-lines) or configuration (for functions)
 * When used with the CloudReactor service:
   * Reports when a process/function starts and when it exits, along with the
   exit code and runtime metadata (if running in AWS ECS, AWS Lambda, or AWS CodeBuild)
@@ -125,8 +126,8 @@ If a Task is running in AWS Lambda, CloudReactor is able to run additional
 Task Executions after the first run of the function.
 
 However, a Task may use the Unknown execution method if it is not running
-in AWS ECS, AWS Lambda, or AWS CodeBuild. If that is the case, CloudReactor won't be able to
-start the Task in the dashboard or as part of a Workflow,
+in AWS ECS, AWS Lambda, or AWS CodeBuild. If that is the case, CloudReactor
+won't be able to start the Task in the dashboard or as part of a Workflow,
 schedule the Task, or setup a service with the Task. But the advantage is
 that the Task code can be executed by any method available to you,
 such as bare metal servers, VM's, or Kubernetes.
@@ -146,8 +147,8 @@ However, Tasks marked as services or that have a schedule will still be
 monitored by CloudReactor, which will send notifications if
 a service Task goes down or a Task does not run on schedule.
 
-The module reports to the Task Management server that auto-created Tasks are passive,
-unless you specify the `--force-task-passive` commmand-line option or
+The module reports to the Task Management server that auto-created Tasks are
+passive, unless you specify the `--force-task-passive` commmand-line option or
 set the environment variable `PROC_WRAPPER_TASK_IS_PASSIVE` to `FALSE`.
 If a Task uses the Unknown Execution Method, it must be marked as passive,
 because CloudReactor does not know how to manage it.
@@ -747,8 +748,8 @@ A common requirement is that deployed code / images do not contain secrets
 internally which could be decompiled. Instead, programs should fetch secrets
 from an external source in a secure manner. If your program runs in AWS, it
 can make use of AWS's roles that have permission to access data in
-Secrets Manager, Systems Manager Parameter Store, or S3. However, in many
-scenarios, having your program access AWS directly has the following
+Secrets Manager, Systems Manager Parameter Store, AppConfig, or S3. However, in
+many scenarios, having your program access AWS directly has the following
 disadvantages:
 
 1) Your program becomes coupled to AWS, so it is difficult to run locally or
@@ -761,8 +762,9 @@ Therefore, proc_wrapper implements Secret Fetching and Resolution to solve
 these problems so your programs don't have to. Both usage modes can fetch secrets from
 [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/),
 [AWS Systems Manager Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html),
-AWS S3, or the local filesystem, and optionally
-extract embedded data
+[AWS AppConfig](https://docs.aws.amazon.com/appconfig/),
+[AWS S3](https://docs.aws.amazon.com/s3/), or the local filesystem, and
+optionally extract embedded data
 into the environment or a configuration dictionary. The environment is used to
 pass values to processes run in wrapped mode,
 while the configuration dictionary is passed to the callback function in
@@ -782,6 +784,7 @@ supported providers:
 |---------------	|---------------------------	|------------------------------	|-------------------------------------------------------------	|-----------------------------------------------------------------------------	|---------------------------------------------------------------	|
 | `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-2:1234567890:secret:config` 	| aws 	| Can also include version suffix like `-PPrpY`|
 | `AWS_SSM`      	| `ssm:` 	                   | AWS Systems Manager Parameter Store | `ssm:config` 	| aws 	| Can also include version suffix like `:36`|
+| `AWS_APPCONFIG` | `aws:appconfig` | AWS App Config | `aws:appconfig:app_id/env_id/config_id` 	| aws	||
 | `AWS_S3`      	| `arn:aws:s3:::`           	| AWS S3 Object                	| `arn:aws:s3:::examplebucket/staging/app1/config.json`       	| aws 	|                                                               	|
 | `FILE`        	| `file://`                 	| Local file                   	| `file:///home/appuser/app/.env`                                    	|                                                                             	| The default provider if no provider is auto-detected          	|
 | `ENV`         	|                           	| The process environment      	| `SOME_TOKEN`                                                	|                                                                             	| The name of another environment variable                      	|
@@ -810,14 +813,14 @@ The format of a secret value can be auto-detected from the extension or by the
 MIME type if available. Otherwise, you may need to an explicit format code
 (e.g. `!yaml`).
 
-#### AWS Secrets Manager / SSM / S3 notes
+#### AWS Secrets Manager / SSM / AppConfig / S3 notes
 
 [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 is used to fetch secrets when the `aws` extra is installed. It will try to
-access to AWS Secrets Manager, Systems Manager Parameter Store, and S3 using
-environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` if they
-are set, or use the EC2 instance role, ECS task role, or Lambda execution role
-if available.
+access to AWS Secrets Manager, Systems Manager Parameter Store, AppConfig, and
+S3 using environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+if they are set, or use the EC2 instance role, ECS task role,
+or Lambda execution role if available.
 
 For Secrets Manager, you can also use "partial ARNs" (without the hyphened
 suffix) as keys. In the example above
