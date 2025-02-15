@@ -4,19 +4,15 @@ import logging
 import os
 import re
 import shlex
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    List,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Tuple,
-    Union,
-    cast,
-)
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
+from .common_constants import (
+    EXTENSION_TO_FORMAT,
+    FORMAT_DOTENV,
+    FORMAT_JSON,
+    FORMAT_YAML,
+)
 from .common_utils import (
     best_effort_deep_merge,
     coalesce,
@@ -81,6 +77,10 @@ CONFIG_RESOLVER_PROPERTIES_COPIED_FROM_CONFIG = [
     "resolved_config_property_name_suffix",
     "env_var_name_for_config",
     "config_property_name_for_env",
+    "env_output_filename",
+    "env_output_format",
+    "config_output_filename",
+    "config_output_format",
 ]
 
 IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
@@ -102,6 +102,7 @@ IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
     "status_update_interval",
     "log_level",
     "include_timestamps_in_log",
+    "exit_after_writing_variables",
 ]
 
 MUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
@@ -165,13 +166,36 @@ _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
 
 
-class ProcWrapperParamValidationErrors(NamedTuple):
+@dataclass
+class ConfigResolverParamValidationErrors:
+    config_resolver_errors: Dict[str, List[str]]
+    config_resolver_warnings: Dict[str, List[str]]
+
+    def log(self):
+        if len(self.config_resolver_errors) > 0:
+            _logger.error(f"config resolver errors = {self.config_resolver_errors}")
+        else:
+            _logger.debug("No config resolver errors")
+
+        if len(self.config_resolver_warnings) > 0:
+            _logger.error(f"config resolver warnings = {self.config_resolver_warnings}")
+        else:
+            _logger.debug("No config resolver warnings")
+
+
+@dataclass
+class ProcWrapperParamValidationErrors(ConfigResolverParamValidationErrors):
     process_errors: Dict[str, List[str]]
     process_warnings: Dict[str, List[str]]
     task_errors: Dict[str, List[str]]
     task_warnings: Dict[str, List[str]]
 
     def log(self):
+        ConfigResolverParamValidationErrors(
+            config_resolver_errors=self.config_resolver_errors,
+            config_resolver_warnings=self.config_resolver_warnings,
+        ).log()
+
         if len(self.process_errors) > 0:
             _logger.error(f"proc_wrapper param process errors = {self.process_errors}")
         else:
@@ -228,6 +252,11 @@ class ConfigResolverParams:
         self.config_property_name_for_env: Optional[
             str
         ] = DEFAULT_CONFIG_VAR_NAME_FOR_ENV
+
+        self.env_output_filename: Optional[str] = None
+        self.env_output_format: Optional[str] = None
+        self.config_output_filename: Optional[str] = None
+        self.config_output_format: Optional[str] = None
 
         if env is not None:
             self.override_resolver_params_from_env(env=env)
@@ -349,6 +378,22 @@ class ConfigResolverParams:
             self.config_property_name_for_env,
         )
 
+        self.env_output_filename = coalesce(
+            env.get("PROC_WRAPPER_ENV_OUTPUT_FILENAME"), self.env_output_filename
+        )
+
+        self.env_output_format = coalesce(
+            env.get("PROC_WRAPPER_ENV_OUTPUT_FORMAT"), self.env_output_format
+        )
+
+        self.config_output_filename = coalesce(
+            env.get("PROC_WRAPPER_CONFIG_OUTPUT_FILENAME"), self.config_output_filename
+        )
+
+        self.config_output_format = coalesce(
+            env.get("PROC_WRAPPER_CONFIG_OUTPUT_FORMAT"), self.config_output_format
+        )
+
     def override_resolver_params_from_config(self, config: Mapping[str, Any]) -> None:
         params = config.get(PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME)
         if not isinstance(params, dict):
@@ -363,6 +408,80 @@ class ConfigResolverParams:
         for attr in CONFIG_RESOLVER_PROPERTIES_COPIED_FROM_CONFIG:
             if attr in params:
                 setattr(self, attr, params[attr])
+
+    def guess_format_from_filename(self, filename: str) -> Optional[str]:
+        if ".env." in filename:
+            return FORMAT_DOTENV
+
+        last_dot_index = filename.rfind(".")
+        if last_dot_index < 0:
+            _logger.info(
+                f"No file extension found in filename '{filename}', can't guess format"
+            )
+            return None
+
+        extension = filename[last_dot_index + 1 :].lower()
+
+        return EXTENSION_TO_FORMAT.get(extension)
+
+    def sanitize_and_validate(
+        self, runtime_metadata: Optional["RuntimeMetadata"] = None
+    ) -> ConfigResolverParamValidationErrors:
+        config_resolver_errors: Dict[str, List[str]] = {}
+        config_resolver_warnings: Dict[str, List[str]] = {}
+
+        if self.env_output_filename:
+            self.env_output_filename = self.env_output_filename.strip()
+
+        if self.env_output_filename:
+            if not self.env_output_format:
+                self.env_output_format = (
+                    self.guess_format_from_filename(self.env_output_filename.strip())
+                    or FORMAT_DOTENV
+                )
+        else:
+            if self.env_output_format:
+                self.env_output_format = self.env_output_format.strip().lower()
+
+            if self.env_output_format == FORMAT_DOTENV:
+                self.env_output_filename = ".env"
+            elif self.env_output_format == FORMAT_JSON:
+                self.env_output_filename = "env.json"
+            elif self.env_output_format == FORMAT_YAML:
+                self.env_output_filename = "env.yml"
+            elif self.env_output_format:
+                config_resolver_errors["env_output_format"] = [
+                    f"Unknown output format '{self.env_output_format}'"
+                ]
+
+        if self.config_output_filename:
+            self.config_output_filename = self.config_output_filename.strip()
+
+        if self.config_output_filename:
+            if not self.config_output_format:
+                self.config_output_format = (
+                    self.guess_format_from_filename(self.config_output_filename)
+                    or FORMAT_JSON
+                )
+        else:
+            if self.config_output_format:
+                self.config_output_format = self.config_output_format.strip().lower()
+
+            if self.config_output_format == FORMAT_DOTENV:
+                self.config_output_filename = "config.env"
+            elif self.config_output_format == FORMAT_JSON:
+                self.config_output_filename = "config.json"
+            elif self.config_output_format == FORMAT_YAML:
+                self.config_output_filename = "config.yml"
+            elif self.config_output_format:
+                config_resolver_errors["config_output_format"] = [
+                    f"Unknown output format '{self.config_output_format}'"
+                ]
+
+        return ConfigResolverParamValidationErrors(
+            config_resolver_errors=config_resolver_errors,
+            config_resolver_warnings=config_resolver_warnings,
+        )
 
     def log_configuration(self) -> None:
         _logger.debug(f"Log secrets = {self.log_secrets}")
@@ -398,6 +517,10 @@ class ConfigResolverParams:
         _logger.debug(
             f"Config var property for env = '{self.config_property_name_for_env}'"
         )
+        _logger.debug(f"env output filename = '{self.env_output_filename}'")
+        _logger.debug(f"env output format = '{self.env_output_format}'")
+        _logger.debug(f"config output filename = '{self.config_output_filename}'")
+        _logger.debug(f"config output format = '{self.config_output_format}'")
 
     def split_location_string(self, locations: str) -> List[str]:
         # Use , or ; to split locations, except they may be escaped by
@@ -443,6 +566,8 @@ class ProcWrapperParams(ConfigResolverParams):
         super().__init__(env=override_env)
 
         self.embedded_mode = embedded_mode
+
+        self.exit_after_writing_variables: bool = False
 
         self.task_name: Optional[str] = None
         self.task_uuid: Optional[str] = None
@@ -692,13 +817,44 @@ class ProcWrapperParams(ConfigResolverParams):
         # into the input.
         return None
 
+    def guess_format_from_filename(self, filename: str) -> Optional[str]:
+        if ".env." in filename:
+            return FORMAT_DOTENV
+
+        last_dot_index = filename.rfind(".")
+        if last_dot_index < 0:
+            _logger.info(
+                f"No file extension found in filename '{filename}', can't guess format"
+            )
+            return None
+
+        extension = filename[last_dot_index + 1 :].lower()
+
+        return EXTENSION_TO_FORMAT.get(extension)
+
     def sanitize_and_validate(
         self, runtime_metadata: Optional["RuntimeMetadata"] = None
     ) -> ProcWrapperParamValidationErrors:
+        super_validation_errors = super().sanitize_and_validate(
+            runtime_metadata=runtime_metadata
+        )
+
         process_errors: Dict[str, List[str]] = {}
         process_warnings: Dict[str, List[str]] = {}
         task_errors: Dict[str, List[str]] = {}
         task_warnings: Dict[str, List[str]] = {}
+
+        rv = ProcWrapperParamValidationErrors(
+            config_resolver_errors=super_validation_errors.config_resolver_errors,
+            config_resolver_warnings=super_validation_errors.config_resolver_warnings,
+            process_errors=process_errors,
+            process_warnings=process_warnings,
+            task_errors=task_errors,
+            task_warnings=task_warnings,
+        )
+
+        if self.exit_after_writing_variables:
+            return rv
 
         if not self.embedded_mode:
             runtime_metadata_is_execution_status_source = (
@@ -829,12 +985,7 @@ class ProcWrapperParams(ConfigResolverParams):
                     )
                     self.task_is_passive = True
 
-        return ProcWrapperParamValidationErrors(
-            process_errors=process_errors,
-            process_warnings=process_warnings,
-            task_errors=task_errors,
-            task_warnings=task_warnings,
-        )
+        return rv
 
     def run_mode_label(self) -> str:
         return "embedded" if self.embedded_mode else "wrapped"
@@ -890,7 +1041,17 @@ class ProcWrapperParams(ConfigResolverParams):
         return (resolved_command, shell_flag)
 
     def log_configuration(self) -> None:
+        super().log_configuration()
+
         _logger.info(f"Run mode = {self.run_mode_label()}")
+
+        if not self.embedded_mode:
+            _logger.info(
+                f"Exit after writing variables = {self.exit_after_writing_variables}"
+            )
+            if self.exit_after_writing_variables:
+                return
+
         _logger.info(f"Task Execution UUID = {self.task_execution_uuid}")
         _logger.info(f"Task UUID = {self.task_uuid}")
         _logger.info(f"Task name = {self.task_name}")
@@ -999,6 +1160,18 @@ class ProcWrapperParams(ConfigResolverParams):
         _logger.debug(f"Status update interval = {self.status_update_interval}")
 
     def populate_env(self, env: Dict[str, str]) -> None:
+        if self.env_output_filename:
+            env["PROC_WRAPPER_ENV_OUTPUT_FILENAME"] = self.env_output_filename
+
+        if self.env_output_format:
+            env["PROC_WRAPPER_ENV_OUTPUT_FORMAT"] = self.env_output_format
+
+        if self.config_output_filename:
+            env["PROC_WRAPPER_CONFIG_OUTPUT_FILENAME"] = self.config_output_filename
+
+        if self.config_output_format:
+            env["PROC_WRAPPER_CONFIG_OUTPUT_FORMAT"] = self.config_output_format
+
         if self.deployment:
             env["PROC_WRAPPER_DEPLOYMENT"] = self.deployment
 
@@ -2152,6 +2325,54 @@ JSON encoded configuration. Defaults to not setting any environment variable."""
         help="""
 The name of the configuration property used to set to the value of the
 JSON encoded environment. Defaults to not setting any property.""",
+    )
+
+    config_group.add_argument(
+        "--env-output-filename",
+        help="""
+The filename to write the resolved environment variables to.
+Defaults to '.env' if the env output format is 'dotenv',
+'env.json' if the env output format is 'json', and
+'env.yml' if the config output format is 'yaml'.
+""",
+    )
+
+    config_group.add_argument(
+        "--env-output-format",
+        help="""
+The format used to write the resolved environment variables file.
+One of 'dotenv', 'json', or 'yaml'. Will be auto-detected from the filename
+of the env output filename if possible. Defaults to 'dotenv' if the
+env output filename is set but the format cannot be auto-detected from the
+filename.
+""",
+    )
+
+    config_group.add_argument(
+        "--config-output-filename",
+        help="""
+The filename to write the resolved configuration to.
+Defaults to 'config.json' if config output format is 'json',
+'config.yml'  if the config output format is 'yaml', and
+'config.env'  if the config output format is 'dotenv'.
+""",
+    )
+
+    config_group.add_argument(
+        "--config-output-format",
+        help="""
+The format used to write the resolved configuration file. One of 'dotenv',
+'json', or 'yaml'. Will be auto-detected from the filename of the config output
+filename if possible. Defaults to 'json' if the config output filename is set
+but the format cannot be auto-detected from the filename.
+""",
+    )
+
+    config_group.add_argument(
+        "--exit-after-writing-variables",
+        action="store_true",
+        help="""
+Exit after writing the resolved environment variables and configuration""",
     )
 
     container_group = parser.add_argument_group("container", "Container settings")

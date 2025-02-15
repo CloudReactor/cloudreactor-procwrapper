@@ -41,7 +41,14 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
-from .common_utils import best_effort_deep_merge, coalesce, encode_int, string_to_bool
+from .common_constants import FORMAT_DOTENV, FORMAT_JSON, FORMAT_YAML
+from .common_utils import (
+    best_effort_deep_merge,
+    coalesce,
+    encode_int,
+    string_to_bool,
+    value_for_env,
+)
 from .config_resolver import ConfigResolver
 from .proc_wrapper_params import ProcWrapperParams, ProcWrapperParamValidationErrors
 from .runtime_metadata import (
@@ -156,7 +163,7 @@ class ProcWrapper:
         params: Optional[ProcWrapperParams] = None,
         runtime_metadata_fetcher: Optional[RuntimeMetadataFetcher] = None,
         config_resolver: Optional[ConfigResolver] = None,
-        config_override: Optional[Mapping[str, Any]] = None,
+        env_override: Optional[Mapping[str, str]] = None,
         override_params_from_env: bool = True,
         runtime_context: Optional[Any] = None,
         input_value: Optional[Any] = None,
@@ -170,8 +177,8 @@ class ProcWrapper:
         self.override_params_from_env = override_params_from_env
         self.override_params_from_config = override_params_from_config
 
-        if config_override:
-            self.env = dict(config_override)
+        if env_override:
+            self.env = dict(env_override)
         else:
             self.env = os.environ.copy()
 
@@ -274,6 +281,7 @@ class ProcWrapper:
         if (
             (not self.exit_handler_installed)
             and (not self.params.embedded_mode)
+            and (not self.params.exit_after_writing_variables)
             and (not self.in_pytest)
         ):
             _logger.debug("Installing exit handler and signal handler ...")
@@ -301,6 +309,72 @@ class ProcWrapper:
             self.param_errors.log()
         else:
             _logger.warning("No validated parameters?!")
+
+    def write_dict_to_file(
+        self, filename: str, data: Dict[str, Any], format: str
+    ) -> None:
+        """
+        Write a dictionary to a file in the specified format.
+        """
+        if format == FORMAT_JSON:
+            with open(filename, "w") as f:
+                json.dump(data, f)
+        elif format == FORMAT_DOTENV:
+            from dotenv import set_key
+
+            for k, v in data.items():
+                set_key(filename, k, value_for_env(v))
+        elif format == FORMAT_YAML:
+            from yaml import dump
+
+            with open(filename, "w") as f:
+                dump(data, f)
+
+    def write_variable_files(self) -> None:
+        """
+        Write the environment and configuration files to disk.
+        """
+
+        if self.params.env_output_filename and self.params.env_output_format:
+            self.write_dict_to_file(
+                filename=self.params.env_output_filename,
+                data=self.resolved_env,
+                format=self.params.env_output_format,
+            )
+
+        if self.params.config_output_filename and self.params.config_output_format:
+            self.write_dict_to_file(
+                filename=self.params.config_output_filename,
+                data=self.resolved_config,
+                format=self.params.config_output_format,
+            )
+
+    def remove_variable_files(self) -> None:
+        if self.params.exit_after_writing_variables:
+            _logger.info("Skipping removal of resolved variable files")
+            return
+
+        if self.params.env_output_filename:
+            _logger.info(
+                f"Removing env output file '{self.params.env_output_filename}'"
+            )
+            try:
+                os.remove(self.params.env_output_filename)
+            except OSError:
+                _logger.warning(
+                    f"Failed to remove env output file '{self.params.env_output_filename}'"
+                )
+
+        if self.params.config_output_filename:
+            _logger.info(
+                f"Removing config output file '{self.params.config_output_filename}'"
+            )
+            try:
+                os.remove(self.params.config_output_filename)
+            except OSError:
+                _logger.warning(
+                    f"Failed to remove config output file '{self.params.config_output_filename}'"
+                )
 
     def print_final_status(
         self,
@@ -963,65 +1037,77 @@ class ProcWrapper:
         self._reload_params()
         self.log_configuration(initial=True)
 
-        self.started_at = datetime.utcnow()
+        self.write_variable_files()
 
-        if not self._setup_task_execution():
-            self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
+        if self.params.exit_after_writing_variables:
+            _logger.info("Exiting after writing variables")
             return None
 
-        rv = None
-        success = False
-        saved_ex: Exception = RuntimeError()
-        while self.attempt_count < self.max_execution_attempts:
-            self.attempt_count += 1
+        try:
+            self.started_at = datetime.utcnow()
 
-            _logger.info(
-                f"Calling managed function (attempt {self.attempt_count}/{self.max_execution_attempts}) ..."
+            if not self._setup_task_execution():
+                self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
+                return None
+
+            rv = None
+            success = False
+            saved_ex: Exception = RuntimeError()
+            while self.attempt_count < self.max_execution_attempts:
+                self.attempt_count += 1
+
+                _logger.info(
+                    f"Calling managed function (attempt {self.attempt_count}/{self.max_execution_attempts}) ..."
+                )
+
+                try:
+                    rv = fun(self, data, self.resolved_config)
+
+                    _logger.info(f"Managed function succeeded, return value = {rv}")
+
+                    success = True
+                except Exception as ex:
+                    saved_ex = ex
+                    self.failed_count += 1
+                    _logger.exception("Managed function failed")
+
+                    if self.attempt_count < self.max_execution_attempts:
+                        self._update_status(failed_attempts=self.failed_count)
+
+                        # TODO: check timeout
+
+                        if self.params.process_retry_delay:
+                            _logger.debug("Sleeping after managed function failed ...")
+                            time.sleep(self.params.process_retry_delay)
+                            _logger.debug(
+                                "Done sleeping after managed function failed."
+                            )
+
+                        if self.params.config_ttl is not None:
+                            self._reload_params()
+                            self.log_configuration()
+                            self.write_variable_files()
+
+                if success:
+                    try:
+                        self.send_completion(
+                            status=ProcWrapper.STATUS_SUCCEEDED, output_value=rv
+                        )
+                    except Exception:
+                        _logger.warning(
+                            "Failed to send completion to the Task Management server",
+                            exc_info=True,
+                        )
+
+                    return rv
+
+            self.send_completion(
+                status=ProcWrapper.STATUS_FAILED, failed_attempts=self.failed_count
             )
 
-            try:
-                rv = fun(self, data, self.resolved_config)
-
-                _logger.info(f"Managed function succeeded, return value = {rv}")
-
-                success = True
-            except Exception as ex:
-                saved_ex = ex
-                self.failed_count += 1
-                _logger.exception("Managed function failed")
-
-                if self.attempt_count < self.max_execution_attempts:
-                    self._update_status(failed_attempts=self.failed_count)
-
-                    # TODO: check timeout
-
-                    if self.params.process_retry_delay:
-                        _logger.debug("Sleeping after managed function failed ...")
-                        time.sleep(self.params.process_retry_delay)
-                        _logger.debug("Done sleeping after managed function failed.")
-
-                    if self.params.config_ttl is not None:
-                        self._reload_params()
-                        self.log_configuration()
-
-            if success:
-                try:
-                    self.send_completion(
-                        status=ProcWrapper.STATUS_SUCCEEDED, output_value=rv
-                    )
-                except Exception:
-                    _logger.warning(
-                        "Failed to send completion to the Task Management server",
-                        exc_info=True,
-                    )
-
-                return rv
-
-        self.send_completion(
-            status=ProcWrapper.STATUS_FAILED, failed_attempts=self.failed_count
-        )
-
-        raise saved_ex
+            raise saved_ex
+        finally:
+            self.remove_variable_files()
 
     def _override_params_from_env_and_config(self, mutable_only: bool) -> None:
         if self.override_params_from_env:
@@ -1114,6 +1200,12 @@ class ProcWrapper:
         self._reload_params()
 
         self.log_configuration(initial=True)
+
+        self.write_variable_files()
+
+        if self.params.exit_after_writing_variables:
+            _logger.info("Exiting after writing variables")
+            return 0
 
         if self.param_errors and not self.param_errors.can_start_process():
             _logger.error("Exiting due to process configuration error")
@@ -1318,6 +1410,7 @@ class ProcWrapper:
                 ):
                     self._reload_params()
                     self.log_configuration()
+                    self.write_variable_files()
                     self.process_env = None
                     command, shell = self.params.resolve_command_and_shell_flag()
 
@@ -1350,6 +1443,8 @@ class ProcWrapper:
 
         self.called_exit = True
 
+        self.remove_variable_files()
+
         if self.was_conflict:
             _logger.debug(
                 "Task execution update conflict detected, not notifying because server-side should have notified already."
@@ -1360,7 +1455,7 @@ class ProcWrapper:
             self.offline_mode or self.skip_start_notification
         )
 
-        print(
+        _logger.debug(
             f"{error_notification_required=}, {self.skip_start_notification=}, {self.reported_final_status=}"
         )
 

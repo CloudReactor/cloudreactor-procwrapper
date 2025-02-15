@@ -5,7 +5,13 @@ import time
 from io import StringIO
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
 
-from .common_utils import best_effort_deep_merge, coalesce, strip_after
+from .common_constants import (
+    EXTENSION_TO_FORMAT,
+    FORMAT_DOTENV,
+    FORMAT_JSON,
+    FORMAT_YAML,
+)
+from .common_utils import best_effort_deep_merge, coalesce, strip_after, value_for_env
 from .proc_wrapper_params import (
     CONFIG_MERGE_STRATEGY_DEEP,
     DEFAULT_CONFIG_MERGE_STRATEGY,
@@ -44,20 +50,9 @@ DEFAULT_TRANSFORM_SEPARATOR = "|"
 SELF_TRANSFORM_VALUE = "SELF"
 JSON_PATH_TRANSFORM_PREFIX = "JP:"
 
-FORMAT_DOTENV = "dotenv"
-FORMAT_JSON = "json"
-FORMAT_YAML = "yaml"
-
 ALL_SUPPORTED_FORMATS = [FORMAT_DOTENV, FORMAT_JSON, FORMAT_YAML]
 
 DEFAULT_FORMAT_SEPARATOR = "!"
-
-EXTENSION_TO_FORMAT = {
-    "env": FORMAT_DOTENV,
-    "json": FORMAT_JSON,
-    "yaml": FORMAT_YAML,
-    "yml": FORMAT_YAML,
-}
 
 MIME_TYPE_TO_FORMAT = {
     "application/json": FORMAT_JSON,
@@ -252,7 +247,7 @@ class PlainSecretProvider(SecretProvider):
 
 
 class EnvSecretProvider(SecretProvider):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name=SECRET_PROVIDER_ENV, should_cache=False, top_level=False)
 
     def fetch_internal(
@@ -372,7 +367,7 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
         finally:
             client.close()
 
-    def get_or_create_aws_secrets_manager_client(self):
+    def get_or_create_aws_secrets_manager_client(self) -> Optional[Any]:
         if not self.aws_secrets_manager_client:
             if self.aws_secrets_manager_client_create_attempted_at:
                 return None
@@ -397,12 +392,12 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
 
 
 class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             name=SECRET_PROVIDER_AWS_SYSTEMS_MANAGER_PARAMETER_STORE,
             value_prefix=AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX,
         )
-        self.aws_ssm_client = None
+        self.aws_ssm_client: Optional[Any] = None
         self.aws_ssm_client_create_attempted_at: Optional[float] = None
 
     def fetch_internal(
@@ -437,7 +432,7 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
         finally:
             client.close()
 
-    def get_or_create_aws_ssm_client(self):
+    def get_or_create_aws_ssm_client(self) -> Optional[Any]:
         if not self.aws_ssm_client:
             if self.aws_ssm_client_create_attempted_at:
                 return None
@@ -460,12 +455,12 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
 
 
 class AwsAppConfigSecretProvider(AwsSecretProvider):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             name=SECRET_PROVIDER_AWS_APP_CONFIG,
             value_prefix=AWS_APP_CONFIG_PREFIX,
         )
-        self.aws_app_config_client = None
+        self.aws_app_config_client: Optional[Any] = None
         self.aws_app_config_client_create_attempted_at: Optional[float] = None
 
     def fetch_internal(
@@ -524,7 +519,7 @@ class AwsAppConfigSecretProvider(AwsSecretProvider):
         finally:
             client.close()
 
-    def get_or_create_aws_app_config_client(self):
+    def get_or_create_aws_app_config_client(self) -> Optional[Any]:
         if not self.aws_app_config_client:
             if self.aws_app_config_client_create_attempted_at:
                 return None
@@ -837,20 +832,7 @@ class ConfigResolver:
         flattened = {}
 
         for name, value in env.items():
-            string_value = ""
-
-            if value is None:
-                string_value = ""
-            elif isinstance(value, bool):
-                # Boolean values get transformed to environment values TRUE or FALSE
-                string_value = str(value).upper()
-            elif isinstance(value, (dict, list)):
-                # Collections get serialized as JSON
-                string_value = json.dumps(value)
-            else:
-                string_value = str(value)
-
-            flattened[name] = string_value
+            flattened[name] = value_for_env(value)
 
         return flattened
 

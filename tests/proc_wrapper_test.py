@@ -1,10 +1,13 @@
+import json
+import os
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 from urllib.parse import quote_plus
 
 import pytest
 from dateutil.relativedelta import relativedelta
+from dotenv import dotenv_values
 from freezegun import freeze_time
 from pytest_httpserver import HTTPServer
 
@@ -45,14 +48,14 @@ RESOLVE_ENV_BASE_ENV = {
 }
 
 
-def make_wrapped_mode_proc_wrapper(env: Mapping[str, str]) -> ProcWrapper:
+def make_wrapped_mode_proc_wrapper(
+    env: Mapping[str, str], args: List[str] = []
+) -> ProcWrapper:
     main_parser = make_arg_parser()
     params = main_parser.parse_args(
-        args=[], namespace=ProcWrapperParams(embedded_mode=False)
+        args=args, namespace=ProcWrapperParams(embedded_mode=False, env=env)
     )
-    return ProcWrapper(
-        params=params, config_override=env, override_params_from_env=True
-    )
+    return ProcWrapper(params=params, env_override=env, override_params_from_env=True)
 
 
 def make_online_base_env(port: int, command: Optional[str] = "echo") -> Dict[str, str]:
@@ -103,6 +106,74 @@ def test_wrapped_offline_mode():
 
     wrapper = make_wrapped_mode_proc_wrapper(env=env_override)
     assert wrapper.run() == 0
+
+
+def test_wrapped_offline_mode_with_env_output_and_exit():
+    output_filename = "/tmp/output.env"
+    env_override = {
+        "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
+        "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
+        "SOME_VALUE_FOR_PROC_WRAPPER_TO_RESOLVE": "PLAIN:xyz",
+    }
+
+    wrapper = make_wrapped_mode_proc_wrapper(
+        env=env_override,
+        args=[
+            "--exit-after-writing-variables",
+            "--env-output-filename",
+            output_filename,
+        ],
+    )
+
+    assert wrapper.run() == 0
+
+    output_env = dotenv_values(output_filename)
+
+    assert output_env["SOME_VALUE"] == "xyz"
+    os.remove(output_filename)
+
+
+def test_wrapped_offline_mode_with_env_json_output_and_exit():
+    output_filename = "/tmp/output"
+    env_override = {
+        "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
+        "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
+        "SOME_VALUE_FOR_PROC_WRAPPER_TO_RESOLVE": "PLAIN:xyz",
+        "PROC_WRAPPER_ENV_OUTPUT_FORMAT": "json",
+    }
+
+    wrapper = make_wrapped_mode_proc_wrapper(
+        env=env_override,
+        args=[
+            "--exit-after-writing-variables",
+            "--env-output-filename",
+            output_filename,
+        ],
+    )
+
+    assert wrapper.run() == 0
+
+    with open(output_filename, "r") as f:
+        output_env = json.load(f)
+
+    assert output_env["SOME_VALUE"] == "xyz"
+    os.remove(output_filename)
+
+
+def test_wrapped_offline_mode_with_env_output_and_deletion():
+    output_filename = "/tmp/output.env"
+    env_override = {
+        "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
+        "PROC_WRAPPER_ENV_OUTPUT_FILENAME": output_filename,
+    }
+
+    wrapper = make_wrapped_mode_proc_wrapper(
+        env=env_override, args=["ls", output_filename]
+    )
+
+    assert wrapper.run() == 0
+
+    assert not os.path.exists(output_filename)
 
 
 def expect_task_execution_request(
@@ -354,7 +425,7 @@ def test_embedded_offline_mode_success():
     env_override = {
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
     }
-    wrapper = ProcWrapper(config_override=env_override)
+    wrapper = ProcWrapper(env_override=env_override)
     assert wrapper.managed_call(callback, "duper") == "superduper"
 
 
@@ -366,7 +437,7 @@ def test_embedded_offline_mode_failure():
     env_override = {
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
     }
-    wrapper = ProcWrapper(config_override=env_override)
+    wrapper = ProcWrapper(env_override=env_override)
 
     try:
         wrapper.managed_call(bad_callback, "duper")
@@ -616,6 +687,31 @@ def test_embedded_mode_with_params_from_input(
     assert furd["status"] == ProcWrapper.STATUS_SUCCEEDED
 
 
+def read_config_callback(
+    wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]
+) -> str:
+    with open("conf.json", "r") as f:
+        c = json.load(f)
+        return c["b"] + cbdata
+
+
+def test_embedded_offline_mode_with_var_writing():
+    params = ProcWrapperParams()
+    params.offline_mode = True
+    params.config_output_filename = "conf.json"
+    params.initial_config = {
+        "a": {
+            "d": "bc",
+        },
+        "b__to_resolve": "CONFIG:$.a.d",
+    }
+
+    wrapper = ProcWrapper(params=params)
+    assert wrapper.managed_call(read_config_callback, "duper") == "bcduper"
+
+    assert not os.path.exists(params.config_output_filename)
+
+
 @pytest.mark.parametrize(
     """
     fail, report_failure_p
@@ -661,7 +757,7 @@ def test_env_pass_through():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override["ANOTHER_ENV"] = "250"
 
-    wrapper = ProcWrapper(config_override=env_override)
+    wrapper = ProcWrapper(env_override=env_override)
     process_env = wrapper.make_process_env()
 
     assert process_env["ANOTHER_ENV"] == "250"
@@ -768,7 +864,7 @@ def test_aws_lambda_metadata(httpserver: HTTPServer):
     env = make_fake_aws_lambda_env()
     context = FakeAwsLambdaContext()
 
-    wrapper = ProcWrapper(params=params, config_override=env, runtime_context=context)
+    wrapper = ProcWrapper(params=params, env_override=env, runtime_context=context)
 
     fetch_creation_request_data = expect_task_execution_request(
         httpserver=httpserver, update=False

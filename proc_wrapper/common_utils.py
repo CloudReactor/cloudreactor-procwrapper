@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any, Dict, Optional, Tuple
 
@@ -70,6 +71,23 @@ def string_to_float(
             return negative_value
 
         return x
+
+
+def value_for_env(value: Any) -> str:
+    string_value = ""
+
+    if value is None:
+        string_value = ""
+    elif isinstance(value, bool):
+        # Boolean values get transformed to environment values TRUE or FALSE
+        string_value = str(value).upper()
+    elif isinstance(value, (dict, list)):
+        # Collections get serialized as JSON
+        string_value = json.dumps(value)
+    else:
+        string_value = str(value)
+
+    return string_value
 
 
 def strip_after(s: str, partial_suffix: str) -> Tuple[str, Optional[str]]:
