@@ -5,7 +5,7 @@ import platform
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -125,7 +125,8 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "SubnetGatewayIpv4Address": "subnet_gateway_ip_v4_address",
     }
 
-    class ClassifiedContainers(NamedTuple):
+    @dataclass
+    class ClassifiedContainers:
         main_container_metadata: Optional[Dict[str, Any]]
         monitor_container_metadata: Optional[Dict[str, Any]]
         current_container_metadata: Optional[Dict[str, Any]]

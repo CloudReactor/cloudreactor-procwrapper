@@ -2,8 +2,9 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass
 from io import StringIO
-from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
 from .common_constants import (
     EXTENSION_TO_FORMAT,
@@ -541,7 +542,8 @@ class AwsAppConfigSecretProvider(AwsSecretProvider):
         return self.aws_app_config_client
 
 
-class AwsS3Data(NamedTuple):
+@dataclass
+class AwsS3Data:
     body: str
     content_length: int
     content_encoding: Optional[str]
@@ -636,7 +638,8 @@ class AwsS3SecretProvider(AwsSecretProvider):
         )
 
 
-class CachedValueEntry(NamedTuple):
+@dataclass
+class CachedValueEntry:
     string_value: Optional[str]
     parsed_value: Any
     fetched_at: float
@@ -649,7 +652,8 @@ class CachedValueEntry(NamedTuple):
         return (time.time() - self.fetched_at) > ttl_seconds
 
 
-class ResolutionResult(NamedTuple):
+@dataclass
+class ResolutionResult:
     resolved_value: Any
     resolved_var_names: List[str]
     failed_var_names: List[str]
