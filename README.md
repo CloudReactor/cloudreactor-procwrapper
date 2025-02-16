@@ -834,8 +834,8 @@ supported providers:
 
 | Provider Code 	| Value Prefix              	| Provider                     	| Example Address                                             	| Required extras            | Notes                                                         	|
 |---------------	|---------------------------	|------------------------------	|-------------------------------------------------------------	|-----------------------------------------------------------------------------	|---------------------------------------------------------------	|
-| `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-2:1234567890:secret:config` 	| aws 	| Can also include version suffix like `-PPrpY`|
-| `AWS_SSM`      	| `ssm:` 	                   | AWS Systems Manager Parameter Store | `ssm:/MyOrg/MyApp/config.json` | aws 	| Can also include version suffix like `:36`|
+| `AWS_SM`      	| `arn:aws:secretsmanager:` 	| AWS Secrets Manager          	| `arn:aws:secretsmanager:us-east-1:123456789012:secret:config` 	| aws 	| Can also include version suffix like `-PPrpY`|
+| `AWS_SSM`      	| `ssm:` or `arn:aws:ssm:` | AWS Systems Manager Parameter Store | `ssm:/MyOrg/MyApp/config.json`, `arn:aws:ssm:us-east-1:123456789012:parameter/MyOrg/MyApp/config.json` | aws 	| Can also include version suffix like `:36`|
 | `AWS_APPCONFIG` | `aws:appconfig` | AWS App Config | `aws:appconfig:app_id/env_id/config_id` 	| aws	||
 | `AWS_S3`      	| `arn:aws:s3:::`           	| AWS S3 Object                	| `arn:aws:s3:::examplebucket/staging/app1/config.json`       	| aws 	|                                                               	|
 | `FILE`        	| `file://`                 	| Local file                   	| `file:///home/appuser/app/.env`                                    	|                                                                             	| The default provider if no provider is auto-detected          	|
