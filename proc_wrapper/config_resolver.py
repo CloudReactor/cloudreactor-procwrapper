@@ -43,6 +43,7 @@ SECRET_PROVIDER_AWS_APP_CONFIG = "AWS_APP_CONFIG"
 
 SECRET_PROVIDER_FILE_VALUE_PREFIX = "file://"
 AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX = "ssm:"
+AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX = "arn:aws:ssm:"
 AWS_SECRETS_MANAGER_PREFIX = "arn:aws:secretsmanager:"
 AWS_S3_PREFIX = "arn:aws:s3:::"
 AWS_APP_CONFIG_PREFIX = "aws:appconfig:"
@@ -393,10 +394,10 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
 
 
 class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
-    def __init__(self) -> None:
+    def __init__(self, value_prefix: str) -> None:
         super().__init__(
             name=SECRET_PROVIDER_AWS_SYSTEMS_MANAGER_PARAMETER_STORE,
-            value_prefix=AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX,
+            value_prefix=value_prefix,
         )
         self.aws_ssm_client: Optional[Any] = None
         self.aws_ssm_client_create_attempted_at: Optional[float] = None
@@ -414,7 +415,16 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
             raise RuntimeError("Can't create AWS SSM client")
 
         try:
-            if location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX):
+            if location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX):
+                s = location[len(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX) :]
+                parts = s.split(":")
+                last_part = parts[-1]
+                if last_part.startswith("parameter/"):
+                    # Keep the initial "/"
+                    location = last_part[len("parameter") :]
+                else:
+                    raise RuntimeError(f"Invalid SSM ARN format: {location}")
+            elif location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX):
                 location = location[len(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX) :]
 
             _logger.info(f"Looking up SSM parameter '{location}'")
@@ -713,7 +723,12 @@ class ConfigResolver:
             EnvSecretProvider(),
             ConfigSecretProvider(log_secrets=self.params.log_secrets),
             AwsSecretsManagerSecretProvider(aws_region_name=aws_region_name),
-            AwsSystemsManagerParameterStoreSecretProvider(),
+            AwsSystemsManagerParameterStoreSecretProvider(
+                value_prefix=AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX
+            ),
+            AwsSystemsManagerParameterStoreSecretProvider(
+                value_prefix=AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX
+            ),
             AwsAppConfigSecretProvider(),
             AwsS3SecretProvider(),
             FileSecretProvider(value_prefix=FILE_URL_PREFIX),

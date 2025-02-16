@@ -174,7 +174,7 @@ def test_env_in_aws_parameter_store():
         ssm = boto3.client("ssm")
         ssm_id = put_aws_ssm_secret(
             ssm_client=ssm,
-            name="envs",
+            name="/a/b/envs",
             value="""
             USERNAME=theuser
             PASSWORD=thepass
@@ -182,7 +182,11 @@ def test_env_in_aws_parameter_store():
         )
 
         # Test with and without the version suffix
-        for location in ["ssm:envs", ssm_id]:
+        for location in [
+            "ssm:/a/b/envs",
+            "arn:aws:ssm:us-east-1:123456789012:parameter/a/b/envs",
+            ssm_id,
+        ]:
             params.env_locations = [location]
 
             resolver = ConfigResolver(params=params, env_override=env_override)
