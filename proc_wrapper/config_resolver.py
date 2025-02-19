@@ -143,29 +143,39 @@ class SecretProvider:
     def __init__(
         self,
         name: str,
-        value_prefix: Optional[str] = None,
+        value_prefixes: Optional[List[str]] = None,
         should_cache: bool = True,
         top_level: bool = True,
         format_separator: Optional[str] = DEFAULT_FORMAT_SEPARATOR,
         transform_separator: str = DEFAULT_TRANSFORM_SEPARATOR,
     ):
         self.name = name
-        self.value_prefix = coalesce(value_prefix, name + ":")
+        self.value_prefixes = [name + ":"]
+
+        if value_prefixes:
+            self.value_prefixes.extend(value_prefixes)
+
         self.should_cache = should_cache
         self.top_level = top_level
         self.format_separator = format_separator
         self.transform_separator = transform_separator
 
     def supports_value(self, value: str) -> bool:
-        return value.startswith(self.value_prefix)
+        for value_prefix in self.value_prefixes:
+            if value.startswith(value_prefix):
+                return True
+
+        return False
 
     def cache_key_for_value(self, value: str) -> str:
         _logger.debug(f"Cache key for input value '{value}'")
 
         value, _format = self.extract_explicit_format(value)
 
-        if value.startswith(self.value_prefix):
-            value = value[len(self.value_prefix) :]
+        for value_prefix in self.value_prefixes:
+            if value.startswith(value_prefix):
+                value = value[len(value_prefix) :]
+                break
 
         _logger.debug(f"Cache key for output value '{value}'")
 
@@ -295,9 +305,11 @@ class ConfigSecretProvider(SecretProvider):
 
 
 class FileSecretProvider(SecretProvider):
-    def __init__(self, value_prefix: str):
+    def __init__(self):
         super().__init__(
-            name=SECRET_PROVIDER_FILE, value_prefix=value_prefix, should_cache=True
+            name=SECRET_PROVIDER_FILE,
+            value_prefixes=[FILE_URL_PREFIX],
+            should_cache=True,
         )
 
     def supports_value(self, value: str) -> bool:
@@ -319,8 +331,8 @@ class FileSecretProvider(SecretProvider):
 
 
 class AwsSecretProvider(SecretProvider):
-    def __init__(self, name: str, value_prefix: str):
-        super().__init__(name=name, value_prefix=value_prefix, should_cache=True)
+    def __init__(self, name: str, value_prefixes: Optional[List[str]]):
+        super().__init__(name=name, value_prefixes=value_prefixes, should_cache=True)
 
     def make_client_config(self) -> Any:
         from botocore.config import Config
@@ -332,7 +344,7 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
     def __init__(self, aws_region_name: str):
         super().__init__(
             name=SECRET_PROVIDER_AWS_SECRETS_MANAGER,
-            value_prefix=AWS_SECRETS_MANAGER_PREFIX,
+            value_prefixes=[AWS_SECRETS_MANAGER_PREFIX],
         )
         self.aws_secrets_manager_client = None
         self.aws_secrets_manager_client_create_attempted_at: Optional[float] = None
@@ -386,21 +398,23 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
 
             self.aws_secrets_manager_client = boto3.client(
                 service_name="secretsmanager",
-                config=self.make_client_config(),
                 region_name=self.aws_region_name,
+                config=self.make_client_config(),
             )
 
         return self.aws_secrets_manager_client
 
 
 class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
-    def __init__(self, value_prefix: str) -> None:
+    def __init__(self, aws_region_name: str) -> None:
         super().__init__(
             name=SECRET_PROVIDER_AWS_SYSTEMS_MANAGER_PARAMETER_STORE,
-            value_prefix=value_prefix,
+            value_prefixes=[
+                AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX,
+                AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX,
+            ],
         )
-        self.aws_ssm_client: Optional[Any] = None
-        self.aws_ssm_client_create_attempted_at: Optional[float] = None
+        self.aws_region_name = aws_region_name
 
     def fetch_internal(
         self,
@@ -409,23 +423,21 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
         env: Dict[str, str],
         explicit_format: Optional[str],
     ) -> Tuple[str, Optional[str], Optional[Any]]:
-        client = self.get_or_create_aws_ssm_client()
-
-        if client is None:
-            raise RuntimeError("Can't create AWS SSM client")
-
+        client: Optional[Any] = None
         try:
+            region_name = self.aws_region_name
             if location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX):
                 s = location[len(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX) :]
                 parts = s.split(":")
-                last_part = parts[-1]
-                if last_part.startswith("parameter/"):
-                    # Keep the initial "/"
-                    location = last_part[len("parameter") :]
-                else:
-                    raise RuntimeError(f"Invalid SSM ARN format: {location}")
+                region_name = parts[0]
+                # Use the ARN as is
             elif location.startswith(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX):
                 location = location[len(AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX) :]
+                region_name = self.aws_region_name
+
+            client = self.get_or_create_aws_ssm_client(region_name=region_name)
+            if client is None:
+                raise RuntimeError("Can't create AWS SSM client")
 
             _logger.info(f"Looking up SSM parameter '{location}'")
             response = client.get_parameter(Name=location, WithDecryption=True)
@@ -441,35 +453,30 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
             else:
                 return (raw_value, explicit_format, None)
         finally:
-            client.close()
+            if client:
+                client.close()
 
-    def get_or_create_aws_ssm_client(self) -> Optional[Any]:
-        if not self.aws_ssm_client:
-            if self.aws_ssm_client_create_attempted_at:
-                return None
-
-            self.aws_ssm_client_create_attempted_at = time.time()
-
-            try:
-                import boto3
-            except ImportError as import_error:
-                _logger.exception(
-                    "boto3 is not available to import, please install it in your python environment"
-                )
-                raise import_error
-
-            self.aws_ssm_client = boto3.client(
-                service_name="ssm", config=self.make_client_config()
+    def get_or_create_aws_ssm_client(self, region_name: Optional[str]) -> Optional[Any]:
+        try:
+            import boto3
+        except ImportError as import_error:
+            _logger.exception(
+                "boto3 is not available to import, please install it in your python environment"
             )
+            raise import_error
 
-        return self.aws_ssm_client
+        return boto3.client(
+            service_name="ssm",
+            region_name=(region_name or self.aws_region_name),
+            config=self.make_client_config(),
+        )
 
 
 class AwsAppConfigSecretProvider(AwsSecretProvider):
     def __init__(self) -> None:
         super().__init__(
             name=SECRET_PROVIDER_AWS_APP_CONFIG,
-            value_prefix=AWS_APP_CONFIG_PREFIX,
+            value_prefixes=[AWS_APP_CONFIG_PREFIX],
         )
         self.aws_app_config_client: Optional[Any] = None
         self.aws_app_config_client_create_attempted_at: Optional[float] = None
@@ -564,7 +571,7 @@ class AwsS3Data:
 
 class AwsS3SecretProvider(AwsSecretProvider):
     def __init__(self) -> None:
-        super().__init__(name=SECRET_PROVIDER_AWS_S3, value_prefix=AWS_S3_PREFIX)
+        super().__init__(name=SECRET_PROVIDER_AWS_S3, value_prefixes=[AWS_S3_PREFIX])
         self.aws_s3_resource = None
         self.aws_s3_resource_create_attempted_at: Optional[float] = None
 
@@ -724,15 +731,14 @@ class ConfigResolver:
             ConfigSecretProvider(log_secrets=self.params.log_secrets),
             AwsSecretsManagerSecretProvider(aws_region_name=aws_region_name),
             AwsSystemsManagerParameterStoreSecretProvider(
-                value_prefix=AWS_SYSTEMS_MANAGER_PARAMETER_STORE_ARN_PREFIX
+                aws_region_name=aws_region_name
             ),
             AwsSystemsManagerParameterStoreSecretProvider(
-                value_prefix=AWS_SYSTEMS_MANAGER_PARAMETER_STORE_PREFIX
+                aws_region_name=aws_region_name
             ),
             AwsAppConfigSecretProvider(),
             AwsS3SecretProvider(),
-            FileSecretProvider(value_prefix=FILE_URL_PREFIX),
-            FileSecretProvider(value_prefix=""),
+            FileSecretProvider(),
         ]
 
     def fetch_and_resolve_env(self) -> Tuple[Dict[str, str], List[str]]:

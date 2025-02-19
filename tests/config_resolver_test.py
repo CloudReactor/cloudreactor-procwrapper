@@ -26,13 +26,21 @@ S3_FORMAT_METHODS = [
     FORMAT_METHOD_SUFFIX,
 ]
 
+SECRETS_AWS_REGION = "us-east-2"
+
 RESOLVE_ENV_BASE_ENV = {
     "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
     "PROC_WRAPPER_TASK_NAME": "Foo",
     "PROC_WRAPPER_API_KEY": "XXX",
     "PROC_WRAPPER_RESOLVE_SECRETS": "TRUE",
-    "PROC_WRAPPER_SECRETS_AWS_REGION": "us-east-2",
+    "PROC_WRAPPER_SECRETS_AWS_REGION": SECRETS_AWS_REGION,
 }
+
+LOCATION_TYPE_NAME_WITH_PROVIDER_PREFIX = "name_with_provider_prefix"
+LOCATION_TYPE_NAME_WITH_EXTRA_VALUE_PREFIX = "name_with_extra_value_prefix"
+LOCATION_TYPE_NAME_ONLY = "name_only"
+LOCATION_TYPE_ID = "id"
+LOCATION_TYPE_ARN = "arn"
 
 
 @pytest.mark.parametrize("format", ["json", ""])
@@ -112,7 +120,7 @@ def put_aws_s3_file(
     region_name: Optional[str] = None,
 ) -> str:
     content_type = content_type or "text/plain"
-    region_name = region_name or "us-east-2"
+    region_name = region_name or SECRETS_AWS_REGION
 
     try:
         s3_client.create_bucket(
@@ -142,7 +150,7 @@ def test_env_in_aws_secrets_manager():
     params = ConfigResolverParams()
 
     with mock_aws():
-        sm = boto3.client("secretsmanager", region_name="us-east-2")
+        sm = boto3.client("secretsmanager", region_name=SECRETS_AWS_REGION)
         secret_arn = put_aws_sm_secret(
             sm,
             "envs",
@@ -162,7 +170,27 @@ def test_env_in_aws_secrets_manager():
         assert bad_vars == []
 
 
-def test_env_in_aws_parameter_store():
+def make_ssm_location(ssm_id: str, name: str, location_type: str) -> str:
+    if location_type == LOCATION_TYPE_NAME_WITH_PROVIDER_PREFIX:
+        return f"AWS_SSM:{name}"
+    elif location_type == LOCATION_TYPE_NAME_WITH_EXTRA_VALUE_PREFIX:
+        return "ssm:" + name
+    elif location_type == LOCATION_TYPE_ARN:
+        return f"arn:aws:ssm:{SECRETS_AWS_REGION}:123456789012:parameter{name}"
+    else:
+        return ssm_id
+
+
+@pytest.mark.parametrize(
+    ("location_type"),
+    [
+        LOCATION_TYPE_ID,
+        LOCATION_TYPE_NAME_WITH_PROVIDER_PREFIX,
+        LOCATION_TYPE_NAME_WITH_EXTRA_VALUE_PREFIX,
+        LOCATION_TYPE_ARN,
+    ],
+)
+def test_env_in_aws_parameter_store(location_type: str):
     # Disable botocore DEBUG logging because it leaks secrets
     logging.getLogger("botocore").setLevel(logging.INFO)
 
@@ -170,34 +198,42 @@ def test_env_in_aws_parameter_store():
 
     params = ConfigResolverParams()
 
+    name = "/a/b/envs"
+
     with mock_aws():
-        ssm = boto3.client("ssm")
+        ssm = boto3.client(service_name="ssm", region_name=SECRETS_AWS_REGION)
         ssm_id = put_aws_ssm_secret(
             ssm_client=ssm,
-            name="/a/b/envs",
+            name=name,
             value="""
             USERNAME=theuser
             PASSWORD=thepass
         """,
         )
 
-        # Test with and without the version suffix
-        for location in [
-            "ssm:/a/b/envs",
-            "arn:aws:ssm:us-east-1:123456789012:parameter/a/b/envs",
-            ssm_id,
-        ]:
-            params.env_locations = [location]
+        location = make_ssm_location(
+            ssm_id=ssm_id, name=name, location_type=location_type
+        )
+        params.env_locations = [location]
 
-            resolver = ConfigResolver(params=params, env_override=env_override)
+        resolver = ConfigResolver(params=params, env_override=env_override)
 
-            resolved_env, bad_vars = resolver.fetch_and_resolve_env()
-            assert resolved_env["USERNAME"] == "theuser"
-            assert resolved_env["PASSWORD"] == "thepass"
-            assert bad_vars == []
+        resolved_env, bad_vars = resolver.fetch_and_resolve_env()
+        assert resolved_env["USERNAME"] == "theuser"
+        assert resolved_env["PASSWORD"] == "thepass"
+        assert bad_vars == []
 
 
-def test_string_list_in_aws_parameter_store():
+@pytest.mark.parametrize(
+    ("location_type"),
+    [
+        LOCATION_TYPE_ID,
+        LOCATION_TYPE_NAME_WITH_PROVIDER_PREFIX,
+        LOCATION_TYPE_NAME_WITH_EXTRA_VALUE_PREFIX,
+        LOCATION_TYPE_ARN,
+    ],
+)
+def test_string_list_in_aws_parameter_store(location_type: str):
     # Disable botocore DEBUG logging because it leaks secrets
     logging.getLogger("botocore").setLevel(logging.INFO)
 
@@ -206,23 +242,27 @@ def test_string_list_in_aws_parameter_store():
     params = ConfigResolverParams()
 
     with mock_aws():
-        ssm = boto3.client("ssm")
+        ssm = boto3.client(service_name="ssm", region_name=SECRETS_AWS_REGION)
+        name = "/prod/hosts"
         ssm_id = put_aws_ssm_secret(
-            ssm_client=ssm, name="hosts", value="""host1,host2""", typ="StringList"
+            ssm_client=ssm, name=name, value="""host1,host2""", typ="StringList"
         )
 
         # Test with and without the version suffix
-        for location in ["ssm:hosts", ssm_id]:
-            params.initial_config = {"hosts__to_resolve": ssm_id}
+        location = make_ssm_location(
+            ssm_id=ssm_id, name=name, location_type=location_type
+        )
 
-            resolver = ConfigResolver(params=params, env_override=env_override)
+        params.initial_config = {"hosts__to_resolve": location}
 
-            resolved_config, bad = resolver.fetch_and_resolve_config()
+        resolver = ConfigResolver(params=params, env_override=env_override)
 
-            hosts = resolved_config.get("hosts")
-            expected_hosts = ["host1", "host2"]
-            assert hosts == expected_hosts
-            assert len(bad) == 0
+        resolved_config, bad = resolver.fetch_and_resolve_config()
+
+        hosts = resolved_config.get("hosts")
+        expected_hosts = ["host1", "host2"]
+        assert hosts == expected_hosts
+        assert len(bad) == 0
 
 
 @pytest.mark.skip(reason="moto does not support AWS AppConfig yet")
