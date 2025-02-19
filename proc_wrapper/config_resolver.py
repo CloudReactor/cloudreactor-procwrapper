@@ -473,11 +473,12 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
 
 
 class AwsAppConfigSecretProvider(AwsSecretProvider):
-    def __init__(self) -> None:
+    def __init__(self, aws_region_name: str) -> None:
         super().__init__(
             name=SECRET_PROVIDER_AWS_APP_CONFIG,
             value_prefixes=[AWS_APP_CONFIG_PREFIX],
         )
+        self.aws_region_name = aws_region_name
         self.aws_app_config_client: Optional[Any] = None
         self.aws_app_config_client_create_attempted_at: Optional[float] = None
 
@@ -531,9 +532,12 @@ class AwsAppConfigSecretProvider(AwsSecretProvider):
                 f"Got version '{version}' and content type '{content_type}' for AWS AppConfig location '{location}'"
             )
 
-            raw_value = str(response["Configuration"])
+            stream = response["Configuration"]
 
-            return (raw_value, explicit_format or format, None)
+            with stream:
+                raw_value = stream.read().decode("UTF-8")
+                _logger.debug(f"Got configuration value {raw_value} for '{location}'")
+                return (raw_value, explicit_format or format, None)
         finally:
             client.close()
 
@@ -553,7 +557,9 @@ class AwsAppConfigSecretProvider(AwsSecretProvider):
                 raise import_error
 
             self.aws_app_config_client = boto3.client(
-                "appconfigdata", config=self.make_client_config()
+                service_name="appconfigdata",
+                region_name=self.aws_region_name,
+                config=self.make_client_config(),
             )
 
         return self.aws_app_config_client
@@ -736,7 +742,7 @@ class ConfigResolver:
             AwsSystemsManagerParameterStoreSecretProvider(
                 aws_region_name=aws_region_name
             ),
-            AwsAppConfigSecretProvider(),
+            AwsAppConfigSecretProvider(aws_region_name=aws_region_name),
             AwsS3SecretProvider(),
             FileSecretProvider(),
         ]
