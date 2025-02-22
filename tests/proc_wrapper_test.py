@@ -1,5 +1,6 @@
 import json
 import os
+import platform
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from tempfile import gettempdir
@@ -168,8 +169,13 @@ def test_wrapped_offline_mode_with_env_output_and_deletion():
         "PROC_WRAPPER_ENV_OUTPUT_FILENAME": output_filename,
     }
 
+    if platform.system() == "Windows":
+        command = "dir"
+    else:
+        command = "ls"
+
     wrapper = make_wrapped_mode_proc_wrapper(
-        env=env_override, args=["ls", output_filename]
+        env=env_override, args=[command, output_filename]
     )
 
     assert wrapper.run() == 0
