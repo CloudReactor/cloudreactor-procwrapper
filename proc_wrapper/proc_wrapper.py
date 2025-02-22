@@ -26,9 +26,11 @@ import json
 import logging
 import math
 import os
+import platform
 import random
 import signal
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -181,6 +183,8 @@ class ProcWrapper:
             self.env = dict(env_override)
         else:
             self.env = os.environ.copy()
+
+        self.is_windows = platform.system() == "Windows"
 
         self.param_errors: Optional[ProcWrapperParamValidationErrors] = None
         self.offline_mode: bool = False
@@ -1544,12 +1548,30 @@ class ProcWrapper:
             )
             return exit_code
 
-        _logger.info("Sending SIGTERM ...")
+        _logger.info("Trying to gracefully terminate the process ...")
 
+        sent_termination_signal = False
         if self.params.process_group_termination:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-        else:
-            os.kill(pid, signal.SIGTERM)
+            try:
+                if hasattr(os, "killpg"):
+                    _logger.info("Killing process group ...")
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+                    sent_termination_signal = True
+                    _logger.info("Killed process group successfully")
+                elif self.is_windows:
+                    _logger.info("Sending Ctrl-Break in Windows ...")
+                    self.process.send_signal(getattr(signal, "CTRL_BREAK_EVENT"))
+                    sent_termination_signal = True
+                    _logger.info("Sent Ctrl-Break successfully")
+            except Exception:
+                _logger.exception(f"Could not terminate process group with {pid=}")
+
+        if not sent_termination_signal:
+            _logger.info("Sending SIGTERM ...")
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except Exception:
+                _logger.exception(f"Could not send SIGTERM to process with {pid=}")
 
         try:
             self.process.communicate(
@@ -1560,7 +1582,7 @@ class ProcWrapper:
         except TimeoutExpired:
             _logger.info("Timeout after SIGTERM expired, killing with SIGKILL ...")
             try:
-                if self.params.process_group_termination:
+                if self.params.process_group_termination and hasattr(os, "killpg"):
                     os.killpg(os.getpgid(pid), signal.SIGKILL)
                 else:
                     os.kill(pid, signal.SIGKILL)
@@ -1593,6 +1615,11 @@ class ProcWrapper:
             else None
         )
 
+        creationflags = 0
+
+        if self.params.process_group_termination and self.is_windows:
+            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP")
+
         self.process = Popen(
             command,
             shell=shell,
@@ -1601,6 +1628,7 @@ class ProcWrapper:
             env=self.process_env,
             cwd=self.params.work_dir,
             preexec_fn=preexec_fn,
+            creationflags=creationflags,
         )
 
         pid = self.process.pid
