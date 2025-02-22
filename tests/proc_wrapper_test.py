@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
+from tempfile import gettempdir
 from typing import Any, Dict, List, Mapping, Optional
 from urllib.parse import quote_plus
 
@@ -109,7 +110,7 @@ def test_wrapped_offline_mode():
 
 
 def test_wrapped_offline_mode_with_env_output_and_exit():
-    output_filename = "/tmp/output.env"
+    output_filename = os.path.join(gettempdir(), "output.env")
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
@@ -134,7 +135,7 @@ def test_wrapped_offline_mode_with_env_output_and_exit():
 
 
 def test_wrapped_offline_mode_with_env_json_output_and_exit():
-    output_filename = "/tmp/output"
+    output_filename = os.path.join(gettempdir(), "output")
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
@@ -161,7 +162,7 @@ def test_wrapped_offline_mode_with_env_json_output_and_exit():
 
 
 def test_wrapped_offline_mode_with_env_output_and_deletion():
-    output_filename = "/tmp/output.env"
+    output_filename = os.path.join(gettempdir(), "output.env")
     env_override = {
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
         "PROC_WRAPPER_ENV_OUTPUT_FILENAME": output_filename,
