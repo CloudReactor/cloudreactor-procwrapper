@@ -21,7 +21,7 @@ def string_to_bool(
     if trimmed == "":
         return default_value
 
-    return trimmed.upper() == "TRUE"
+    return (trimmed == "1") or (trimmed.upper() == "TRUE")
 
 
 def string_to_int(
