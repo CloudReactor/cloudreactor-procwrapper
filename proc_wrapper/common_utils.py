@@ -1,6 +1,9 @@
 import json
 import logging
+from io import StringIO
 from typing import Any, Dict, Optional, Tuple
+
+from .common_constants import FORMAT_DOTENV, FORMAT_JSON, FORMAT_TEXT, FORMAT_YAML
 
 _logger = logging.getLogger(__name__)
 
@@ -73,7 +76,7 @@ def string_to_float(
         return x
 
 
-def value_for_env(value: Any) -> str:
+def stringify_value(value: Any) -> str:
     string_value = ""
 
     if value is None:
@@ -161,3 +164,88 @@ def best_effort_deep_merge(
             dest.update(src)
 
     return dest
+
+
+def parse_dot_env(data: str) -> Dict[str, Any]:
+    from dotenv import dotenv_values
+
+    return dotenv_values(stream=StringIO(data))
+
+
+def parse_json(data: str) -> Optional[Any]:
+    return json.loads(data)
+
+
+def parse_yaml(data: str) -> Dict[str, Any]:
+    from yaml import safe_load
+
+    return safe_load(data)
+
+
+def parse_data_string(data_string: str, format: Optional[str] = None) -> Optional[Any]:
+    if (not format) or (format == FORMAT_TEXT):
+        return data_string
+
+    if format == FORMAT_JSON:
+        return parse_json(data_string)
+
+    if format == FORMAT_YAML:
+        return parse_yaml(data_string)
+
+    if format == FORMAT_DOTENV:
+        return parse_dot_env(data_string)
+
+    return None
+
+
+def parse_data_file(
+    filename: str, format: Optional[str], encoding: Optional[str] = None
+) -> Optional[Any]:
+    encoding = encoding or "utf-8"
+
+    if format == FORMAT_JSON:
+        with open(filename, "r", encoding=encoding) as f:
+            return json.load(f)
+    elif format == FORMAT_YAML:
+        from yaml import safe_load
+
+        with open(filename, "r", encoding=encoding) as f:
+            return safe_load(f)
+    elif format == FORMAT_DOTENV:
+        from dotenv import dotenv_values
+
+        return dotenv_values(dotenv_path=filename, encoding=encoding)
+    elif (not format) or (format == FORMAT_TEXT):
+        with open(filename, "r", encoding=encoding) as f:
+            return f.read()
+    else:
+        raise ValueError(f"Unsupported input value {format=}")
+
+
+def write_data_to_file(
+    filename: str,
+    data: Any,
+    format: Optional[str] = None,
+    encoding: Optional[str] = None,
+) -> None:
+    """
+    Write a data to a file in the specified format.
+    """
+    if (format == FORMAT_JSON) or ((not format) and not isinstance(data, str)):
+        with open(filename, "w", encoding=encoding) as f:
+            json.dump(data, f)
+    elif format == FORMAT_DOTENV:
+        from dotenv import set_key
+
+        for k, v in data.items():
+            set_key(filename, k, stringify_value(v))
+    elif format == FORMAT_YAML:
+        from yaml import dump
+
+        with open(filename, "w", encoding=encoding) as f:
+            dump(data, f)
+    elif (not format) or (format == FORMAT_TEXT):
+        with open(filename, "w") as f:
+            f.write(str(data))
+    else:
+        raise ValueError(f"write_data_to_file(): Unsupported format '{format}'")

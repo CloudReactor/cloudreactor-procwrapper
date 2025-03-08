@@ -1,6 +1,7 @@
 FORMAT_DOTENV = "dotenv"
 FORMAT_JSON = "json"
 FORMAT_YAML = "yaml"
+FORMAT_TEXT = "text"
 
 EXTENSION_TO_FORMAT = {
     "env": FORMAT_DOTENV,

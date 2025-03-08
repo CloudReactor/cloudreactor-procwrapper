@@ -3,7 +3,6 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from io import StringIO
 from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
 from .common_constants import (
@@ -12,7 +11,13 @@ from .common_constants import (
     FORMAT_JSON,
     FORMAT_YAML,
 )
-from .common_utils import best_effort_deep_merge, coalesce, strip_after, value_for_env
+from .common_utils import (
+    best_effort_deep_merge,
+    coalesce,
+    parse_data_string,
+    stringify_value,
+    strip_after,
+)
 from .proc_wrapper_params import (
     CONFIG_MERGE_STRATEGY_DEEP,
     DEFAULT_CONFIG_MERGE_STRATEGY,
@@ -863,7 +868,7 @@ class ConfigResolver:
         flattened = {}
 
         for name, value in env.items():
-            flattened[name] = value_for_env(value)
+            flattened[name] = stringify_value(value)
 
         return flattened
 
@@ -1112,33 +1117,6 @@ class ConfigResolver:
 
         return dest
 
-    def parse_data_string(
-        self, data_string: str, format: str
-    ) -> Optional[Dict[str, Any]]:
-        if format == FORMAT_DOTENV:
-            return self.parse_dot_env(data_string)
-
-        if format == FORMAT_JSON:
-            return self.parse_json(data_string)
-
-        if format == FORMAT_YAML:
-            return self.parse_yaml(data_string)
-
-        return None
-
-    def parse_dot_env(self, data: str) -> Dict[str, Any]:
-        from dotenv import dotenv_values
-
-        return dotenv_values(stream=StringIO(data))
-
-    def parse_json(self, data: str) -> Dict[str, Any]:
-        return json.loads(data)
-
-    def parse_yaml(self, data: str) -> Dict[str, Any]:
-        from yaml import safe_load
-
-        return safe_load(data)
-
     def resolve_var(
         self,
         name: str,
@@ -1243,7 +1221,7 @@ defaulting to plain"""
                         format = default_format
 
                 if format:
-                    config_data = self.parse_data_string(
+                    config_data = parse_data_string(
                         data_string=string_value, format=format
                     )
                     is_value_config_dict = issubclass(type(config_data), dict)

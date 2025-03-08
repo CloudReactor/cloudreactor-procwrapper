@@ -11,6 +11,7 @@ from .common_constants import (
     EXTENSION_TO_FORMAT,
     FORMAT_DOTENV,
     FORMAT_JSON,
+    FORMAT_TEXT,
     FORMAT_YAML,
 )
 from .common_utils import (
@@ -103,6 +104,16 @@ IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
     "log_level",
     "include_timestamps_in_log",
     "exit_after_writing_variables",
+    "input_env_var_name",
+    "input_filename",
+    "cleanup_input_file",
+    "input_value_format",
+    "send_input_value",
+    "log_input_value",
+    "result_filename",
+    "result_value_format",
+    "cleanup_result_file",
+    "log_result_value",
 ]
 
 MUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
@@ -436,7 +447,7 @@ class ConfigResolverParams:
         if self.env_output_filename:
             if not self.env_output_format:
                 self.env_output_format = (
-                    self.guess_format_from_filename(self.env_output_filename.strip())
+                    self.guess_format_from_filename(self.env_output_filename)
                     or FORMAT_DOTENV
                 )
         else:
@@ -622,6 +633,16 @@ class ProcWrapperParams(ConfigResolverParams):
         self.send_hostname: bool = False
         self.send_runtime_metadata: bool = True
         self.runtime_metadata_refresh_interval: Optional[int] = None
+        self.input_env_var_name: Optional[str] = None
+        self.input_filename: Optional[str] = None
+        self.log_input_value: bool = False
+        self.cleanup_input_file: Optional[bool] = None
+        self.input_value_format: Optional[str] = None
+        self.send_input_value: bool = False
+        self.result_filename: Optional[str] = None
+        self.result_value_format: Optional[str] = None
+        self.log_result_value: bool = False
+        self.cleanup_result_file: bool = True
 
         self.command: Optional[List[str]] = None
         self.command_line: Optional[str] = None
@@ -856,6 +877,18 @@ class ProcWrapperParams(ConfigResolverParams):
         if self.exit_after_writing_variables:
             return rv
 
+        if self.input_filename:
+            if not self.input_value_format:
+                self.input_value_format = self.guess_format_from_filename(
+                    self.input_filename
+                )
+
+        if self.result_filename:
+            if not self.result_value_format:
+                self.result_value_format = self.guess_format_from_filename(
+                    self.result_filename
+                )
+
         if not self.embedded_mode:
             runtime_metadata_is_execution_status_source = (
                 runtime_metadata and runtime_metadata.is_execution_status_source
@@ -1076,6 +1109,14 @@ class ProcWrapperParams(ConfigResolverParams):
 
         _logger.info(f"Passive task = {self.task_is_passive}")
 
+        _logger.info(f"Input filename = '{self.input_filename}'")
+        _logger.info(f"Input env var name = '{self.input_env_var_name}'")
+        _logger.info(f"Input value format = '{self.input_value_format}'")
+        _logger.info(f"Send input value = {self.send_input_value}")
+
+        _logger.info(f"Result filename = '{self.result_filename}'")
+        _logger.info(f"Result value format = '{self.result_value_format}'")
+
         _logger.info(f"Task instance metadata = {self.task_instance_metadata}")
         _logger.info(f"Send runtime metadata = {self.send_runtime_metadata}")
         _logger.info(
@@ -1171,6 +1212,21 @@ class ProcWrapperParams(ConfigResolverParams):
 
         if self.config_output_format:
             env["PROC_WRAPPER_CONFIG_OUTPUT_FORMAT"] = self.config_output_format
+
+        if self.input_filename:
+            env["PROC_WRAPPER_INPUT_FILENAME"] = self.input_filename
+
+        if self.input_value_format:
+            env["PROC_WRAPPER_INPUT_VALUE_FORMAT"] = self.input_value_format
+
+        if self.input_env_var_name:
+            env["PROC_WRAPPER_INPUT_ENV_VAR_NAME"] = self.input_env_var_name
+
+        if self.result_filename:
+            env["PROC_WRAPPER_RESULT_FILENAME"] = self.result_filename
+
+        if self.result_value_format:
+            env["PROC_WRAPPER_RESULT_VALUE_FORMAT"] = self.result_value_format
 
         if self.deployment:
             env["PROC_WRAPPER_DEPLOYMENT"] = self.deployment
@@ -1438,6 +1494,58 @@ class ProcWrapperParams(ConfigResolverParams):
                 env.get("PROC_WRAPPER_API_TIMEOUT_REPORT_PROBABILITY"),
                 default_value=self.api_timeout_report_probability,
             )
+        )
+
+        self.input_env_var_name = coalesce(
+            env.get("PROC_WRAPPER_INPUT_ENV_VAR_NAME"), self.input_env_var_name
+        )
+
+        self.input_filename = coalesce(
+            env.get("PROC_WRAPPER_INPUT_FILENAME"), self.input_filename
+        )
+
+        self.input_value_format = coalesce(
+            env.get("PROC_WRAPPER_INPUT_VALUE_FORMAT"), self.input_value_format
+        )
+
+        self.log_input_value = cast(
+            bool,
+            string_to_bool(
+                env.get("PROC_WRAPPER_LOG_INPUT_VALUE"),
+                default_value=self.log_input_value,
+            ),
+        )
+
+        self.cleanup_input_file = cast(
+            bool,
+            string_to_bool(
+                env.get("PROC_WRAPPER_CLEANUP_INPUT_FILE"),
+                default_value=self.cleanup_input_file,
+            ),
+        )
+
+        self.result_filename = coalesce(
+            env.get("PROC_WRAPPER_RESULT_FILENAME"), self.result_filename
+        )
+
+        self.result_value_format = coalesce(
+            env.get("PROC_WRAPPER_RESULT_VALUE_FORMAT"), self.result_value_format
+        )
+
+        self.log_result_value = cast(
+            bool,
+            string_to_bool(
+                env.get("PROC_WRAPPER_LOG_RESULT_VALUE"),
+                default_value=self.log_result_value,
+            ),
+        )
+
+        self.cleanup_result_file = cast(
+            bool,
+            string_to_bool(
+                env.get("PROC_WRAPPER_CLEANUP_RESULT_FILE"),
+                default_value=self.cleanup_result_file,
+            ),
         )
 
         # Properties to be reported to CloudReactor
@@ -1747,6 +1855,14 @@ class ProcWrapperParams(ConfigResolverParams):
             or False
         )
 
+        self.send_input_value = (
+            string_to_bool(
+                env.get("PROC_WRAPPER_SEND_INPUT_VALUE"),
+                default_value=self.send_input_value,
+            )
+            or False
+        )
+
         self.send_runtime_metadata = (
             string_to_bool(
                 env.get("PROC_WRAPPER_SEND_RUNTIME_METADATA"),
@@ -1889,7 +2005,7 @@ for the schema.""",
         help="Indicate that this is a Task that should run indefinitely",
     )
     task_group.add_argument(
-        "--schedule", help="Run schedule reported to the Task Management server"
+        "--schedule", help="Execution schedule reported to the Task Management server"
     )
     task_group.add_argument(
         "--max-concurrency",
@@ -1904,6 +2020,59 @@ Defaults to 1.""",
 Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit.
 Defaults to the heartbeat interval, plus {HEARTBEAT_DELAY_TOLERANCE_SECONDS}
 seconds for services that send heartbeats. Otherwise, defaults to no limit.""",
+    )
+    task_group.add_argument(
+        "--input-env-var-name",
+        help="""
+The value of this environment variable is used as the input value for the
+wrapped process or embedded function. The value is sent back to the API server
+as the input value of the Task Execution.""",
+    )
+    task_group.add_argument(
+        "--input-filename",
+        help="""
+The name of the file containing the value used as the input value for the
+wrapped process or embedded function. The contents of the file are sent back to
+the API server as the input value of the Task Execution.""",
+    )
+    task_group.add_argument(
+        "--cleanup-input-file",
+        action="store_true",
+        dest="cleanup_input_file",
+        help="""
+Remove the input file before exit. If this parameter is omitted, the input file
+will only be removed if it was written by the wrapper.""",
+    )
+    # Maybe add --no-cleanup-input-file to force skip of removal?
+    task_group.add_argument(
+        "--input-value-format",
+        help=f"""
+The format of the value used as the input value for the Task Execution.
+Options are '{FORMAT_JSON}', '{FORMAT_YAML}', or '{FORMAT_TEXT}'.
+Defaults to '{FORMAT_TEXT}'.""",
+    )
+
+    task_group.add_argument(
+        "--result-filename",
+        help="""
+The name of the file the wrapped process will write with the result value. The
+contents of the file are sent back to the API server as the result value of the
+Task Execution.""",
+    )
+    task_group.add_argument(
+        "--result-value-format",
+        help=f"""
+The format of the file that the wrapped process will write with the result
+value. Options are '{FORMAT_JSON}', '{FORMAT_YAML}', or '{FORMAT_TEXT}'.
+Defaults to '{FORMAT_TEXT}'.""",
+    )
+    task_group.add_argument(
+        "--no-cleanup-result-file",
+        action="store_false",
+        dest="cleanup_result_file",
+        help="""
+Do not delete the result file after the Task Execution completes. If this
+parameter is omitted, the result file will be deleted.""",
     )
 
     api_group = parser.add_argument_group("api", "API client settings")
@@ -2041,6 +2210,11 @@ execution times out, notify the Task Management server with given probability. D
         "-d", "--deployment", help="Deployment name (production, staging, etc.)"
     )
     api_group.add_argument(
+        "--send-input-value",
+        action="store_true",
+        help="Send the input value the Task Management server",
+    )
+    api_group.add_argument(
         "--send-pid",
         action="store_true",
         help="Send the process ID to the Task Management server",
@@ -2074,6 +2248,12 @@ the execution method.
     )
     log_group.add_argument(
         "--log-secrets", action="store_true", help="Log sensitive information"
+    )
+    log_group.add_argument(
+        "--log-input-value", action="store_true", help="Log input value"
+    )
+    log_group.add_argument(
+        "--log-result-value", action="store_true", help="Log result value"
     )
     log_group.add_argument(
         "--exclude-timestamps-in-log",
@@ -2329,42 +2509,43 @@ JSON encoded environment. Defaults to not setting any property.""",
 
     config_group.add_argument(
         "--env-output-filename",
-        help="""
+        help=f"""
 The filename to write the resolved environment variables to.
-Defaults to '.env' if the env output format is 'dotenv',
-'env.json' if the env output format is 'json', and
-'env.yml' if the config output format is 'yaml'.
+Defaults to '.env' if the env output format is '{FORMAT_DOTENV}',
+'env.json' if the env output format is '{FORMAT_JSON}', and
+'env.yml' if the config output format is '{FORMAT_YAML}'.
 """,
     )
 
     config_group.add_argument(
         "--env-output-format",
-        help="""
+        help=f"""
 The format used to write the resolved environment variables file.
-One of 'dotenv', 'json', or 'yaml'. Will be auto-detected from the filename
-of the env output filename if possible. Defaults to 'dotenv' if the
-env output filename is set but the format cannot be auto-detected from the
-filename.
+One of '{FORMAT_DOTENV}', '{FORMAT_JSON}', or '{FORMAT_YAML}'. Will be
+auto-detected from the filename of the env output filename if possible. Defaults
+to '{FORMAT_DOTENV}' if the env output filename is set but the format cannot be
+auto-detected from the filename.
 """,
     )
 
     config_group.add_argument(
         "--config-output-filename",
-        help="""
+        help=f"""
 The filename to write the resolved configuration to.
-Defaults to 'config.json' if config output format is 'json',
-'config.yml'  if the config output format is 'yaml', and
-'config.env'  if the config output format is 'dotenv'.
+Defaults to 'config.json' if config output format is '{FORMAT_JSON}',
+'config.yml' if the config output format is '{FORMAT_YAML}', and
+'config.env' if the config output format is '{FORMAT_DOTENV}'.
 """,
     )
 
     config_group.add_argument(
         "--config-output-format",
-        help="""
-The format used to write the resolved configuration file. One of 'dotenv',
-'json', or 'yaml'. Will be auto-detected from the filename of the config output
-filename if possible. Defaults to 'json' if the config output filename is set
-but the format cannot be auto-detected from the filename.
+        help=f"""
+The format used to write the resolved configuration file. One of
+'{FORMAT_DOTENV}', '{FORMAT_JSON}', or '{FORMAT_YAML}'. Will be auto-detected
+from the filename of the config output filename if possible. Defaults to
+'{FORMAT_JSON}' if the config output filename is set but the format cannot be
+auto-detected from the filename.
 """,
     )
 

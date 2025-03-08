@@ -43,13 +43,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
-from .common_constants import FORMAT_DOTENV, FORMAT_JSON, FORMAT_YAML
 from .common_utils import (
     best_effort_deep_merge,
     coalesce,
     encode_int,
+    parse_data_file,
+    parse_data_string,
     string_to_bool,
-    value_for_env,
+    stringify_value,
+    write_data_to_file,
 )
 from .config_resolver import ConfigResolver
 from .proc_wrapper_params import ProcWrapperParams, ProcWrapperParamValidationErrors
@@ -59,6 +61,9 @@ from .runtime_metadata import (
     RuntimeMetadata,
     RuntimeMetadataFetcher,
 )
+
+UNSET_VALUE = "__unset__"
+
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
@@ -168,7 +173,7 @@ class ProcWrapper:
         env_override: Optional[Mapping[str, str]] = None,
         override_params_from_env: bool = True,
         runtime_context: Optional[Any] = None,
-        input_value: Optional[Any] = None,
+        input_value: Optional[Any] = UNSET_VALUE,
         override_params_from_input: bool = True,
         override_params_from_config: Optional[bool] = None,
     ) -> None:
@@ -209,6 +214,7 @@ class ProcWrapper:
         self.last_api_request_failed_at: Optional[float] = None
         self.last_api_request_data: Optional[Dict[str, Any]] = None
         self.config_last_reloaded_at: Optional[float] = None
+        self.wrote_input_file: bool = False
 
         self.status_dict: Dict[str, Any] = {}
         self._status_socket: Optional[socket.socket] = None
@@ -274,8 +280,16 @@ class ProcWrapper:
 
         self._override_params_from_env_and_config(mutable_only=False)
 
+        if "PROC_WRAPPER_INPUT_VALUE" in self.resolved_env:
+            self.input_value = parse_data_string(
+                data_string=self.resolved_env["PROC_WRAPPER_INPUT_VALUE"],
+                format=self.params.input_value_format,
+            )
+
         if override_params_from_input:
-            config_override = self.params.override_params_from_input(input=input_value)
+            config_override = self.params.override_params_from_input(
+                input=self.input_value
+            )
 
             if config_override:
                 self.resolved_config.update(config_override)
@@ -314,40 +328,20 @@ class ProcWrapper:
         else:
             _logger.warning("No validated parameters?!")
 
-    def write_dict_to_file(
-        self, filename: str, data: Dict[str, Any], format: str
-    ) -> None:
-        """
-        Write a dictionary to a file in the specified format.
-        """
-        if format == FORMAT_JSON:
-            with open(filename, "w") as f:
-                json.dump(data, f)
-        elif format == FORMAT_DOTENV:
-            from dotenv import set_key
-
-            for k, v in data.items():
-                set_key(filename, k, value_for_env(v))
-        elif format == FORMAT_YAML:
-            from yaml import dump
-
-            with open(filename, "w") as f:
-                dump(data, f)
-
     def write_variable_files(self) -> None:
         """
         Write the environment and configuration files to disk.
         """
 
         if self.params.env_output_filename and self.params.env_output_format:
-            self.write_dict_to_file(
+            write_data_to_file(
                 filename=self.params.env_output_filename,
                 data=self.resolved_env,
                 format=self.params.env_output_format,
             )
 
         if self.params.config_output_filename and self.params.config_output_format:
-            self.write_dict_to_file(
+            write_data_to_file(
                 filename=self.params.config_output_filename,
                 data=self.resolved_config,
                 format=self.params.config_output_format,
@@ -380,6 +374,98 @@ class ProcWrapper:
                     f"Failed to remove config output file '{self.params.config_output_filename}'"
                 )
 
+    def remove_input_and_result_files(self) -> None:
+        cleanup_input_file = coalesce(
+            self.params.cleanup_input_file, self.wrote_input_file
+        )
+
+        if (
+            cleanup_input_file
+            and self.params.input_filename
+            and os.path.exists(self.params.input_filename)
+        ):
+            _logger.info(f"Removing input file '{self.params.input_filename}'")
+            try:
+                os.remove(self.params.input_filename)
+            except OSError:
+                _logger.warning(
+                    f"Failed to remove input file '{self.params.input_filename}'"
+                )
+        else:
+            _logger.info("Skipping removal of input file")
+
+        if (
+            self.params.cleanup_result_file
+            and self.params.result_filename
+            and os.path.exists(self.params.result_filename)
+        ):
+            _logger.info(f"Removing result file '{self.params.result_filename}'")
+            try:
+                os.remove(self.params.result_filename)
+            except OSError:
+                _logger.warning(
+                    f"Failed to remove result file '{self.params.result_filename}'"
+                )
+        else:
+            _logger.info("Skipping removal of result file")
+
+    def _resolve_input_value(self) -> Optional[Any]:
+        if self.input_value == UNSET_VALUE:
+            if self.params.embedded_mode or self.params.send_input_value:
+                parsed_input_value: Optional[Any] = None
+                if self.params.input_env_var_name:
+                    raw_input_value = self.resolved_env.get(
+                        self.params.input_env_var_name
+                    )
+
+                    if raw_input_value is not None:
+                        parsed_input_value = parse_data_string(
+                            data_string=raw_input_value,
+                            format=self.params.input_value_format,
+                        )
+                elif self.params.input_filename:
+                    parsed_input_value = parse_data_file(
+                        filename=self.params.input_filename,
+                        format=self.params.input_value_format,
+                    )
+                else:
+                    raise ValueError(
+                        "send_input_value is true, but no input value source specified"
+                    )
+
+                self.input_value = parsed_input_value
+            else:
+                _logger.info(
+                    "wrapped mode with send_input_value=false, so not resolving input value"
+                )
+        else:
+            if self.params.input_filename:
+                write_data_to_file(
+                    filename=self.params.input_filename,
+                    data=self.input_value,
+                    format=self.params.input_value_format,
+                )
+                self.wrote_input_file = True
+
+        if self.params.log_input_value:
+            _logger.info(f"Input value = {stringify_value(self.input_value)}")
+
+        return self.input_value
+
+    def _read_result(self) -> Optional[Any]:
+        result_value: Optional[Any] = UNSET_VALUE
+
+        if self.params.result_filename:
+            result_value = parse_data_file(
+                filename=self.params.result_filename,
+                format=self.params.result_value_format,
+            )
+
+        if self.params.log_result_value:
+            _logger.info(f"Result value = {stringify_value(result_value)}")
+
+        return result_value
+
     def print_final_status(
         self,
         exit_code: Optional[int],
@@ -391,7 +477,7 @@ class ProcWrapper:
 
         action = "failed due to wrapping error"
 
-        if exit_code == 0:
+        if exit_code == self._EXIT_CODE_SUCCESS:
             action = "succeeded"
         elif exit_code is not None:
             action = f"failed with exit code {exit_code}"
@@ -593,7 +679,7 @@ class ProcWrapper:
         pid: Optional[int] = None,
         finished_at: Optional[datetime] = None,
         extra_runtime_metadata: Optional[Mapping[str, Any]] = None,
-        output_value: Optional[Any] = None,
+        output_value: Optional[Any] = UNSET_VALUE,
     ) -> int:
         """
         Make a request to the Task Management server to create a Task Execution
@@ -711,6 +797,9 @@ class ProcWrapper:
                 ),
                 "embedded_mode": self.params.embedded_mode,
             }
+
+            if self.params.send_input_value and (self.input_value != UNSET_VALUE):
+                body["input_value"] = self.input_value
 
             # If we are creating or updating a Task Execution after skipping the initial
             # notification, include the post-execution properties
@@ -841,6 +930,7 @@ class ProcWrapper:
                 _logger.warning("Task Execution creation request failed non-fatally")
                 return self._SEND_RESULT_NON_FATAL_FAILURE
 
+            response_body: str = ""
             with f:
                 fd = f.read()
 
@@ -850,24 +940,37 @@ class ProcWrapper:
                     )
 
                 response_body = fd.decode("utf-8")
-                _logger.debug(f"Got creation response '{response_body}'")
 
-                response_dict = json.loads(response_body)
+            _logger.debug(f"Got creation response '{response_body}'")
 
-                _logger.info("Task Execution creation request was successful.")
+            response_dict = json.loads(response_body)
 
-                if is_final_update:
-                    self.reported_final_status = True
+            _logger.info("Task Execution creation request was successful.")
 
-                if rm:
-                    self.runtime_metadata_last_sent_at = time.time()
+            if is_final_update:
+                self.reported_final_status = True
 
-                if not self.task_execution_uuid:
-                    self.task_execution_uuid = response_dict.get("uuid")
-                    self._reconfigure_logger()
+            if rm:
+                self.runtime_metadata_last_sent_at = time.time()
 
-                self.task_uuid = self.task_uuid or response_dict["task"]["uuid"]
-                self.task_name = self.task_name or response_dict["task"]["name"]
+            if not self.task_execution_uuid:
+                self.task_execution_uuid = response_dict.get("uuid")
+                self._reconfigure_logger()
+
+            self.task_uuid = self.task_uuid or response_dict["task"]["uuid"]
+            self.task_name = self.task_name or response_dict["task"]["name"]
+
+            # In case the input value couldn't be passed to this process,
+            # get it from the Task Execution, writing it to the input file
+            # if the input filename is set.
+            response_input_value = response_dict.get("input_value")
+            if (
+                (self.input_value == UNSET_VALUE)
+                and (response_input_value is not None)
+                and (response_input_value != UNSET_VALUE)
+            ):
+                self.input_value = response_input_value
+                self._resolve_input_value()
 
             return self._SEND_RESULT_SUCCESS
         except Exception as ex:
@@ -989,7 +1092,9 @@ class ProcWrapper:
         if self.skip_start_notification:
             # We did not create the Task Execution with the Task Management server when we
             # started, but we may need to create it now on failure or timeout.
-            if status == ProcWrapper.STATUS_SUCCEEDED:
+            if (status == ProcWrapper.STATUS_SUCCEEDED) and (
+                output_value == UNSET_VALUE
+            ):
                 _logger.debug("send_completion(): skipping Task Execution creation")
                 return self._SEND_RESULT_SKIPPED
             else:
@@ -1047,6 +1152,11 @@ class ProcWrapper:
             _logger.info("Exiting after writing variables")
             return None
 
+        if ((data is None) or (data == UNSET_VALUE)) and (
+            self.input_value == UNSET_VALUE
+        ):
+            data = self._resolve_input_value()
+
         try:
             self.started_at = datetime.utcnow()
 
@@ -1068,6 +1178,14 @@ class ProcWrapper:
                     rv = fun(self, data, self.resolved_config)
 
                     _logger.info(f"Managed function succeeded, return value = {rv}")
+
+                    if (rv is None) or (rv == UNSET_VALUE):
+                        _logger.info("Managed function returned None or UNSET_VALUE")
+
+                        rv2 = self._read_result()
+                        if rv2 != UNSET_VALUE:
+                            _logger.info("Read result from result file")
+                            rv = rv2
 
                     success = True
                 except Exception as ex:
@@ -1112,6 +1230,7 @@ class ProcWrapper:
             raise saved_ex
         finally:
             self.remove_variable_files()
+            self.remove_input_and_result_files()
 
     def _override_params_from_env_and_config(self, mutable_only: bool) -> None:
         if self.override_params_from_env:
@@ -1216,6 +1335,8 @@ class ProcWrapper:
             return self._exit_or_raise(self._EXIT_CODE_CONFIGURATION_ERROR)
 
         command, shell = self.params.resolve_command_and_shell_flag()
+
+        self._resolve_input_value()
 
         self.started_at = datetime.utcnow()
 
@@ -1363,13 +1484,14 @@ class ProcWrapper:
 
                     done_polling = True
 
-                    if exit_code == 0:
+                    if exit_code == self._EXIT_CODE_SUCCESS:
                         self.print_final_status(
                             exit_code=0,
                             first_attempt_started_at=first_attempt_started_at,
                             latest_attempt_started_at=latest_attempt_started_at,
                         )
-                        return self._exit_or_raise(0)
+
+                        return self._exit_or_raise(exit_code)
 
                     self.failed_count += 1
 
@@ -1479,6 +1601,7 @@ class ProcWrapper:
                 _logger.exception("Failed to get exit code or terminate process")
 
         status = self.STATUS_FAILED
+        output_value: Optional[Any] = UNSET_VALUE
 
         if exit_code is None:
             if caught_sigterm:
@@ -1487,6 +1610,15 @@ class ProcWrapper:
                 status = self.STATUS_TERMINATED_AFTER_TIME_OUT
         elif exit_code == 0:
             status = self.STATUS_SUCCEEDED
+
+            try:
+                output_value = self._read_result()
+            except Exception:
+                _logger.exception("Failed to read result")
+                exit_code = self._EXIT_CODE_GENERIC_ERROR
+                status = self.STATUS_FAILED
+
+        self.remove_input_and_result_files()
 
         try:
             if (
@@ -1505,6 +1637,7 @@ class ProcWrapper:
                     failed_attempts=self.failed_count,
                     timed_out_attempts=self.timeout_count,
                     exit_code=exit_code,
+                    output_value=output_value,
                 )
 
                 error_notification_required = (
@@ -1767,6 +1900,10 @@ class ProcWrapper:
         ):
             process_env.update(self.runtime_metadata.monitor_process_env_additions)
 
+        if self.params.input_env_var_name or (self.input_value != UNSET_VALUE):
+            env_var_name = self.params.input_env_var_name or "PROC_WRAPPER_INPUT_VALUE"
+            process_env[env_var_name] = stringify_value(self.input_value)
+
         return process_env
 
     def send_update(
@@ -1868,7 +2005,7 @@ class ProcWrapper:
         exit_code: Optional[int] = None,
         pid: Optional[int] = None,
         finished_at: Optional[datetime] = None,
-        output_value: Optional[Any] = None,
+        output_value: Optional[Any] = UNSET_VALUE,
         include_runtime_metadata: bool = False,
         extra_runtime_metadata: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
@@ -1903,7 +2040,7 @@ class ProcWrapper:
         if finished_at:
             body["finished_at"] = finished_at.isoformat()
 
-        if output_value is not None:
+        if output_value != UNSET_VALUE:
             body["output_value"] = output_value
 
         if extra_runtime_metadata:
