@@ -891,7 +891,21 @@ class ProcWrapperParams(ConfigResolverParams):
                     self.result_filename
                 )
 
-        if not self.embedded_mode:
+        if self.embedded_mode:
+            if self.command_line or self.command:
+                self._push_error(
+                    process_errors,
+                    "command",
+                    "Command not supported in embedded mode",
+                )
+
+            if self.sidecar_container_mode:
+                self._push_error(
+                    process_errors,
+                    "sidecar_container_mode",
+                    "Sidecar container mode not supported in embedded mode",
+                )
+        else:
             runtime_metadata_is_execution_status_source = (
                 runtime_metadata and runtime_metadata.is_execution_status_source
             )
