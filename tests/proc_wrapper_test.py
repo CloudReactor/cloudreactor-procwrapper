@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import tempfile
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from tempfile import gettempdir
@@ -14,6 +15,8 @@ from freezegun import freeze_time
 from pytest_httpserver import HTTPServer
 
 from proc_wrapper import ProcWrapper, ProcWrapperParams, make_arg_parser
+from proc_wrapper.common_constants import FORMAT_JSON
+from proc_wrapper.common_utils import write_data_to_file
 from proc_wrapper.runtime_metadata import (
     EXECUTION_METHOD_TYPE_AWS_ECS,
     EXECUTION_METHOD_TYPE_AWS_LAMBDA,
@@ -223,16 +226,20 @@ def expect_task_execution_request(
 
 @pytest.mark.parametrize(
     """
-    env_override, command, expected_exit_code, expect_api_server_use, expected_final_status
+    env_override, command, expected_exit_code, expect_api_server_use, expected_final_status,
+    response_data, sent_input_value, sent_output_value
     """,
     [
-        ({}, "echo", 0, True, ProcWrapper.STATUS_SUCCEEDED),
+        ({}, "echo", 0, True, ProcWrapper.STATUS_SUCCEEDED, None, None, None),
         (
             {},
             None,
             ProcWrapper._EXIT_CODE_CONFIGURATION_ERROR,
             False,
             ProcWrapper.STATUS_FAILED,
+            None,
+            None,
+            None,
         ),
         (
             {"PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": "1"},
@@ -240,12 +247,18 @@ def expect_task_execution_request(
             1,
             True,
             ProcWrapper.STATUS_TERMINATED_AFTER_TIME_OUT,
+            None,
+            None,
+            None,
         ),
         (
             {"PROC_WRAPPER_API_MANAGED_PROBABILITY": "0.0000000001"},
             "echo",
             0,
             False,
+            None,
+            None,
+            None,
             None,
         ),
         (
@@ -254,6 +267,9 @@ def expect_task_execution_request(
             ProcWrapper._EXIT_CODE_CONFIGURATION_ERROR,
             False,
             ProcWrapper.STATUS_FAILED,
+            None,
+            None,
+            None,
         ),
         (
             {
@@ -263,6 +279,9 @@ def expect_task_execution_request(
             "ls -zsfadsgadsg",
             None,
             False,
+            None,
+            None,
+            None,
             None,
         ),
         (
@@ -275,6 +294,149 @@ def expect_task_execution_request(
             1,
             False,
             None,
+            None,
+            None,
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
+                "PROC_WRAPPER_INPUT_VALUE": "is cool",
+            },
+            "echo $PROC_WRAPPER_INPUT_VALUE",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            "is cool",
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_INPUT_ENV_VAR_NAME": "THE_INPUT",
+                "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
+                "THE_INPUT": "is cool",
+            },
+            "echo $THE_INPUT",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            "is cool",
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_INPUT_ENV_VAR_NAME": "THE_INPUT",
+                "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
+                "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
+                "THE_INPUT": """{"a":7}""",
+            },
+            "echo $THE_INPUT",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            {"a": 7},
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_INPUT_VALUE": """{"a":7}""",
+                "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
+                "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
+            },
+            "echo $PROC_WRAPPER_INPUT_VALUE",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            {"a": 7},
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_INPUT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
+                "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
+            },
+            "echo $PROC_WRAPPER_INPUT_VALUE",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            {"a": 7},
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_INPUT_FILENAME": tempfile.NamedTemporaryFile(
+                    suffix=".json"
+                ).name,
+                "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
+            },
+            "echo $PROC_WRAPPER_INPUT_VALUE",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            {"a": 7},
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_INPUT_ENV_VAR_NAME": "THE_INPUT",
+                "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
+                "THE_INPUT": """{"a":7}""",
+            },
+            "echo $PROC_WRAPPER_INPUT_VALUE",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            None,
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
+            },
+            "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            None,
+            {"b": 8},
+        ),
+        (
+            {
+                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile(
+                    suffix=".json"
+                ).name,
+            },
+            "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            None,
+            {"b": 8},
+        ),
+        (
+            {
+                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
+                "PROC_WRAPPER_CLEANUP_RESULT_FILE": "0",
+            },
+            "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
+            0,
+            True,
+            ProcWrapper.STATUS_SUCCEEDED,
+            None,
+            None,
+            {"b": 8},
         ),
     ],
 )
@@ -285,16 +447,26 @@ def test_wrapped_mode_with_server(
     expected_exit_code: Optional[int],
     expect_api_server_use: bool,
     expected_final_status: Optional[str],
-):
+    response_data: Optional[Any],
+    sent_input_value: Optional[Any],
+    sent_output_value: Optional[Any],
+) -> None:
     env = make_online_base_env(httpserver.port, command=command)
     env.update(env_override)
 
     wrapper = make_wrapped_mode_proc_wrapper(env=env)
 
+    input_filename = env.get("PROC_WRAPPER_INPUT_FILENAME")
+
+    if input_filename and sent_input_value:
+        write_data_to_file(
+            filename=input_filename, data=sent_input_value, format=FORMAT_JSON
+        )
+
     fetch_creation_request_data: Optional[Any] = None
     if expect_api_server_use or expected_final_status:
         fetch_creation_request_data = expect_task_execution_request(
-            httpserver=httpserver, update=False
+            httpserver=httpserver, update=False, response_data=response_data
         )
 
     fetch_update_request_data: Optional[Any] = None
@@ -378,7 +550,7 @@ def test_wrapped_mode_with_server(
             started_at = datetime.fromisoformat(started_at_str)
             assert abs((expected_started_at - started_at).seconds) < 10
 
-        last_rd["status"] == expected_final_status
+        assert last_rd["status"] == expected_final_status
 
         expected_timed_out_attempts: Optional[int] = None
         if expected_final_status == ProcWrapper.STATUS_TERMINATED_AFTER_TIME_OUT:
@@ -389,6 +561,20 @@ def test_wrapped_mode_with_server(
         finished_at_str = last_rd["finished_at"]
         finished_at = datetime.fromisoformat(finished_at_str)
         assert (abs(datetime.utcnow() - finished_at)).seconds < 10
+
+        if sent_input_value is not None:
+            assert crd["input_value"] == sent_input_value
+
+        if sent_output_value is not None:
+            assert last_rd["output_value"] == sent_output_value
+
+        result_filename = env.get("PROC_WRAPPER_RESULT_FILENAME")
+
+        if result_filename:
+            if env.get("PROC_WRAPPER_CLEANUP_RESULT_FILE") == "0":
+                assert os.path.exists(result_filename)
+            else:
+                assert not os.path.exists(result_filename)
 
 
 TEST_DATETIME = datetime(2021, 8, 16, 14, 26, 54, tzinfo=timezone.utc)
