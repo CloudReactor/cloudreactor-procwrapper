@@ -43,6 +43,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
+from .common_constants import UNSET_VALUE
 from .common_utils import (
     best_effort_deep_merge,
     coalesce,
@@ -61,9 +62,6 @@ from .runtime_metadata import (
     RuntimeMetadata,
     RuntimeMetadataFetcher,
 )
-
-UNSET_VALUE = "__unset__"
-
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
@@ -180,6 +178,7 @@ class ProcWrapper:
         _logger.info("Creating ProcWrapper instance ...")
 
         self.input_value = input_value
+
         self.runtime_context = runtime_context
         self.override_params_from_env = override_params_from_env
         self.override_params_from_config = override_params_from_config
@@ -239,6 +238,9 @@ class ProcWrapper:
             self.params = params
         else:
             self.params = ProcWrapperParams(override_from_env=True, env=self.env)
+
+        if input_value == UNSET_VALUE:
+            input_value = self.params.input_value
 
         self.runtime_metadata_fetcher: RuntimeMetadataFetcher = (
             runtime_metadata_fetcher or DefaultRuntimeMetadataFetcher(params=params)
@@ -1164,7 +1166,7 @@ class ProcWrapper:
                 self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
                 return None
 
-            rv = None
+            rv: Optional[Any] = None
             success = False
             saved_ex: Exception = RuntimeError()
             while self.attempt_count < self.max_execution_attempts:

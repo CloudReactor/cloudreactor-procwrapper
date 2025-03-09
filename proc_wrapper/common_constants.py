@@ -9,3 +9,5 @@ EXTENSION_TO_FORMAT = {
     "yaml": FORMAT_YAML,
     "yml": FORMAT_YAML,
 }
+
+UNSET_VALUE = "__unset__"

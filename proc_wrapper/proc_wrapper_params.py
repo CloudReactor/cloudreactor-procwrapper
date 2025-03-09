@@ -13,6 +13,7 @@ from .common_constants import (
     FORMAT_JSON,
     FORMAT_TEXT,
     FORMAT_YAML,
+    UNSET_VALUE,
 )
 from .common_utils import (
     best_effort_deep_merge,
@@ -633,6 +634,7 @@ class ProcWrapperParams(ConfigResolverParams):
         self.send_hostname: bool = False
         self.send_runtime_metadata: bool = True
         self.runtime_metadata_refresh_interval: Optional[int] = None
+        self.input_value: Optional[Any] = UNSET_VALUE
         self.input_env_var_name: Optional[str] = None
         self.input_filename: Optional[str] = None
         self.log_input_value: bool = False
@@ -2021,59 +2023,6 @@ Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit.
 Defaults to the heartbeat interval, plus {HEARTBEAT_DELAY_TOLERANCE_SECONDS}
 seconds for services that send heartbeats. Otherwise, defaults to no limit.""",
     )
-    task_group.add_argument(
-        "--input-env-var-name",
-        help="""
-The value of this environment variable is used as the input value for the
-wrapped process or embedded function. The value is sent back to the API server
-as the input value of the Task Execution.""",
-    )
-    task_group.add_argument(
-        "--input-filename",
-        help="""
-The name of the file containing the value used as the input value for the
-wrapped process or embedded function. The contents of the file are sent back to
-the API server as the input value of the Task Execution.""",
-    )
-    task_group.add_argument(
-        "--cleanup-input-file",
-        action="store_true",
-        dest="cleanup_input_file",
-        help="""
-Remove the input file before exit. If this parameter is omitted, the input file
-will only be removed if it was written by the wrapper.""",
-    )
-    # Maybe add --no-cleanup-input-file to force skip of removal?
-    task_group.add_argument(
-        "--input-value-format",
-        help=f"""
-The format of the value used as the input value for the Task Execution.
-Options are '{FORMAT_JSON}', '{FORMAT_YAML}', or '{FORMAT_TEXT}'.
-Defaults to '{FORMAT_TEXT}'.""",
-    )
-
-    task_group.add_argument(
-        "--result-filename",
-        help="""
-The name of the file the wrapped process will write with the result value. The
-contents of the file are sent back to the API server as the result value of the
-Task Execution.""",
-    )
-    task_group.add_argument(
-        "--result-value-format",
-        help=f"""
-The format of the file that the wrapped process will write with the result
-value. Options are '{FORMAT_JSON}', '{FORMAT_YAML}', or '{FORMAT_TEXT}'.
-Defaults to '{FORMAT_TEXT}'.""",
-    )
-    task_group.add_argument(
-        "--no-cleanup-result-file",
-        action="store_false",
-        dest="cleanup_result_file",
-        help="""
-Do not delete the result file after the Task Execution completes. If this
-parameter is omitted, the result file will be deleted.""",
-    )
 
     api_group = parser.add_argument_group("api", "API client settings")
     api_group.add_argument(
@@ -2236,6 +2185,66 @@ execution times out, notify the Task Management server with given probability. D
 Refresh interval for runtime metadata, in seconds. The default value depends on
 the execution method.
 """,
+    )
+
+    io_group = parser.add_argument_group("io", "Input and result settings")
+    io_group.add_argument(
+        "-i",
+        "--input-value",
+        help="The input value",
+    )
+    io_group.add_argument(
+        "--input-env-var-name",
+        help="""
+The value of this environment variable is used as the input value for the
+wrapped process or embedded function. The value is sent back to the API server
+as the input value of the Task Execution.""",
+    )
+    io_group.add_argument(
+        "--input-filename",
+        help="""
+The name of the file containing the value used as the input value for the
+wrapped process or embedded function. The contents of the file are sent back to
+the API server as the input value of the Task Execution.""",
+    )
+    io_group.add_argument(
+        "--cleanup-input-file",
+        action="store_true",
+        dest="cleanup_input_file",
+        help="""
+Remove the input file before exit. If this parameter is omitted, the input file
+will only be removed if it was written by the wrapper.""",
+    )
+    # Maybe add --no-cleanup-input-file to force skip of removal?
+    io_group.add_argument(
+        "--input-value-format",
+        help=f"""
+The format of the value used as the input value for the Task Execution.
+Options are '{FORMAT_JSON}', '{FORMAT_YAML}', or '{FORMAT_TEXT}'.
+Defaults to '{FORMAT_TEXT}'.""",
+    )
+
+    io_group.add_argument(
+        "--result-filename",
+        help="""
+The name of the file the wrapped process will write with the result value. The
+contents of the file are sent back to the API server as the result value of the
+Task Execution.""",
+    )
+    io_group.add_argument(
+        "--result-value-format",
+        help=f"""
+The format of the file that the wrapped process will write with the result
+value. Options are '{FORMAT_JSON}', '{FORMAT_YAML}', or '{FORMAT_TEXT}'.
+Defaults to '{FORMAT_TEXT}'.""",
+    )
+    io_group.add_argument(
+        "--no-cleanup-result-file",
+        action="store_false",
+        dest="cleanup_result_file",
+        help="""
+Do not delete the result file after the Task Execution completes. If this
+parameter is omitted, the result file will be deleted.""",
     )
 
     log_group = parser.add_argument_group("log", "Logging settings")
