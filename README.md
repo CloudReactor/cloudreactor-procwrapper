@@ -57,13 +57,13 @@ providers like AWS Secrets Manager, AWS S3, or the local filesystem.
 Just before your code runs, the module requests the Task Management server to create a
 Task Execution associated with the Task name or UUID which you pass to the
 module.
-the Task Management server may reject the request if too many instances of the Task are
+The Task Management server may reject the request if too many instances of the Task are
 currently running, but otherwise records that a Task Execution has started.
 The module then passes control to your code.
 
 While your code is running, it may report progress to the Task Management server,
-and the Task Management server may signal that your Task stop execution (due to
-user manually stopping the Task Execution), in which
+and the Task Management server may signal that your Task Execution stop
+execution (due to user manually stopping it), in which
 case the module terminates your code and exits.
 
 After your code finishes, the module informs the Task Management server of
