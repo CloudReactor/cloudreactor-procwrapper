@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
+from typing import Any, Mapping, Optional, cast
 
 from .common_constants import (
     EXTENSION_TO_FORMAT,
@@ -148,7 +148,7 @@ class SecretProvider:
     def __init__(
         self,
         name: str,
-        value_prefixes: Optional[List[str]] = None,
+        value_prefixes: Optional[list[str]] = None,
         should_cache: bool = True,
         top_level: bool = True,
         format_separator: Optional[str] = DEFAULT_FORMAT_SEPARATOR,
@@ -187,8 +187,8 @@ class SecretProvider:
         return value
 
     def fetch_data(
-        self, location: str, config: Dict[str, Any], env: Dict[str, str]
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+        self, location: str, config: dict[str, Any], env: dict[str, str]
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         if location.startswith(self.name + ":"):
             location = location[len(self.name) + 1 :]
 
@@ -205,7 +205,7 @@ class SecretProvider:
 
         return (data_string, format, parsed_data)
 
-    def extract_explicit_format(self, location: str) -> Tuple[str, Optional[str]]:
+    def extract_explicit_format(self, location: str) -> tuple[str, Optional[str]]:
         explicit_format: Optional[str] = None
         if self.format_separator:
             lower_full_location = location.lower()
@@ -221,10 +221,10 @@ class SecretProvider:
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         raise NotImplementedError()
 
     def guess_format_from_location(self, location: str) -> Optional[str]:
@@ -256,10 +256,10 @@ class PlainSecretProvider(SecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         return (location, explicit_format, None)
 
 
@@ -270,10 +270,10 @@ class EnvSecretProvider(SecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         string_value = env.get(location)
 
         if string_value is None:
@@ -292,10 +292,10 @@ class ConfigSecretProvider(SecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         transformed = transform_value(
             parsed_value=config,
             string_value="<config>",
@@ -323,10 +323,10 @@ class FileSecretProvider(SecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         if location.startswith(FILE_URL_PREFIX):
             location = location[FILE_URL_PREFIX_LENGTH:]
 
@@ -336,7 +336,7 @@ class FileSecretProvider(SecretProvider):
 
 
 class AwsSecretProvider(SecretProvider):
-    def __init__(self, name: str, value_prefixes: Optional[List[str]]):
+    def __init__(self, name: str, value_prefixes: Optional[list[str]]):
         super().__init__(name=name, value_prefixes=value_prefixes, should_cache=True)
 
     def make_client_config(self) -> Any:
@@ -361,10 +361,10 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         if not self.aws_region_name:
             raise RuntimeError(
                 "Can't use AWS Secrets Manager without AWS region setting"
@@ -424,10 +424,10 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         client: Optional[Any] = None
         try:
             region_name = self.aws_region_name
@@ -490,10 +490,10 @@ class AwsAppConfigSecretProvider(AwsSecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         client = self.get_or_create_aws_app_config_client()
 
         if client is None:
@@ -589,10 +589,10 @@ class AwsS3SecretProvider(AwsSecretProvider):
     def fetch_internal(
         self,
         location: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         explicit_format: Optional[str],
-    ) -> Tuple[str, Optional[str], Optional[Any]]:
+    ) -> tuple[str, Optional[str], Optional[Any]]:
         s3_data = self.fetch_aws_s3_data(location)
 
         format: Optional[str] = None
@@ -683,9 +683,9 @@ class CachedValueEntry:
 @dataclass
 class ResolutionResult:
     resolved_value: Any
-    resolved_var_names: List[str]
-    failed_var_names: List[str]
-    unresolved_var_names: List[str]
+    resolved_var_names: list[str]
+    failed_var_names: list[str]
+    unresolved_var_names: list[str]
 
 
 class ConfigResolver:
@@ -700,7 +700,7 @@ class ConfigResolver:
 
         # Dictionary from SECRET_PROVIDER_XXX constants to caches from lookup values
         # to resolved values and metadata
-        self.secret_cache: Dict[str, Dict[str, CachedValueEntry]] = {}
+        self.secret_cache: dict[str, dict[str, CachedValueEntry]] = {}
 
         if env_override:
             self.env = dict(env_override)
@@ -752,13 +752,13 @@ class ConfigResolver:
             FileSecretProvider(),
         ]
 
-    def fetch_and_resolve_env(self) -> Tuple[Dict[str, str], List[str]]:
+    def fetch_and_resolve_env(self) -> tuple[dict[str, str], list[str]]:
         env, failed_var_names, _c, _fcn = self.fetch_and_resolve_env_and_config(
             want_config=False
         )
         return (env, failed_var_names)
 
-    def fetch_and_resolve_config(self) -> Tuple[Dict[str, Any], List[str]]:
+    def fetch_and_resolve_config(self) -> tuple[dict[str, Any], list[str]]:
         _e, _fen, config, failed_var_names = self.fetch_and_resolve_env_and_config(
             want_env=False
         )
@@ -766,7 +766,7 @@ class ConfigResolver:
 
     def fetch_and_resolve_env_and_config(
         self, want_env=True, want_config=True
-    ) -> Tuple[Dict[str, str], List[str], Dict[str, Any], List[str]]:
+    ) -> tuple[dict[str, str], list[str], dict[str, Any], list[str]]:
         """
         Fetch the configuration and environment from the sources in
         config_locations and env_locations, respectively. Then merge
@@ -785,10 +785,10 @@ class ConfigResolver:
             _logger.debug("Not resolving variables, returning merged config")
             return (env, [], config, [])
 
-        unresolved_env_var_names: List[str] = []
-        failed_env_var_names: List[str] = []
-        unresolved_config_var_names: List[str] = []
-        failed_config_var_names: List[str] = []
+        unresolved_env_var_names: list[str] = []
+        failed_env_var_names: list[str] = []
+        unresolved_config_var_names: list[str] = []
+        failed_config_var_names: list[str] = []
 
         for epoch in range(2):
             for iteration in range(self.params.max_config_resolution_iterations):
@@ -800,7 +800,7 @@ class ConfigResolver:
                     value=env, config=config, env=env, is_env=True
                 )
 
-                env = cast(Dict[str, Any], env_result.resolved_value)
+                env = cast(dict[str, Any], env_result.resolved_value)
                 failed_env_var_names = env_result.failed_var_names
 
                 if self.params.fail_fast_config_resolution and (
@@ -817,7 +817,7 @@ class ConfigResolver:
                     value=config, config=config, env=env, is_env=False
                 )
 
-                config = cast(Dict[str, Any], config_result.resolved_value)
+                config = cast(dict[str, Any], config_result.resolved_value)
                 failed_config_var_names = config_result.failed_var_names
 
                 if self.params.fail_fast_config_resolution and (
@@ -848,7 +848,7 @@ class ConfigResolver:
             else:
                 env.update(self.env)
 
-        final_env: Dict[str, str] = {}
+        final_env: dict[str, str] = {}
         if want_env or self.params.config_property_name_for_env:
             final_env = self.flatten_env(env)
 
@@ -864,7 +864,7 @@ class ConfigResolver:
 
         return (final_env, failed_env_var_names, config, failed_config_var_names)
 
-    def flatten_env(self, env: Dict[str, Any]) -> Dict[str, str]:
+    def flatten_env(self, env: dict[str, Any]) -> dict[str, str]:
         flattened = {}
 
         for name, value in env.items():
@@ -872,13 +872,13 @@ class ConfigResolver:
 
         return flattened
 
-    def fetch_and_merge(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        merged_config: Dict[str, Any] = self.params.initial_config.copy()
+    def fetch_and_merge(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        merged_config: dict[str, Any] = self.params.initial_config.copy()
 
         if self.params.initial_config:
             self.params.override_resolver_params_from_config(self.params.initial_config)
 
-        merged_env: Dict[str, Any] = {}
+        merged_env: dict[str, Any] = {}
 
         for env_file_location in self.params.env_locations:
             env = self.fetch_config_from_location(
@@ -908,7 +908,7 @@ class ConfigResolver:
 
     def fetch_config_from_location(
         self, location: str, default_format: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         _name, value = self.resolve_var(
             name="",
             value=location,
@@ -926,8 +926,8 @@ class ConfigResolver:
     def resolve_value(
         self,
         value: Any,
-        config: Dict[str, Any],
-        env: Dict[str, Any],
+        config: dict[str, Any],
+        env: dict[str, Any],
         is_env: bool = True,
         path: str = "",
         depth: int = 0,
@@ -939,7 +939,7 @@ class ConfigResolver:
         failed_var_names = []
 
         if issubclass(value_type, dict):
-            dict_value = cast(Dict[str, Any], value)
+            dict_value = cast(dict[str, Any], value)
             return self.resolve_dict(
                 dict_value=dict_value,
                 config=config,
@@ -951,7 +951,7 @@ class ConfigResolver:
         elif issubclass(value_type, list) and (
             depth < self.params.max_config_resolution_depth
         ):
-            list_value = cast(List[Any], value)
+            list_value = cast(list[Any], value)
             resolved_value = []
             for index, element in enumerate(list_value):
                 inner_result = self.resolve_value(
@@ -992,9 +992,9 @@ class ConfigResolver:
 
     def resolve_dict(
         self,
-        dict_value: Dict[str, Any],
-        config: Dict[str, Any],
-        env: Dict[str, Any],
+        dict_value: dict[str, Any],
+        config: dict[str, Any],
+        env: dict[str, Any],
         is_env: bool = True,
         path: str = "",
         depth: int = 0,
@@ -1014,10 +1014,10 @@ class ConfigResolver:
                 unresolved_var_names=[],
             )
 
-        resolved_dict_value: Dict[str, Any] = {}
-        resolved_var_names: List[str] = []
-        failed_var_names: List[str] = []
-        unresolved_var_names: List[str] = []
+        resolved_dict_value: dict[str, Any] = {}
+        resolved_var_names: list[str] = []
+        failed_var_names: list[str] = []
+        unresolved_var_names: list[str] = []
 
         if is_env:
             var_prefix = self.params.resolved_env_var_name_prefix
@@ -1105,7 +1105,7 @@ class ConfigResolver:
             unresolved_var_names=unresolved_var_names,
         )
 
-    def merge(self, dest: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+    def merge(self, dest: dict[str, Any], src: dict[str, Any]) -> dict[str, Any]:
         if self.merge_impl:
             if self.mergedeep_strategy:
                 dest = self.merge_impl(dest, src, strategy=self.mergedeep_strategy)
@@ -1121,11 +1121,11 @@ class ConfigResolver:
         self,
         name: str,
         value: str,
-        config: Dict[str, Any],
-        env: Dict[str, str],
+        config: dict[str, Any],
+        env: dict[str, str],
         top_level: bool = False,
         default_format: Optional[str] = None,
-    ) -> Tuple[str, Any]:
+    ) -> tuple[str, Any]:
         var_name = name
         secret_provider: Optional[SecretProvider] = None
 
@@ -1179,7 +1179,7 @@ defaulting to plain"""
 
         string_value: Optional[str] = None
         parsed_value: Optional[Any] = None
-        cache: Optional[Dict[str, CachedValueEntry]] = None
+        cache: Optional[dict[str, CachedValueEntry]] = None
         cache_key = value_to_lookup
         is_value_config_dict: Optional[bool] = None
 

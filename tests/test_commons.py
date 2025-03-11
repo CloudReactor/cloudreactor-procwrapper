@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Mapping, Optional
 
 from werkzeug.wrappers import Request, Response
 
@@ -7,7 +7,7 @@ ACCEPT_JSON_HEADERS = {
     "Accept": "application/json",
 }
 
-TEST_ECS_TASK_METADATA: Dict[str, Any] = {
+TEST_ECS_TASK_METADATA: dict[str, Any] = {
     "Cluster": "default",
     "TaskARN": "arn:aws:ecs:us-east-2:012345678910:task/9781c248-0edd-4cdb-9a93-f63cb662a5d3",
     "Family": "nginx",
@@ -87,8 +87,8 @@ TEST_ECS_TASK_METADATA: Dict[str, Any] = {
 TEST_ECS_CONTAINER_METADATA = TEST_ECS_TASK_METADATA["Containers"][1]
 
 
-def make_capturing_handler(response_data: Optional[Dict[str, Any]], status: int = 200):
-    captured_request_data: List[Optional[Dict[str, Any]]] = [None]
+def make_capturing_handler(response_data: Optional[dict[str, Any]], status: int = 200):
+    captured_request_data: list[Optional[dict[str, Any]]] = [None]
 
     def handler(request: Request) -> Response:
         if request.data:
@@ -101,7 +101,7 @@ def make_capturing_handler(response_data: Optional[Dict[str, Any]], status: int 
         else:
             return Response(None, status, None)
 
-    def fetch_captured_request_data() -> Optional[Dict[str, Any]]:
+    def fetch_captured_request_data() -> Optional[dict[str, Any]]:
         return captured_request_data[0]
 
     return handler, fetch_captured_request_data

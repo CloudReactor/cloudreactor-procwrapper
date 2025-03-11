@@ -5,7 +5,7 @@ import os
 import re
 import shlex
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Union, cast
 
 from .common_constants import (
     EXTENSION_TO_FORMAT,
@@ -180,8 +180,8 @@ _logger.addHandler(logging.NullHandler())
 
 @dataclass
 class ConfigResolverParamValidationErrors:
-    config_resolver_errors: Dict[str, List[str]]
-    config_resolver_warnings: Dict[str, List[str]]
+    config_resolver_errors: dict[str, list[str]]
+    config_resolver_warnings: dict[str, list[str]]
 
     def log(self):
         if len(self.config_resolver_errors) > 0:
@@ -197,10 +197,10 @@ class ConfigResolverParamValidationErrors:
 
 @dataclass
 class ProcWrapperParamValidationErrors(ConfigResolverParamValidationErrors):
-    process_errors: Dict[str, List[str]]
-    process_warnings: Dict[str, List[str]]
-    task_errors: Dict[str, List[str]]
-    task_warnings: Dict[str, List[str]]
+    process_errors: dict[str, list[str]]
+    process_warnings: dict[str, list[str]]
+    task_errors: dict[str, list[str]]
+    task_warnings: dict[str, list[str]]
 
     def log(self):
         ConfigResolverParamValidationErrors(
@@ -239,10 +239,10 @@ class ProcWrapperParamValidationErrors(ConfigResolverParamValidationErrors):
 
 class ConfigResolverParams:
     def __init__(self, env: Optional[Mapping[str, str]] = None):
-        self.initial_config: Dict[str, Any] = {}
+        self.initial_config: dict[str, Any] = {}
         self.log_secrets: bool = False
-        self.env_locations: List[str] = []
-        self.config_locations: List[str] = []
+        self.env_locations: list[str] = []
+        self.config_locations: list[str] = []
         self.config_merge_strategy: str = DEFAULT_CONFIG_MERGE_STRATEGY
         self.overwrite_env_during_resolution: bool = False
         self.max_config_resolution_depth: int = DEFAULT_MAX_CONFIG_RESOLUTION_DEPTH
@@ -439,8 +439,8 @@ class ConfigResolverParams:
     def sanitize_and_validate(
         self, runtime_metadata: Optional["RuntimeMetadata"] = None
     ) -> ConfigResolverParamValidationErrors:
-        config_resolver_errors: Dict[str, List[str]] = {}
-        config_resolver_warnings: Dict[str, List[str]] = {}
+        config_resolver_errors: dict[str, list[str]] = {}
+        config_resolver_warnings: dict[str, list[str]] = {}
 
         if self.env_output_filename:
             self.env_output_filename = self.env_output_filename.strip()
@@ -534,7 +534,7 @@ class ConfigResolverParams:
         _logger.debug(f"config output filename = '{self.config_output_filename}'")
         _logger.debug(f"config output format = '{self.config_output_format}'")
 
-    def split_location_string(self, locations: str) -> List[str]:
+    def split_location_string(self, locations: str) -> list[str]:
         # Use , or ; to split locations, except they may be escaped by
         # backslashes. Any occurrence of , or ; in a location string
         # must be backslash escaped. This doesn't handle the weird case
@@ -584,8 +584,8 @@ class ProcWrapperParams(ConfigResolverParams):
         self.task_name: Optional[str] = None
         self.task_uuid: Optional[str] = None
         self.auto_create_task: bool = False
-        self.auto_create_task_props: Optional[Dict[str, Any]] = None
-        self.execution_method_props: Optional[Dict[str, Any]] = None
+        self.auto_create_task_props: Optional[dict[str, Any]] = None
+        self.execution_method_props: Optional[dict[str, Any]] = None
         self.auto_create_task_run_environment_name: Optional[str] = None
         self.auto_create_task_run_environment_uuid: Optional[str] = None
         self.force_task_active: Optional[bool] = None
@@ -600,7 +600,7 @@ class ProcWrapperParams(ConfigResolverParams):
         self.schedule: Optional[str] = None
         self.max_concurrency: Optional[int] = None
         self.max_conflicting_age: Optional[int] = None
-        self.task_instance_metadata: Optional[Dict[str, Any]] = None
+        self.task_instance_metadata: Optional[dict[str, Any]] = None
 
         self.offline_mode: bool = False
         self.prevent_offline_execution: bool = False
@@ -646,7 +646,7 @@ class ProcWrapperParams(ConfigResolverParams):
         self.log_result_value: bool = False
         self.cleanup_result_file: bool = True
 
-        self.command: Optional[List[str]] = None
+        self.command: Optional[list[str]] = None
         self.command_line: Optional[str] = None
         self.shell_mode: str = SHELL_MODE_AUTO
         self.strip_shell_wrapping: bool = True
@@ -706,7 +706,7 @@ class ProcWrapperParams(ConfigResolverParams):
             self.sidecar_container_mode = True
 
     def override_params_from_env(
-        self, env: Dict[str, str], mutable_only: bool = False
+        self, env: dict[str, str], mutable_only: bool = False
     ) -> None:
         if not mutable_only:
             self._override_immutable_from_env(env)
@@ -714,8 +714,8 @@ class ProcWrapperParams(ConfigResolverParams):
         self._override_mutable_from_env(env)
 
     def override_params_from_config(
-        self, config: Dict[str, Any], mutable_only: bool = False
-    ) -> Optional[Dict[str, str]]:
+        self, config: dict[str, Any], mutable_only: bool = False
+    ) -> Optional[dict[str, str]]:
         params = config.get(PROC_WRAPPER_PARAMS_CONFIG_PROPERTY_NAME)
         if not isinstance(params, dict):
             _logger.debug(
@@ -726,8 +726,8 @@ class ProcWrapperParams(ConfigResolverParams):
         return self.override_params_from_dict(params=params, mutable_only=mutable_only)
 
     def override_params_from_dict(
-        self, params: Dict[str, Any], mutable_only: bool = False
-    ) -> Optional[Dict[str, str]]:
+        self, params: dict[str, Any], mutable_only: bool = False
+    ) -> Optional[dict[str, str]]:
         _logger.debug("Starting override_params_from_dict() ...")
 
         if not mutable_only:
@@ -791,7 +791,7 @@ class ProcWrapperParams(ConfigResolverParams):
 
     def override_params_from_input(
         self, input: Optional[Any]
-    ) -> Optional[Dict[str, str]]:
+    ) -> Optional[dict[str, str]]:
         """
         Override parameters from the input. For now, don't trust the
         input except for providing the TaskExecution UUID, which should
@@ -862,10 +862,10 @@ class ProcWrapperParams(ConfigResolverParams):
             runtime_metadata=runtime_metadata
         )
 
-        process_errors: Dict[str, List[str]] = {}
-        process_warnings: Dict[str, List[str]] = {}
-        task_errors: Dict[str, List[str]] = {}
-        task_warnings: Dict[str, List[str]] = {}
+        process_errors: dict[str, list[str]] = {}
+        process_warnings: dict[str, list[str]] = {}
+        task_errors: dict[str, list[str]] = {}
+        task_warnings: dict[str, list[str]] = {}
 
         rv = ProcWrapperParamValidationErrors(
             config_resolver_errors=super_validation_errors.config_resolver_errors,
@@ -1039,8 +1039,8 @@ class ProcWrapperParams(ConfigResolverParams):
     def run_mode_label(self) -> str:
         return "embedded" if self.embedded_mode else "wrapped"
 
-    def resolve_command_and_shell_flag(self) -> Tuple[Union[str, List[str]], bool]:
-        resolved_command: Union[str, List[str]] = (
+    def resolve_command_and_shell_flag(self) -> tuple[Union[str, list[str]], bool]:
+        resolved_command: Union[str, list[str]] = (
             self.command_line or self.command or ""
         )
 
@@ -1216,7 +1216,7 @@ class ProcWrapperParams(ConfigResolverParams):
 
         _logger.debug(f"Status update interval = {self.status_update_interval}")
 
-    def populate_env(self, env: Dict[str, str]) -> None:
+    def populate_env(self, env: dict[str, str]) -> None:
         if self.env_output_filename:
             env["PROC_WRAPPER_ENV_OUTPUT_FILENAME"] = self.env_output_filename
 
@@ -1333,7 +1333,7 @@ class ProcWrapperParams(ConfigResolverParams):
             self.prevent_offline_execution
         ).upper()
 
-    def _override_immutable_from_env(self, env: Dict[str, str]) -> None:
+    def _override_immutable_from_env(self, env: dict[str, str]) -> None:
         self.include_timestamps_in_log = (
             string_to_bool(
                 env.get("PROC_WRAPPER_INCLUDE_TIMESTAMPS_IN_LOG"),
@@ -1593,7 +1593,7 @@ class ProcWrapperParams(ConfigResolverParams):
             )
 
     def _override_proc_wrapper_params_from_task_dict(
-        self, task: Dict[str, Any]
+        self, task: dict[str, Any]
     ) -> None:
         self.task_name = task.get("name", self.task_name)
         self.task_uuid = task.get("uuid", self.task_uuid)
@@ -1634,7 +1634,7 @@ class ProcWrapperParams(ConfigResolverParams):
             .get("uuid", self.build_task_execution_uuid)
         )
 
-    def _override_mutable_from_env(self, env: Dict[str, str]) -> None:
+    def _override_mutable_from_env(self, env: dict[str, str]) -> None:
         self.rollbar_access_token = env.get(
             "PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN", self.rollbar_access_token
         )
@@ -1893,7 +1893,7 @@ class ProcWrapperParams(ConfigResolverParams):
         )
 
     @staticmethod
-    def _push_error(errors: Dict[str, List[str]], name: str, error: str) -> None:
+    def _push_error(errors: dict[str, list[str]], name: str, error: str) -> None:
         error_list = errors.get(name)
         if error_list is None:
             errors[name] = [error]
@@ -1902,7 +1902,7 @@ class ProcWrapperParams(ConfigResolverParams):
 
     @classmethod
     def _validate_probability(
-        cls, errors: Dict[str, List[str]], p: float, param_name: str
+        cls, errors: dict[str, list[str]], p: float, param_name: str
     ) -> None:
         if p < 0.0 or p > 1.0:
             cls._push_error(

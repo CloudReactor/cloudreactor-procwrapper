@@ -38,7 +38,7 @@ from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from io import RawIOBase
 from subprocess import Popen, TimeoutExpired
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -206,16 +206,16 @@ class ProcWrapper:
         self.timed_out: bool = False
         self.hostname: Optional[str] = None
         self.refresh_runtime_metadata_interval: Optional[int] = None
-        self.process_env: Optional[Dict[str, str]] = None
+        self.process_env: Optional[dict[str, str]] = None
         self.process: Optional[Popen[bytes]] = None
         self.is_execution_status_from_runtime_metadata: bool = False
         self.api_server_retries_exhausted: bool = False
         self.last_api_request_failed_at: Optional[float] = None
-        self.last_api_request_data: Optional[Dict[str, Any]] = None
+        self.last_api_request_data: Optional[dict[str, Any]] = None
         self.config_last_reloaded_at: Optional[float] = None
         self.wrote_input_file: bool = False
 
-        self.status_dict: Dict[str, Any] = {}
+        self.status_dict: dict[str, Any] = {}
         self._status_socket: Optional[socket.socket] = None
         self._status_buffer: Optional[bytearray] = None
         self._status_message_so_far: Optional[bytearray] = None
@@ -225,10 +225,10 @@ class ProcWrapper:
         self.runtime_metadata_last_refreshed_at: Optional[float] = None
         self.runtime_metadata_last_sent_at: Optional[float] = None
 
-        self.resolved_env: Dict[str, str] = self.env
-        self.failed_env_names: List[str] = []
-        self.resolved_config: Dict[str, Any] = {}
-        self.failed_config_props: List[str] = []
+        self.resolved_env: dict[str, str] = self.env
+        self.failed_env_names: list[str] = []
+        self.resolved_config: dict[str, Any] = {}
+        self.failed_config_props: list[str] = []
 
         self.rollbar_retries_exhausted = False
         self.exit_handler_installed = False
@@ -528,7 +528,7 @@ class ProcWrapper:
         skipped_count: Optional[int] = None,
         expected_count: Optional[int] = None,
         last_status_message: Optional[str] = None,
-        extra_status_props: Optional[Dict[str, Any]] = None,
+        extra_status_props: Optional[dict[str, Any]] = None,
         last_app_heartbeat_at: Optional[datetime] = None,
     ) -> int:
         """
@@ -587,13 +587,13 @@ class ProcWrapper:
 
     def _transfer_runtime_metadata(
         self,
-        dest: Dict[str, Any],
+        dest: dict[str, Any],
         runtime_metadata: Optional[RuntimeMetadata],
         for_task: bool,
-        override_props: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        em_details: Optional[Dict[str, Any]] = None
-        infra_settings: Optional[Dict[str, Any]] = None
+        override_props: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        em_details: Optional[dict[str, Any]] = None
+        infra_settings: Optional[dict[str, Any]] = None
         rm_config: Optional[CommonConfiguration] = None
 
         em_details_prop_name = (
@@ -997,7 +997,7 @@ class ProcWrapper:
         skipped_count: Optional[int] = None,
         expected_count: Optional[int] = None,
         last_status_message: Optional[str] = None,
-        extra_status_props: Optional[Dict[str, Any]] = None,
+        extra_status_props: Optional[dict[str, Any]] = None,
         is_app_update: bool = False,
         last_app_heartbeat_at: Optional[datetime] = None,
     ) -> int:
@@ -1735,7 +1735,7 @@ class ProcWrapper:
                 "Called method is only for wrapped process (non-embedded) mode"
             )
 
-    def _start_command(self, command: Union[str, List[str]], shell: bool):
+    def _start_command(self, command: Union[str, list[str]], shell: bool):
         if self.process_env is None:
             self.process_env = self.make_process_env()
             if self.process_env and self.params.log_secrets:
@@ -1876,7 +1876,7 @@ class ProcWrapper:
             )
         )
 
-    def _make_headers(self) -> Dict[str, str]:
+    def _make_headers(self) -> dict[str, str]:
         headers = {
             "Authorization": f"Bearer {self.params.api_key}",
             "Content-Type": "application/json",
@@ -1884,7 +1884,7 @@ class ProcWrapper:
         }
         return headers
 
-    def make_process_env(self) -> Dict[str, str]:
+    def make_process_env(self) -> dict[str, str]:
         process_env = self.resolved_env.copy()
         self.params.populate_env(process_env)
 
@@ -2010,11 +2010,11 @@ class ProcWrapper:
         output_value: Optional[Any] = UNSET_VALUE,
         include_runtime_metadata: bool = False,
         extra_runtime_metadata: Optional[Mapping[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if status is None:
             status = self.STATUS_RUNNING
 
-        body: Dict[str, Any] = {"status": status}
+        body: dict[str, Any] = {"status": status}
 
         body.update(self.status_dict)
 
@@ -2108,7 +2108,7 @@ class ProcWrapper:
 
         attempt_count = 0
 
-        api_request_data: Dict[str, Any] = {
+        api_request_data: dict[str, Any] = {
             "request": {
                 "url": req.full_url,
                 "method": req.method,
@@ -2355,7 +2355,7 @@ class ProcWrapper:
 
         return exit_code
 
-    def _report_error(self, message: str, data: Optional[Dict[str, Any]]) -> None:
+    def _report_error(self, message: str, data: Optional[dict[str, Any]]) -> None:
         _logger.error(message)
 
         if self.params.rollbar_access_token:

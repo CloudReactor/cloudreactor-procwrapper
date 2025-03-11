@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import boto3
 import botocore
@@ -460,7 +460,7 @@ def test_json_config_file(
         ("REPLACE", {"height": 23, "weight": 66}),
     ],
 )
-def test_env_merging(merge_strategy: str, dimensions: Dict[str, Any]):
+def test_env_merging(merge_strategy: str, dimensions: dict[str, Any]):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     params = ConfigResolverParams()
     params.env_locations = ["tests/data/config.json", "tests/data/test.env"]

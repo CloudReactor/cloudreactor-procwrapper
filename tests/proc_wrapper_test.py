@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from tempfile import gettempdir
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Mapping, Optional
 from urllib.parse import quote_plus
 
 import pytest
@@ -54,7 +54,7 @@ RESOLVE_ENV_BASE_ENV = {
 
 
 def make_wrapped_mode_proc_wrapper(
-    env: Mapping[str, str], args: List[str] = []
+    env: Mapping[str, str], args: list[str] = []
 ) -> ProcWrapper:
     main_parser = make_arg_parser()
     params = main_parser.parse_args(
@@ -63,7 +63,7 @@ def make_wrapped_mode_proc_wrapper(
     return ProcWrapper(params=params, env_override=env, override_params_from_env=True)
 
 
-def make_online_base_env(port: int, command: Optional[str] = "echo") -> Dict[str, str]:
+def make_online_base_env(port: int, command: Optional[str] = "echo") -> dict[str, str]:
     env = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_TASK_UUID": DEFAULT_TASK_UUID,
@@ -188,7 +188,7 @@ def test_wrapped_offline_mode_with_env_output_and_deletion():
 
 def expect_task_execution_request(
     httpserver: HTTPServer,
-    response_data: Optional[Dict[str, Any]] = None,
+    response_data: Optional[dict[str, Any]] = None,
     status: Optional[int] = None,
     update: bool = True,
     uuid: Optional[str] = None,
@@ -442,7 +442,7 @@ def expect_task_execution_request(
 )
 def test_wrapped_mode_with_server(
     httpserver: HTTPServer,
-    env_override: Dict[str, str],
+    env_override: dict[str, str],
     command: Optional[str],
     expected_exit_code: Optional[int],
     expect_api_server_use: bool,
@@ -599,7 +599,7 @@ TEST_DATETIME = datetime(2021, 8, 16, 14, 26, 54, tzinfo=timezone.utc)
 )
 @freeze_time(TEST_DATETIME)
 def test_extract_retry_delay_seconds(
-    headers: Dict[str, str], expected_delay_seconds: float
+    headers: dict[str, str], expected_delay_seconds: float
 ) -> None:
     delay_seconds = ProcWrapper._extract_retry_delay_seconds(headers)
 
@@ -610,7 +610,7 @@ def test_extract_retry_delay_seconds(
         assert abs(delay_seconds - expected_delay_seconds) <= 1.0
 
 
-def callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
+def callback(wrapper: ProcWrapper, cbdata: str, config: dict[str, str]) -> str:
     return "super" + cbdata
 
 
@@ -622,7 +622,7 @@ def test_embedded_offline_mode_success():
     assert wrapper.managed_call(callback, "duper") == "superduper"
 
 
-def bad_callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
+def bad_callback(wrapper: ProcWrapper, cbdata: str, config: dict[str, str]) -> str:
     raise RuntimeError("Nope!")
 
 
@@ -641,7 +641,7 @@ def test_embedded_offline_mode_failure():
 
 
 def callback_with_update(
-    wrapper: ProcWrapper, cbdata: Dict[str, Any], config: Dict[str, str]
+    wrapper: ProcWrapper, cbdata: dict[str, Any], config: dict[str, str]
 ) -> str:
     failed_attempts = cbdata["failed_attempts"]
     last_app_heartbeat_at_override = cbdata["last_app_heartbeat_at_override"]
@@ -775,7 +775,7 @@ def test_embedded_mode_with_server(
 
 
 def callback_with_params_from_config(
-    wrapper: ProcWrapper, cbdata: int, config: Dict[str, Any]
+    wrapper: ProcWrapper, cbdata: int, config: dict[str, Any]
 ) -> int:
     return config["app_stuff"]["a"] + cbdata
 
@@ -830,7 +830,7 @@ def test_embedded_mode_with_params_from_config(httpserver: HTTPServer):
 
 
 def callback_with_params_from_input(
-    wrapper: ProcWrapper, cbdata: int, config: Dict[str, str]
+    wrapper: ProcWrapper, cbdata: int, config: dict[str, str]
 ) -> int:
     return cbdata
 
@@ -881,7 +881,7 @@ def test_embedded_mode_with_params_from_input(
 
 
 def read_config_callback(
-    wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, str]
 ) -> str:
     with open("conf.json", "r") as f:
         c = json.load(f)
@@ -941,7 +941,7 @@ def test_embedded_mode_with_sampling(
 
 
 def callback_with_env_in_config(
-    wrapper: ProcWrapper, cbdata: str, config: Dict[str, Any]
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, Any]
 ) -> str:
     return "super" + cbdata + config["ENV"]["ANOTHER_ENV"]
 
