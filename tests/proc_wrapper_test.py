@@ -473,7 +473,7 @@ def test_wrapped_mode_with_server(
     if expect_api_server_use:
         fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
 
-    expected_started_at = datetime.utcnow()
+    expected_started_at = datetime.now(timezone.utc)
 
     rv = wrapper.run()
 
@@ -560,7 +560,7 @@ def test_wrapped_mode_with_server(
 
         finished_at_str = last_rd["finished_at"]
         finished_at = datetime.fromisoformat(finished_at_str)
-        assert (abs(datetime.utcnow() - finished_at)).seconds < 10
+        assert (abs(datetime.now(timezone.utc) - finished_at)).seconds < 10
 
         if sent_input_value is not None:
             assert crd["input_value"] == sent_input_value
@@ -670,8 +670,8 @@ def callback_with_update(
         (0, None),
         (1, None),
         (2, None),
-        (0, datetime.utcnow() - relativedelta(minutes=3)),
-        (1, datetime.utcnow() - relativedelta(minutes=10)),
+        (0, datetime.now(timezone.utc) - relativedelta(minutes=3)),
+        (1, datetime.now(timezone.utc) - relativedelta(minutes=10)),
     ],
 )
 def test_embedded_mode_with_server(
@@ -771,7 +771,7 @@ def test_embedded_mode_with_server(
     if last_app_heartbeat_at_override:
         assert (last_app_heartbeat_at_override - last_app_heartbeat_at).seconds <= 1
     else:
-        assert (datetime.utcnow() - last_app_heartbeat_at).seconds < 10
+        assert (datetime.now(timezone.utc) - last_app_heartbeat_at).seconds < 10
 
 
 def callback_with_params_from_config(

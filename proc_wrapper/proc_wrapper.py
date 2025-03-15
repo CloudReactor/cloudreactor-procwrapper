@@ -487,7 +487,7 @@ class ProcWrapper:
             action = "timed out"
 
         task_name = self.task_name or self.task_uuid or "[Unnamed]"
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         now_ts = now.timestamp()
         max_attempts_str = (
             "infinity"
@@ -806,7 +806,7 @@ class ProcWrapper:
             # If we are creating or updating a Task Execution after skipping the initial
             # notification, include the post-execution properties
             if self.skip_start_notification:
-                self.started_at = self.started_at or datetime.utcnow()
+                self.started_at = self.started_at or datetime.now(timezone.utc)
                 body["started_at"] = self.started_at.isoformat()
 
                 # Do not include runtime metadata since it will be set later, unconditionally
@@ -1010,7 +1010,9 @@ class ProcWrapper:
         _logger.debug(f"_update_status(), is_app_update = {is_app_update}")
 
         if is_app_update:
-            self.last_app_heartbeat_at = last_app_heartbeat_at or datetime.utcnow()
+            self.last_app_heartbeat_at = last_app_heartbeat_at or datetime.now(
+                timezone.utc
+            )
 
         if self.offline_mode:
             return self._SEND_RESULT_SKIPPED
@@ -1089,7 +1091,7 @@ class ProcWrapper:
             else:
                 exit_code = self._EXIT_CODE_GENERIC_ERROR
 
-        finished_at = datetime.utcnow()
+        finished_at = datetime.now(timezone.utc)
 
         if self.skip_start_notification:
             # We did not create the Task Execution with the Task Management server when we
@@ -1160,7 +1162,7 @@ class ProcWrapper:
             data = self._resolve_input_value()
 
         try:
-            self.started_at = datetime.utcnow()
+            self.started_at = datetime.now(timezone.utc)
 
             if not self._setup_task_execution():
                 self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
@@ -1340,7 +1342,7 @@ class ProcWrapper:
 
         self._resolve_input_value()
 
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(timezone.utc)
 
         should_run = self._setup_task_execution()
 
