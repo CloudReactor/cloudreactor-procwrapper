@@ -105,17 +105,9 @@ def make_online_params(port: int) -> ProcWrapperParams:
 def make_env_ref(var_name: str) -> str:
     """Helper to create a reference to an environment variable."""
     if platform.system() == "Windows":
-        return f"env:{var_name}"
+        return f"%{var_name}%"
     else:
         return f"${var_name}"
-
-
-def output_to_file_suffix(var_name: str) -> str:
-    """Helper to create a suffix for the output filename based on the platform."""
-    if platform.system() == "Windows":
-        return f" | Set-Content -Path {make_env_ref(var_name)}"
-    else:
-        return f" > {make_env_ref(var_name)}"
 
 
 def test_wrapped_offline_mode():
@@ -418,7 +410,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile().name,
                 "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
             },
-            "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
+            "echo '{\"b\":8}' >" + make_env_ref("PROC_WRAPPER_RESULT_FILENAME"),
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -432,7 +424,7 @@ def expect_task_execution_request(
                     suffix=".json"
                 ).name,
             },
-            "echo '{\"b\":8}'" + output_to_file_suffix("PROC_WRAPPER_RESULT_FILENAME"),
+            "echo '{\"b\":8}' > " + make_env_ref("PROC_WRAPPER_RESULT_FILENAME"),
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -446,7 +438,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_CLEANUP_RESULT_FILE": "0",
             },
-            "echo '{\"b\":8}'" + output_to_file_suffix("PROC_WRAPPER_RESULT_FILENAME"),
+            "echo '{\"b\":8}' > " + make_env_ref("PROC_WRAPPER_RESULT_FILENAME"),
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
