@@ -102,22 +102,6 @@ def make_online_params(port: int) -> ProcWrapperParams:
     return params
 
 
-def make_env_ref(var_name: str) -> str:
-    """Helper to create a reference to an environment variable."""
-    if platform.system() == "Windows":
-        return f"env:{var_name}"
-    else:
-        return f"${var_name}"
-
-
-def output_to_file_suffix(var_name: str) -> str:
-    """Helper to create a suffix for the output filename based on the platform."""
-    if platform.system() == "Windows":
-        return f" | Set-Content -Path {make_env_ref(var_name)}"
-    else:
-        return f" > {make_env_ref(var_name)}"
-
-
 def test_wrapped_offline_mode():
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
@@ -319,7 +303,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
                 "PROC_WRAPPER_INPUT_VALUE": "is cool",
             },
-            "echo " + make_env_ref("PROC_WRAPPER_INPUT_VALUE"),
+            "echo $PROC_WRAPPER_INPUT_VALUE",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -333,7 +317,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
                 "THE_INPUT": "is cool",
             },
-            "echo " + make_env_ref("THE_INPUT"),
+            "echo $THE_INPUT",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -348,7 +332,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
                 "THE_INPUT": """{"a":7}""",
             },
-            "echo " + make_env_ref("THE_INPUT"),
+            "echo $THE_INPUT",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -362,7 +346,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
             },
-            "echo " + make_env_ref("PROC_WRAPPER_INPUT_VALUE"),
+            "echo $PROC_WRAPPER_INPUT_VALUE",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -376,7 +360,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
             },
-            "echo " + make_env_ref("PROC_WRAPPER_INPUT_VALUE"),
+            "echo $PROC_WRAPPER_INPUT_VALUE",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -391,7 +375,7 @@ def expect_task_execution_request(
                 ).name,
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
             },
-            "echo " + make_env_ref("PROC_WRAPPER_INPUT_VALUE"),
+            "echo $PROC_WRAPPER_INPUT_VALUE",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -405,7 +389,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
                 "THE_INPUT": """{"a":7}""",
             },
-            "echo " + make_env_ref("PROC_WRAPPER_INPUT_VALUE"),
+            "echo $PROC_WRAPPER_INPUT_VALUE",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -432,7 +416,7 @@ def expect_task_execution_request(
                     suffix=".json"
                 ).name,
             },
-            "echo '{\"b\":8}'" + output_to_file_suffix("PROC_WRAPPER_RESULT_FILENAME"),
+            "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
@@ -446,7 +430,7 @@ def expect_task_execution_request(
                 "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_CLEANUP_RESULT_FILE": "0",
             },
-            "echo '{\"b\":8}'" + output_to_file_suffix("PROC_WRAPPER_RESULT_FILENAME"),
+            "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
             0,
             True,
             ProcWrapper.STATUS_SUCCEEDED,
