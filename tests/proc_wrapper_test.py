@@ -4,7 +4,7 @@ import platform
 import tempfile
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
-from tempfile import gettempdir
+from pathlib import Path
 from typing import Any, Mapping, Optional
 from urllib.parse import quote_plus
 
@@ -102,6 +102,15 @@ def make_online_params(port: int) -> ProcWrapperParams:
     return params
 
 
+def make_temp_filename(suffix: Optional[str] = None, base: Optional[str] = None) -> str:
+    filename = (Path(tempfile.gettempdir()) / (base or "output")).resolve().as_posix()
+
+    if suffix is not None:
+        filename = f"{filename}.{suffix}"
+
+    return filename
+
+
 def test_wrapped_offline_mode():
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
@@ -114,7 +123,7 @@ def test_wrapped_offline_mode():
 
 
 def test_wrapped_offline_mode_with_env_output_and_exit():
-    output_filename = os.path.join(gettempdir(), "output.env")
+    output_filename = make_temp_filename(suffix="env")
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
@@ -139,7 +148,7 @@ def test_wrapped_offline_mode_with_env_output_and_exit():
 
 
 def test_wrapped_offline_mode_with_env_json_output_and_exit():
-    output_filename = os.path.join(gettempdir(), "output")
+    output_filename = make_temp_filename()
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
@@ -166,7 +175,7 @@ def test_wrapped_offline_mode_with_env_json_output_and_exit():
 
 
 def test_wrapped_offline_mode_with_env_output_and_deletion():
-    output_filename = os.path.join(gettempdir(), "output.env")
+    output_filename = make_temp_filename(suffix="env")
     env_override = {
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
         "PROC_WRAPPER_ENV_OUTPUT_FILENAME": output_filename,
@@ -356,7 +365,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_INPUT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_INPUT_FILENAME": make_temp_filename(),
                 "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
             },
@@ -370,9 +379,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_INPUT_FILENAME": tempfile.NamedTemporaryFile(
-                    suffix=".json"
-                ).name,
+                "PROC_WRAPPER_INPUT_FILENAME": make_temp_filename(suffix="json"),
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
             },
             "echo $PROC_WRAPPER_INPUT_VALUE",
@@ -399,7 +406,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_RESULT_FILENAME": make_temp_filename(),
                 "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
             },
             "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
@@ -412,9 +419,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile(
-                    suffix=".json"
-                ).name,
+                "PROC_WRAPPER_RESULT_FILENAME": make_temp_filename(suffix="json"),
             },
             "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
             0,
@@ -426,7 +431,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_RESULT_FILENAME": make_temp_filename(),
                 "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_CLEANUP_RESULT_FILE": "0",
             },
