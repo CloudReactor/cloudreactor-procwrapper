@@ -1199,16 +1199,6 @@ class ProcWrapperParams(ConfigResolverParams):
         _logger.debug(f"Monitor container name = {self.monitor_container_name}")
         _logger.debug(f"Sidecar container mode = {self.sidecar_container_mode}")
 
-        if self.rollbar_access_token:
-            if self.log_secrets:
-                _logger.debug(f"Rollbar API key = '{self.rollbar_access_token}'")
-
-            _logger.debug(f"Rollbar timeout = {self.rollbar_timeout}")
-            _logger.debug(f"Rollbar retries = {self.rollbar_retries}")
-            _logger.debug(f"Rollbar retry delay = {self.rollbar_retry_delay}")
-        else:
-            _logger.debug("Rollbar is disabled")
-
         if not self.embedded_mode:
             command, shell = self.resolve_command_and_shell_flag()
             _logger.info(f"Command = {command}")
@@ -1225,6 +1215,19 @@ class ProcWrapperParams(ConfigResolverParams):
                 )
 
         _logger.debug(f"Status update interval = {self.status_update_interval}")
+
+        _logger.debug(f"Log input value = {self.log_input_value}")
+        _logger.debug(f"Log result value = {self.log_result_value}")
+
+        if self.rollbar_access_token:
+            if self.log_secrets:
+                _logger.debug(f"Rollbar API key = '{self.rollbar_access_token}'")
+
+            _logger.debug(f"Rollbar timeout = {self.rollbar_timeout}")
+            _logger.debug(f"Rollbar retries = {self.rollbar_retries}")
+            _logger.debug(f"Rollbar retry delay = {self.rollbar_retry_delay}")
+        else:
+            _logger.debug("Rollbar is disabled")
 
     def populate_env(self, env: dict[str, str]) -> None:
         if self.env_output_filename:

@@ -449,7 +449,7 @@ class ProcWrapper:
                 )
                 self.wrote_input_file = True
 
-        if self.params.log_input_value:
+        if self.params.log_input_value or (self.input_value == UNSET_VALUE):
             _logger.info(f"Input value = {stringify_value(self.input_value)}")
 
         return self.input_value
@@ -463,7 +463,7 @@ class ProcWrapper:
                 format=self.params.result_value_format,
             )
 
-        if self.params.log_result_value:
+        if self.params.log_result_value or (result_value == UNSET_VALUE):
             _logger.info(f"Result value = {stringify_value(result_value)}")
 
         return result_value
