@@ -749,7 +749,10 @@ class ProcWrapper:
                 "api_timeout_report_probability": self.params.api_timeout_report_probability,
             }
 
+            self.started_at = self.started_at or datetime.now(timezone.utc)
+
             body = {
+                "started_at": self.started_at.isoformat(),
                 "status": status,
                 "task_version_number": self.params.task_version_number,
                 "task_version_text": self.params.task_version_text,
@@ -806,9 +809,6 @@ class ProcWrapper:
             # If we are creating or updating a Task Execution after skipping the initial
             # notification, include the post-execution properties
             if self.skip_start_notification:
-                self.started_at = self.started_at or datetime.now(timezone.utc)
-                body["started_at"] = self.started_at.isoformat()
-
                 # Do not include runtime metadata since it will be set later, unconditionally
                 body.update(
                     self._make_update_body(
