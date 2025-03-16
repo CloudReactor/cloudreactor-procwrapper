@@ -1,6 +1,8 @@
 import json
 import os
 import platform
+import random
+import string
 import tempfile
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
@@ -103,6 +105,9 @@ def make_online_params(port: int) -> ProcWrapperParams:
 
 
 def make_temp_filename(suffix: Optional[str] = None, base: Optional[str] = None) -> str:
+    if not base:
+        base = "".join(random.choices(string.ascii_letters + string.digits, k=12))
+
     filename = (Path(tempfile.gettempdir()) / (base or "output")).resolve().as_posix()
 
     if suffix is not None:
@@ -578,6 +583,7 @@ def test_wrapped_mode_with_server(
         if result_filename:
             if env.get("PROC_WRAPPER_CLEANUP_RESULT_FILE") == "0":
                 assert os.path.exists(result_filename)
+                os.remove(result_filename)
             else:
                 assert not os.path.exists(result_filename)
 
