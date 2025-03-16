@@ -886,6 +886,11 @@ class ProcWrapper:
 
                 task_dict["run_environment"] = run_env_dict
 
+                if self.params.execution_method_type:
+                    task_dict[
+                        "execution_method_type"
+                    ] = self.params.execution_method_type
+
                 self._transfer_runtime_metadata(
                     dest=task_dict,
                     runtime_metadata=rm,
@@ -909,9 +914,8 @@ class ProcWrapper:
                 dest=body,
                 runtime_metadata=rm,
                 override_props={
-                    # TODO
-                    # "execution_method_type": self.params.execution_method_type,
-                    "execution_method_details": self.params.execution_method_props
+                    "execution_method_type": self.params.execution_method_type,
+                    "execution_method_details": self.params.execution_method_props,
                 },
                 for_task=False,
             )

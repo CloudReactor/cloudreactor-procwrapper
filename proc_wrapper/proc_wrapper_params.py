@@ -585,6 +585,7 @@ class ProcWrapperParams(ConfigResolverParams):
         self.task_uuid: Optional[str] = None
         self.auto_create_task: bool = False
         self.auto_create_task_props: Optional[dict[str, Any]] = None
+        self.execution_method_type: Optional[str] = None
         self.execution_method_props: Optional[dict[str, Any]] = None
         self.auto_create_task_run_environment_name: Optional[str] = None
         self.auto_create_task_run_environment_uuid: Optional[str] = None
@@ -684,6 +685,13 @@ class ProcWrapperParams(ConfigResolverParams):
             self.override_early_params_from_env(env=override_env)
 
     def override_early_params_from_env(self, env: Mapping[str, str]) -> None:
+        self.execution_method_type = env.get(
+            "PROC_WRAPPER_EXECUTION_METHOD_TYPE",
+            (self.auto_create_task_props or {}).get(
+                "execution_method_type", self.execution_method_type
+            ),
+        )
+
         self.main_container_name = env.get(
             "PROC_WRAPPER_MAIN_CONTAINER_NAME", self.main_container_name
         )
@@ -1110,6 +1118,7 @@ class ProcWrapperParams(ConfigResolverParams):
         _logger.info(f"Task version text = {self.task_version_text}")
         _logger.info(f"Task version signature = {self.task_version_signature}")
 
+        _logger.info(f"Execution method type = {self.execution_method_type}")
         _logger.info(f"Execution method props = {self.execution_method_props}")
 
         _logger.info(f"Auto create task = {self.auto_create_task}")
@@ -1185,6 +1194,7 @@ class ProcWrapperParams(ConfigResolverParams):
 
         super().log_configuration()
 
+        _logger.debug(f"Execution method type = {self.execution_method_type}")
         _logger.debug(f"Main container name = {self.main_container_name}")
         _logger.debug(f"Monitor container name = {self.monitor_container_name}")
         _logger.debug(f"Sidecar container mode = {self.sidecar_container_mode}")
@@ -2010,11 +2020,6 @@ See https://apidocs.cloudreactor.io/#operation/api_v1_task_executions_create
 for the schema.""",
     )
     task_group.add_argument(
-        "--task-instance-metadata",
-        type=json_encoded,
-        help="Additional metadata about the Task instance, in JSON format",
-    )
-    task_group.add_argument(
         "-s",
         "--service",
         action="store_true",
@@ -2036,6 +2041,17 @@ Defaults to 1.""",
 Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit.
 Defaults to the heartbeat interval, plus {HEARTBEAT_DELAY_TOLERANCE_SECONDS}
 seconds for services that send heartbeats. Otherwise, defaults to no limit.""",
+    )
+    task_group.add_argument(
+        "--execution_method_type",
+        help="""
+Known execution method type, used to determine how to fetch runtime metadata
+""",
+    )
+    task_group.add_argument(
+        "--task-instance-metadata",
+        type=json_encoded,
+        help="Additional metadata about the Task instance, in JSON format",
     )
 
     api_group = parser.add_argument_group("api", "API client settings")
