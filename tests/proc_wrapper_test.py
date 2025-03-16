@@ -108,7 +108,7 @@ def make_temp_filename(suffix: Optional[str] = None, base: Optional[str] = None)
     if not base:
         base = "".join(random.choices(string.ascii_letters + string.digits, k=12))
 
-    filename = (Path(tempfile.gettempdir()) / (base or "output")).resolve().as_posix()
+    filename = (Path(tempfile.gettempdir()) / base).resolve().as_posix()
 
     if suffix is not None:
         filename = f"{filename}.{suffix}"
@@ -180,7 +180,7 @@ def test_wrapped_offline_mode_with_env_json_output_and_exit():
 
 
 def test_wrapped_offline_mode_with_env_output_and_deletion():
-    output_filename = make_temp_filename(suffix="env")
+    output_filename = "output.env"
     env_override = {
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
         "PROC_WRAPPER_ENV_OUTPUT_FILENAME": output_filename,
