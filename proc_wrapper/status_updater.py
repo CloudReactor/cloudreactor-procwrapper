@@ -25,7 +25,7 @@ import json
 import logging
 import os
 import socket
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 def _exit_handler(updater):
@@ -83,12 +83,12 @@ class StatusUpdater:
         skipped_count: Optional[int] = None,
         expected_count: Optional[int] = None,
         last_status_message: Optional[str] = None,
-        extra_props: Optional[Dict[str, Any]] = None,
+        extra_props: Optional[dict[str, Any]] = None,
     ) -> None:
         if not self.enabled:
             return
 
-        status_hash: Dict[str, Any] = {}
+        status_hash: dict[str, Any] = {}
 
         if self.incremental_count_mode:
             if success_count == 0:

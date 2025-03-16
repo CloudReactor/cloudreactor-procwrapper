@@ -1010,7 +1010,7 @@ passed to the your callback function will contain a merged dictionary of all
 fetched and parsed dictionary values. For example:
 
     def callback(wrapper: ProcWrapper, cbdata: str,
-            config: Dict[str, Any]) -> str:
+            config: dict[str, Any]) -> str:
         return "super" + cbdata + config["username"]
 
 
@@ -1240,7 +1240,7 @@ actual values is controlled by the value format parameters,
 `--input-value-format` and `--result-value-format`, or the corresponding
 environment variables `PROC_WRAPPER_INPUT_VALUE_FORMAT` and
 `PROC_WRAPPER_RESULT_VALUE_FORMAT`. Value formats may be `text`, `json`, or
-`yaml` (requires the `yaml` module). If not specified, the value format will be
+`yaml` (requires the `pyyaml` library). If not specified, the value format will be
 auto-detected from the input or result filename if possible, falling back to
 `text` if auto-detection fails.
 

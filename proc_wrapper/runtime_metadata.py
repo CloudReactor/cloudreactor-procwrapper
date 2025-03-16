@@ -5,7 +5,7 @@ import platform
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
+from typing import Any, Mapping, Optional, cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -16,6 +16,7 @@ EXECUTION_METHOD_TYPE_UNKNOWN = "Unknown"
 EXECUTION_METHOD_TYPE_AWS_ECS = "AWS ECS"
 EXECUTION_METHOD_TYPE_AWS_LAMBDA = "AWS Lambda"
 EXECUTION_METHOD_TYPE_AWS_CODEBUILD = "AWS CodeBuild"
+EXECUTION_METHOD_TYPE_AWS_EC2 = "AWS EC2"
 
 INFRASTRUCTURE_TYPE_UNKNOWN = "Unknown"
 INFRASTRUCTURE_TYPE_AWS = "AWS"
@@ -56,48 +57,48 @@ def get_current_aws_role_arn() -> Optional[str]:
 class CommonConfiguration:
     execution_method_type: str = EXECUTION_METHOD_TYPE_UNKNOWN
     infrastructure_type: Optional[str] = INFRASTRUCTURE_TYPE_UNKNOWN
-    infrastructure_settings: Optional[Dict[str, Any]] = None
+    infrastructure_settings: Optional[dict[str, Any]] = None
     allocated_cpu_units: Optional[int] = None
     allocated_memory_mb: Optional[int] = None
-    ip_v4_addresses: Optional[List[str]] = None
+    ip_v4_addresses: Optional[list[str]] = None
 
 
 @dataclass
 class TaskConfiguration(CommonConfiguration):
-    execution_method_capability_details: Optional[Dict[str, Any]] = None
+    execution_method_capability_details: Optional[dict[str, Any]] = None
 
 
 @dataclass
 class TaskExecutionConfiguration(CommonConfiguration):
-    execution_method_details: Optional[Dict[str, Any]] = None
+    execution_method_details: Optional[dict[str, Any]] = None
 
 
 @dataclass
 class RuntimeMetadata:
     task_execution_configuration: TaskExecutionConfiguration
     task_configuration: TaskConfiguration
-    raw: Dict[str, Any]
-    derived: Dict[str, Any]
+    raw: dict[str, Any]
+    derived: dict[str, Any]
     is_execution_status_source: bool = False
     exit_code: Optional[int] = None
-    host_addresses: Optional[List[str]] = None
-    host_names: Optional[List[str]] = None
-    monitor_host_addresses: Optional[List[str]] = None
-    monitor_host_names: Optional[List[str]] = None
+    host_addresses: Optional[list[str]] = None
+    host_names: Optional[list[str]] = None
+    monitor_host_addresses: Optional[list[str]] = None
+    monitor_host_names: Optional[list[str]] = None
     monitor_process_env_additions: Optional[Mapping[str, str]] = None
     default_refresh_interval: Optional[int] = None
 
 
 class RuntimeMetadataFetcher:
     def fetch(
-        self, env: Mapping[str, str], context: Optional[Any] = None
+        self, env: Mapping[str, str], context: Optional[Any] = None, force: bool = False
     ) -> Optional[RuntimeMetadata]:
         return None
 
 
 def populate_dict_from_env(
-    dest: Dict[str, Any], env: Mapping[str, str], attrs: List[str], env_prefix: str = ""
-) -> Dict[str, Any]:
+    dest: dict[str, Any], env: Mapping[str, str], attrs: list[str], env_prefix: str = ""
+) -> dict[str, Any]:
     for attr in attrs:
         env_name = env_prefix + attr.upper()
         dest[attr] = env.get(env_name)
@@ -127,9 +128,9 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
     @dataclass
     class ClassifiedContainers:
-        main_container_metadata: Optional[Dict[str, Any]]
-        monitor_container_metadata: Optional[Dict[str, Any]]
-        current_container_metadata: Optional[Dict[str, Any]]
+        main_container_metadata: Optional[dict[str, Any]]
+        monitor_container_metadata: Optional[dict[str, Any]]
+        current_container_metadata: Optional[dict[str, Any]]
 
     def __init__(
         self,
@@ -150,7 +151,7 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         self.sidecar_mode = sidecar_mode
 
     def fetch(
-        self, env: Mapping[str, str], context: Optional[Any] = None
+        self, env: Mapping[str, str], context: Optional[Any] = None, force: bool = False
     ) -> Optional[RuntimeMetadata]:
         container_metadata_url = env.get("ECS_CONTAINER_METADATA_URI_V4") or env.get(
             "ECS_CONTAINER_METADATA_URI"
@@ -160,7 +161,7 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             _logger.debug("No ECS metadata URL found")
             return None
 
-        task_metadata: Optional[Dict[str, Any]] = None
+        task_metadata: Optional[dict[str, Any]] = None
 
         task_metadata_url = f"{container_metadata_url}/task"
 
@@ -190,7 +191,7 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
         _logger.debug(f"Found {container_count} containers in ECS task metadata")
 
-        current_container_metadata: Optional[Dict[str, Any]] = None
+        current_container_metadata: Optional[dict[str, Any]] = None
 
         if container_count == 1:
             current_container_metadata = containers[0]
@@ -230,13 +231,13 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
     def classify_containers(
         self,
-        current_container_metadata: Optional[Dict[str, Any]],
-        containers: List[Dict[str, Any]],
+        current_container_metadata: Optional[dict[str, Any]],
+        containers: list[dict[str, Any]],
     ) -> ClassifiedContainers:
         container_count = len(containers)
         current_container_name: Optional[str] = None
-        main_container_metadata: Optional[Dict[str, Any]] = None
-        monitor_container_metadata: Optional[Dict[str, Any]] = None
+        main_container_metadata: Optional[dict[str, Any]] = None
+        monitor_container_metadata: Optional[dict[str, Any]] = None
 
         if current_container_metadata:
             current_container_name = current_container_metadata.get("Name")
@@ -290,7 +291,7 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
                     is not None
                 ):
                     candidate_monitor_container_name = cast(
-                        Dict[str, Any],
+                        dict[str, Any],
                         current_container_metadata or monitor_container_metadata,
                     ).get("Name")
 
@@ -389,29 +390,31 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         )
 
     def convert_ecs_metadata(
-        self, task_metadata: Dict[str, Any], classified_containers: ClassifiedContainers
+        self, task_metadata: dict[str, Any], classified_containers: ClassifiedContainers
     ) -> RuntimeMetadata:
         task_configuration = TaskConfiguration(
-            execution_method_type=EXECUTION_METHOD_TYPE_AWS_ECS
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_ECS,
+            infrastructure_type=INFRASTRUCTURE_TYPE_AWS,
         )
         task_execution_configuration = TaskExecutionConfiguration(
-            execution_method_type=EXECUTION_METHOD_TYPE_AWS_ECS
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_ECS,
+            infrastructure_type=INFRASTRUCTURE_TYPE_AWS,
         )
 
         cluster_arn = task_metadata.get("Cluster") or ""
         task_arn = task_metadata.get("TaskARN") or ""
         task_definition_arn = self.compute_ecs_task_definition_arn(task_metadata) or ""
 
-        common_props: Dict[str, Any] = {
+        common_props: dict[str, Any] = {
             "task_definition_arn": task_definition_arn,
             "cluster_arn": cluster_arn,
         }
 
-        execution_method: Dict[str, Any] = {
+        execution_method: dict[str, Any] = {
             "task_arn": task_arn,
         }
 
-        execution_method_capability: Dict[str, Any] = {}
+        execution_method_capability: dict[str, Any] = {}
 
         launch_type = task_metadata.get("LaunchType")
         if launch_type:
@@ -432,9 +435,9 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             task_execution_configuration.allocated_memory_mb = memory_mb
             task_configuration.allocated_memory_mb = memory_mb
 
-        monitor_host_addresses: Optional[List[str]] = None
-        monitor_host_names: Optional[List[str]] = None
-        monitor_process_env_additions: Dict[str, str] = {}
+        monitor_host_addresses: Optional[list[str]] = None
+        monitor_host_names: Optional[list[str]] = None
+        monitor_process_env_additions: dict[str, str] = {}
         monitor_container_metadata = classified_containers.monitor_container_metadata
         if monitor_container_metadata is not None:
             name = cast(str, monitor_container_metadata.get("Name"))
@@ -502,8 +505,8 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
         task_aws_props = aws_props
         exit_code: Optional[int] = None
-        host_addresses: Optional[List[str]] = None
-        host_names: Optional[List[str]] = None
+        host_addresses: Optional[list[str]] = None
+        host_names: Optional[list[str]] = None
 
         if main_container_metadata is not None:
             exit_code = main_container_metadata.get("ExitCode")
@@ -521,7 +524,7 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             input_log_options = main_container_metadata.get("LogOptions")
 
             if input_log_options:
-                transformed_log_options: Dict[str, Any] = {}
+                transformed_log_options: dict[str, Any] = {}
                 for k, v in input_log_options.items():
                     transformed_key = k
 
@@ -592,11 +595,9 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         task_configuration.execution_method_capability_details = (
             execution_method_capability
         )
-        task_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
         task_configuration.infrastructure_settings = task_aws_props
 
         task_execution_configuration.execution_method_details = execution_method
-        task_execution_configuration.infrastructure_type = INFRASTRUCTURE_TYPE_AWS
         task_execution_configuration.infrastructure_settings = aws_props
 
         return RuntimeMetadata(
@@ -632,7 +633,7 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         return None
 
     def compute_ecs_task_definition_arn(
-        self, task_metadata: Dict[str, Any]
+        self, task_metadata: dict[str, Any]
     ) -> Optional[str]:
         task_arn = task_metadata.get("TaskARN")
         family = task_metadata.get("Family")
@@ -657,8 +658,8 @@ class AwsEcsRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         )
 
     def extract_cpu_and_memory_limits(
-        self, task_or_container_metadata: Dict[str, Any], is_task: bool = False
-    ) -> Tuple[Optional[int], Optional[int]]:
+        self, task_or_container_metadata: dict[str, Any], is_task: bool = False
+    ) -> tuple[Optional[int], Optional[int]]:
         limits = task_or_container_metadata.get("Limits")
         cpu_units: Optional[int] = None
         memory_mb: Optional[int] = None
@@ -689,7 +690,7 @@ class AwsLambdaRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     ]
 
     def fetch(
-        self, env: Mapping[str, str], context: Optional[Any] = None
+        self, env: Mapping[str, str], context: Optional[Any] = None, force: bool = False
     ) -> Optional[RuntimeMetadata]:
         # https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 
@@ -710,7 +711,7 @@ class AwsLambdaRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         task_configuration.allocated_memory_mb = allocated_memory_mb
         task_execution_configuration.allocated_memory_mb = allocated_memory_mb
 
-        common_props: Dict[str, Any] = {
+        common_props: dict[str, Any] = {
             "runtime_id": env.get("AWS_EXECUTION_ENV"),
             "function_name": env.get("AWS_LAMBDA_FUNCTION_NAME"),
             "function_version": env.get("AWS_LAMBDA_FUNCTION_VERSION"),
@@ -720,13 +721,13 @@ class AwsLambdaRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             "time_zone_name": env.get("TZ"),
         }
 
-        execution_method: Dict[str, Any] = {}
-        execution_method_capability: Dict[str, Any] = {}
+        execution_method: dict[str, Any] = {}
+        execution_method_capability: dict[str, Any] = {}
 
         # _HANDLER – The handler location configured on the function.
         aws_region = env.get("AWS_REGION")
 
-        aws_props: Dict[str, Any] = {
+        aws_props: dict[str, Any] = {
             "network": {
                 "region": aws_region,
             },
@@ -758,7 +759,7 @@ class AwsLambdaRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             execution_method["aws_request_id"] = safe_get(context, "aws_request_id")
 
             identity = safe_get(context, "identity")
-            extracted_identity: Optional[Dict[str, Any]] = None
+            extracted_identity: Optional[dict[str, Any]] = None
 
             if identity:
                 extracted_identity = {
@@ -769,11 +770,11 @@ class AwsLambdaRuntimeMetadataFetcher(RuntimeMetadataFetcher):
             execution_method["cognito_identity"] = extracted_identity
 
             client_context = safe_get(context, "client_context")
-            extracted_client_context: Optional[Dict[str, Any]] = None
+            extracted_client_context: Optional[dict[str, Any]] = None
 
             if client_context:
                 client = safe_get(client_context, "client")
-                extracted_client: Optional[Dict[str, Any]] = None
+                extracted_client: Optional[dict[str, Any]] = None
 
                 if client:
                     extracted_client = {}
@@ -846,7 +847,7 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     ]
 
     def fetch(
-        self, env: Mapping[str, str], context: Optional[Any] = None
+        self, env: Mapping[str, str], context: Optional[Any] = None, force: bool = False
     ) -> Optional[RuntimeMetadata]:
         # https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
 
@@ -876,7 +877,7 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         if assumed_role_arn:
             common_props["assumed_role_arn"] = assumed_role_arn
 
-        execution_method_capability: Dict[str, Any] = {
+        execution_method_capability: dict[str, Any] = {
             **common_props,
         }
 
@@ -929,7 +930,7 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
         aws_region = env.get("AWS_REGION")
 
-        aws_props: Dict[str, Any] = {
+        aws_props: dict[str, Any] = {
             "region": aws_region,
             "network": {
                 "region": aws_region,
@@ -971,11 +972,185 @@ class AwsCodeBuildRuntimeMetadataFetcher(RuntimeMetadataFetcher):
         )
 
 
+class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
+    COPIED_COMMON_PROPERTIES = [
+        "ami_id",
+        "ami_manifest_path",
+        "instance_type",
+        "instance_profile_id",
+        "instance_profile_arn",
+        "reservation_id",
+        "domain",
+        "partition",
+        "security_groups",
+    ]
+
+    COPIED_EXECUTION_METHOD_PROPERTIES = [
+        "ami_launch_index",
+        "instance_action",
+        "instance_id",
+        "instance_life_cycle",
+        "kernel_id",
+        "mac_address",
+    ]
+
+    NETWORK_PROPERTY_MAPPINGS = {
+        "device_number": "device_number",
+        "interface_id": "eni_id",
+        "mac": "mac_address",
+        "owner_id": "aws_account_id",
+        "private_hostname": "private_dns_name",
+        "public_hostname": "public_dns_name",
+        "private_ipv4s": "private_ip_v4_addresses",
+        "public_ipv4s": "public_ip_v4_addresses",
+        "ipv6s": "ip_v6_addresses",
+        "subnet_ipv4_cidr_block": "ip_v4_subnet_cidr_block",
+        "subnet_ipv6_cidr_block": "ip_v6_subnet_cidr_blocks",
+    }
+
+    def fetch(
+        self, env: Mapping[str, str], context: Optional[Any] = None, force: bool = False
+    ) -> Optional[RuntimeMetadata]:
+        if not force:
+            return None
+
+        if env.get("AWS_EC2_METADATA_DISABLED") == "true":
+            return None
+
+        try:
+            from ec2_metadata import ec2_metadata
+
+            return self._fetch_internal(ec2_metadata)
+        except ImportError:
+            _logger.warning("ec2_metadata package not found")
+            return None
+
+    def _fetch_internal(self, ec2_metadata: Any) -> Optional[RuntimeMetadata]:
+        if not ec2_metadata:
+            return None
+
+        task_configuration = TaskConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_EC2,
+            infrastructure_type=INFRASTRUCTURE_TYPE_AWS,
+        )
+        task_execution_configuration = TaskExecutionConfiguration(
+            execution_method_type=EXECUTION_METHOD_TYPE_AWS_EC2,
+            infrastructure_type=INFRASTRUCTURE_TYPE_AWS,
+        )
+
+        region = ec2_metadata.region
+
+        common_props: dict[str, Any] = {}
+        for p in self.COPIED_COMMON_PROPERTIES:
+            common_props[p] = getattr(ec2_metadata, p)
+
+        execution_method: dict[str, Any] = {}
+
+        for p in self.COPIED_EXECUTION_METHOD_PROPERTIES:
+            execution_method[p] = getattr(ec2_metadata, p)
+
+        if ec2_metadata.spot_instance_action:
+            execution_method[
+                "spot_instance_action"
+            ] = ec2_metadata.spot_instance_action.action
+
+            if ec2_metadata.spot_instance_action.time:
+                execution_method[
+                    "spot_instance_action_time"
+                ] = ec2_metadata.spot_instance_action.time.isoformat()
+
+        execution_method_capability: dict[str, Any] = {}
+
+        execution_method.update(common_props)
+        execution_method_capability.update(common_props)
+
+        all_network_props = {
+            "region": region,
+            "availability_zone": ec2_metadata.availability_zone,
+        }
+
+        task_execution_networks = []
+        host_addresses = []
+        host_names = []
+
+        for name, iface in ec2_metadata.network_interfaces.items():
+            network_props: dict[str, Any] = {
+                "name": name,
+            }
+
+            for in_prop, out_prop in self.NETWORK_PROPERTY_MAPPINGS.items():
+                network_props[out_prop] = getattr(iface, in_prop)
+
+            ip_v4_addresses = iface.ipv4_associations.keys()
+            network_props["ip_v4_addresses"] = ip_v4_addresses
+            host_addresses += ip_v4_addresses
+
+            private_hostname = iface.private_hostname
+            if private_hostname:
+                host_names.append(private_hostname)
+
+            public_hostname = iface.public_hostname
+            if public_hostname:
+                host_names.append(public_hostname)
+
+            network_props["vpc"] = {
+                "id": iface.vpc_id,
+                "ip_v4_cidr_blocks": [b for b in iface.vpc_ipv4_cidr_blocks if b],
+                "ip_v6_cidr_blocks": iface.vpc_ipv6_cidr_blocks,
+            }
+
+            network_props["subnet"] = {
+                "id": iface.subnet_id,
+                "ip_v4_cidr_blocks": [iface.subnet_ipv4_cidr_block],
+                "ip_v6_cidr_blocks": iface.subnet_ipv6_cidr_blocks,
+            }
+
+            sgs = []
+            for t in zip(iface.security_group_ids, iface.security_groups):
+                sgs.append(
+                    {
+                        "id": t[0],
+                        "name": t[1],
+                    }
+                )
+
+            network_props["security_groups"] = sgs
+
+            task_execution_networks.append(network_props)
+
+        all_network_props["networks"] = task_execution_networks
+
+        aws_props = {"network": all_network_props}
+
+        task_aws_props = aws_props.copy()
+        task_network_props = all_network_props.copy()
+        task_aws_props["network"] = task_network_props
+
+        derived = {"aws": aws_props}
+
+        task_configuration.execution_method_capability_details = (
+            execution_method_capability
+        )
+        task_configuration.infrastructure_settings = task_aws_props
+
+        task_execution_configuration.execution_method_details = execution_method
+        task_execution_configuration.infrastructure_settings = aws_props
+
+        return RuntimeMetadata(
+            task_execution_configuration=task_execution_configuration,
+            task_configuration=task_configuration,
+            raw={},
+            derived=derived,
+            host_addresses=host_addresses,
+            host_names=host_names,
+        )
+
+
 class GenericRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     def fetch(
-        self, env: Mapping[str, str], context: Optional[Any] = None
+        self, env: Mapping[str, str], context: Optional[Any] = None, force: bool = False
     ) -> Optional[RuntimeMetadata]:
-        host_names: List[str] = []
+        host_names: list[str] = []
 
         uname = platform.uname()
 
@@ -994,37 +1169,56 @@ class GenericRuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
 class DefaultRuntimeMetadataFetcher(RuntimeMetadataFetcher):
     def __init__(self, params: Optional[ProcWrapperParams] = None):
-        self.monitor_container_name = params.monitor_container_name if params else None
-        self.main_container_name = params.main_container_name if params else None
-        self.sidecar_container_mode = params.sidecar_container_mode if params else None
+        self.execution_method_type: Optional[str] = (
+            params.execution_method_type if params else None
+        )
+        self.monitor_container_name: Optional[str] = (
+            params.monitor_container_name if params else None
+        )
+        self.main_container_name: Optional[str] = (
+            params.main_container_name if params else None
+        )
+        self.sidecar_container_mode: Optional[bool] = (
+            params.sidecar_container_mode if params else None
+        )
 
         self.fetcher: Optional[RuntimeMetadataFetcher] = None
 
     def fetch(
-        self, env: Mapping[str, str], context: Optional[Any] = None
+        self, env: Mapping[str, str], context: Optional[Any] = None, force: bool = False
     ) -> Optional[RuntimeMetadata]:
         _logger.debug("Entering fetch_runtime_metadata() ...")
 
         if self.fetcher:
-            return self.fetcher.fetch(env=env, context=context)
+            return self.fetcher.fetch(env=env, context=context, force=True)
 
-        fetchers = [
-            AwsCodeBuildRuntimeMetadataFetcher(),
-            AwsEcsRuntimeMetadataFetcher(
+        fetchers = {
+            EXECUTION_METHOD_TYPE_AWS_CODEBUILD: AwsCodeBuildRuntimeMetadataFetcher(),
+            EXECUTION_METHOD_TYPE_AWS_ECS: AwsEcsRuntimeMetadataFetcher(
                 monitor_container_name=self.monitor_container_name,
                 main_container_name=self.main_container_name,
                 sidecar_mode=self.sidecar_container_mode,
             ),
-            AwsLambdaRuntimeMetadataFetcher(),
-            GenericRuntimeMetadataFetcher(),
-        ]
+            EXECUTION_METHOD_TYPE_AWS_LAMBDA: AwsLambdaRuntimeMetadataFetcher(),
+            EXECUTION_METHOD_TYPE_AWS_EC2: AwsEc2RuntimeMetadataFetcher(),
+            EXECUTION_METHOD_TYPE_UNKNOWN: GenericRuntimeMetadataFetcher(),
+        }
 
         runtime_metadata: Optional[RuntimeMetadata] = None
-        for fetcher in fetchers:
-            runtime_metadata = fetcher.fetch(env=env, context=context)
-            if runtime_metadata:
+
+        if self.execution_method_type:
+            fetcher = fetchers.get(self.execution_method_type)
+
+            if fetcher:
                 self.fetcher = fetcher
-                break
+                runtime_metadata = fetcher.fetch(env=env, context=context, force=True)
+
+        if not self.fetcher:
+            for fetcher in fetchers.values():
+                runtime_metadata = fetcher.fetch(env=env, context=context, force=False)
+                if runtime_metadata:
+                    self.fetcher = fetcher
+                    break
 
         _logger.debug(
             f"Done fetching runtime metadata, got {runtime_metadata or 'N/A'}"

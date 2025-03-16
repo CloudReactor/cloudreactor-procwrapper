@@ -1,11 +1,13 @@
 import json
 import os
 import platform
+import random
+import string
 import tempfile
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
-from tempfile import gettempdir
-from typing import Any, Dict, List, Mapping, Optional
+from pathlib import Path
+from typing import Any, Mapping, Optional
 from urllib.parse import quote_plus
 
 import pytest
@@ -54,7 +56,7 @@ RESOLVE_ENV_BASE_ENV = {
 
 
 def make_wrapped_mode_proc_wrapper(
-    env: Mapping[str, str], args: List[str] = []
+    env: Mapping[str, str], args: list[str] = []
 ) -> ProcWrapper:
     main_parser = make_arg_parser()
     params = main_parser.parse_args(
@@ -63,7 +65,7 @@ def make_wrapped_mode_proc_wrapper(
     return ProcWrapper(params=params, env_override=env, override_params_from_env=True)
 
 
-def make_online_base_env(port: int, command: Optional[str] = "echo") -> Dict[str, str]:
+def make_online_base_env(port: int, command: Optional[str] = "echo") -> dict[str, str]:
     env = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_TASK_UUID": DEFAULT_TASK_UUID,
@@ -102,6 +104,18 @@ def make_online_params(port: int) -> ProcWrapperParams:
     return params
 
 
+def make_temp_filename(suffix: Optional[str] = None, base: Optional[str] = None) -> str:
+    if not base:
+        base = "".join(random.choices(string.ascii_letters + string.digits, k=12))
+
+    filename = (Path(tempfile.gettempdir()) / base).resolve().as_posix()
+
+    if suffix is not None:
+        filename = f"{filename}.{suffix}"
+
+    return filename
+
+
 def test_wrapped_offline_mode():
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
@@ -114,7 +128,7 @@ def test_wrapped_offline_mode():
 
 
 def test_wrapped_offline_mode_with_env_output_and_exit():
-    output_filename = os.path.join(gettempdir(), "output.env")
+    output_filename = make_temp_filename(suffix="env")
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
@@ -139,7 +153,7 @@ def test_wrapped_offline_mode_with_env_output_and_exit():
 
 
 def test_wrapped_offline_mode_with_env_json_output_and_exit():
-    output_filename = os.path.join(gettempdir(), "output")
+    output_filename = make_temp_filename()
     env_override = {
         "PROC_WRAPPER_LOG_LEVEL": "DEBUG",
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
@@ -166,7 +180,7 @@ def test_wrapped_offline_mode_with_env_json_output_and_exit():
 
 
 def test_wrapped_offline_mode_with_env_output_and_deletion():
-    output_filename = os.path.join(gettempdir(), "output.env")
+    output_filename = "output.env"
     env_override = {
         "PROC_WRAPPER_OFFLINE_MODE": "TRUE",
         "PROC_WRAPPER_ENV_OUTPUT_FILENAME": output_filename,
@@ -188,7 +202,7 @@ def test_wrapped_offline_mode_with_env_output_and_deletion():
 
 def expect_task_execution_request(
     httpserver: HTTPServer,
-    response_data: Optional[Dict[str, Any]] = None,
+    response_data: Optional[dict[str, Any]] = None,
     status: Optional[int] = None,
     update: bool = True,
     uuid: Optional[str] = None,
@@ -356,7 +370,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_INPUT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_INPUT_FILENAME": make_temp_filename(),
                 "PROC_WRAPPER_INPUT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
             },
@@ -370,9 +384,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_INPUT_FILENAME": tempfile.NamedTemporaryFile(
-                    suffix=".json"
-                ).name,
+                "PROC_WRAPPER_INPUT_FILENAME": make_temp_filename(suffix="json"),
                 "PROC_WRAPPER_SEND_INPUT_VALUE": "1",
             },
             "echo $PROC_WRAPPER_INPUT_VALUE",
@@ -399,7 +411,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_RESULT_FILENAME": make_temp_filename(),
                 "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
             },
             "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
@@ -412,9 +424,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile(
-                    suffix=".json"
-                ).name,
+                "PROC_WRAPPER_RESULT_FILENAME": make_temp_filename(suffix="json"),
             },
             "echo '{\"b\":8}' > $PROC_WRAPPER_RESULT_FILENAME",
             0,
@@ -426,7 +436,7 @@ def expect_task_execution_request(
         ),
         (
             {
-                "PROC_WRAPPER_RESULT_FILENAME": tempfile.NamedTemporaryFile().name,
+                "PROC_WRAPPER_RESULT_FILENAME": make_temp_filename(),
                 "PROC_WRAPPER_RESULT_VALUE_FORMAT": "json",
                 "PROC_WRAPPER_CLEANUP_RESULT_FILE": "0",
             },
@@ -442,7 +452,7 @@ def expect_task_execution_request(
 )
 def test_wrapped_mode_with_server(
     httpserver: HTTPServer,
-    env_override: Dict[str, str],
+    env_override: dict[str, str],
     command: Optional[str],
     expected_exit_code: Optional[int],
     expect_api_server_use: bool,
@@ -453,6 +463,12 @@ def test_wrapped_mode_with_server(
 ) -> None:
     env = make_online_base_env(httpserver.port, command=command)
     env.update(env_override)
+
+    result_filename = env.get("PROC_WRAPPER_RESULT_FILENAME")
+
+    # Windows seems to have issues writing the file using the > operator
+    if result_filename and (platform.system() == "Windows"):
+        return
 
     wrapper = make_wrapped_mode_proc_wrapper(env=env)
 
@@ -473,7 +489,7 @@ def test_wrapped_mode_with_server(
     if expect_api_server_use:
         fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
 
-    expected_started_at = datetime.utcnow()
+    expected_started_at = datetime.now(timezone.utc)
 
     rv = wrapper.run()
 
@@ -560,7 +576,7 @@ def test_wrapped_mode_with_server(
 
         finished_at_str = last_rd["finished_at"]
         finished_at = datetime.fromisoformat(finished_at_str)
-        assert (abs(datetime.utcnow() - finished_at)).seconds < 10
+        assert (abs(datetime.now(timezone.utc) - finished_at)).seconds < 10
 
         if sent_input_value is not None:
             assert crd["input_value"] == sent_input_value
@@ -568,11 +584,10 @@ def test_wrapped_mode_with_server(
         if sent_output_value is not None:
             assert last_rd["output_value"] == sent_output_value
 
-        result_filename = env.get("PROC_WRAPPER_RESULT_FILENAME")
-
         if result_filename:
             if env.get("PROC_WRAPPER_CLEANUP_RESULT_FILE") == "0":
                 assert os.path.exists(result_filename)
+                os.remove(result_filename)
             else:
                 assert not os.path.exists(result_filename)
 
@@ -599,7 +614,7 @@ TEST_DATETIME = datetime(2021, 8, 16, 14, 26, 54, tzinfo=timezone.utc)
 )
 @freeze_time(TEST_DATETIME)
 def test_extract_retry_delay_seconds(
-    headers: Dict[str, str], expected_delay_seconds: float
+    headers: dict[str, str], expected_delay_seconds: float
 ) -> None:
     delay_seconds = ProcWrapper._extract_retry_delay_seconds(headers)
 
@@ -610,7 +625,7 @@ def test_extract_retry_delay_seconds(
         assert abs(delay_seconds - expected_delay_seconds) <= 1.0
 
 
-def callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
+def callback(wrapper: ProcWrapper, cbdata: str, config: dict[str, str]) -> str:
     return "super" + cbdata
 
 
@@ -622,7 +637,7 @@ def test_embedded_offline_mode_success():
     assert wrapper.managed_call(callback, "duper") == "superduper"
 
 
-def bad_callback(wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]) -> str:
+def bad_callback(wrapper: ProcWrapper, cbdata: str, config: dict[str, str]) -> str:
     raise RuntimeError("Nope!")
 
 
@@ -641,7 +656,7 @@ def test_embedded_offline_mode_failure():
 
 
 def callback_with_update(
-    wrapper: ProcWrapper, cbdata: Dict[str, Any], config: Dict[str, str]
+    wrapper: ProcWrapper, cbdata: dict[str, Any], config: dict[str, str]
 ) -> str:
     failed_attempts = cbdata["failed_attempts"]
     last_app_heartbeat_at_override = cbdata["last_app_heartbeat_at_override"]
@@ -670,8 +685,8 @@ def callback_with_update(
         (0, None),
         (1, None),
         (2, None),
-        (0, datetime.utcnow() - relativedelta(minutes=3)),
-        (1, datetime.utcnow() - relativedelta(minutes=10)),
+        (0, datetime.now(timezone.utc) - relativedelta(minutes=3)),
+        (1, datetime.now(timezone.utc) - relativedelta(minutes=10)),
     ],
 )
 def test_embedded_mode_with_server(
@@ -771,11 +786,11 @@ def test_embedded_mode_with_server(
     if last_app_heartbeat_at_override:
         assert (last_app_heartbeat_at_override - last_app_heartbeat_at).seconds <= 1
     else:
-        assert (datetime.utcnow() - last_app_heartbeat_at).seconds < 10
+        assert (datetime.now(timezone.utc) - last_app_heartbeat_at).seconds < 10
 
 
 def callback_with_params_from_config(
-    wrapper: ProcWrapper, cbdata: int, config: Dict[str, Any]
+    wrapper: ProcWrapper, cbdata: int, config: dict[str, Any]
 ) -> int:
     return config["app_stuff"]["a"] + cbdata
 
@@ -830,7 +845,7 @@ def test_embedded_mode_with_params_from_config(httpserver: HTTPServer):
 
 
 def callback_with_params_from_input(
-    wrapper: ProcWrapper, cbdata: int, config: Dict[str, str]
+    wrapper: ProcWrapper, cbdata: int, config: dict[str, str]
 ) -> int:
     return cbdata
 
@@ -881,7 +896,7 @@ def test_embedded_mode_with_params_from_input(
 
 
 def read_config_callback(
-    wrapper: ProcWrapper, cbdata: str, config: Dict[str, str]
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, str]
 ) -> str:
     with open("conf.json", "r") as f:
         c = json.load(f)
@@ -941,7 +956,7 @@ def test_embedded_mode_with_sampling(
 
 
 def callback_with_env_in_config(
-    wrapper: ProcWrapper, cbdata: str, config: Dict[str, Any]
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, Any]
 ) -> str:
     return "super" + cbdata + config["ENV"]["ANOTHER_ENV"]
 

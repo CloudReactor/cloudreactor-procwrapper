@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union
 
 import pytest
 
@@ -224,11 +224,11 @@ def make_proc_wrapper_params(
     ],
 )
 def test_resolve_command_and_shell_flag(
-    command: Optional[List[str]],
+    command: Optional[list[str]],
     command_line: Optional[str],
     shell_mode: str,
     strip_shell_wrapping: bool,
-    expected_command: Union[str, List[str]],
+    expected_command: Union[str, list[str]],
     expected_shell_flag: bool,
 ):
     params = ProcWrapperParams()
@@ -263,7 +263,7 @@ def test_rollbar_config():
     assert params.rollbar_timeout == 30
 
 
-def make_proc_wrapper_params_dict() -> Dict[str, Any]:
+def make_proc_wrapper_params_dict() -> dict[str, Any]:
     return {
         "schedule": "",
         "max_concurrency": 1,
@@ -298,8 +298,8 @@ def make_proc_wrapper_params_dict() -> Dict[str, Any]:
 
 
 def make_config_with_proc_wrapper_params(
-    params_dict: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    params_dict: Optional[dict[str, Any]] = None
+) -> dict[str, Any]:
     params_dict = params_dict or make_proc_wrapper_params_dict()
     return {"proc_wrapper_params": params_dict}
 

@@ -1,7 +1,7 @@
 import json
 import logging
 from io import StringIO
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 from .common_constants import FORMAT_DOTENV, FORMAT_JSON, FORMAT_TEXT, FORMAT_YAML
 
@@ -93,7 +93,7 @@ def stringify_value(value: Any) -> str:
     return string_value
 
 
-def strip_after(s: str, partial_suffix: str) -> Tuple[str, Optional[str]]:
+def strip_after(s: str, partial_suffix: str) -> tuple[str, Optional[str]]:
     index = s.find(partial_suffix)
     if index >= 0:
         return (s[0:index], s[index + len(partial_suffix) :])
@@ -154,8 +154,8 @@ def deepmerge_with_lists_pair(dest: Any, src: Any) -> Any:
 
 
 def best_effort_deep_merge(
-    dest: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
+    dest: Optional[dict[str, Any]], src: Optional[dict[str, Any]]
+) -> Optional[dict[str, Any]]:
     if src is not None:
         dest = dest or {}
         try:
@@ -166,7 +166,7 @@ def best_effort_deep_merge(
     return dest
 
 
-def parse_dot_env(data: str) -> Dict[str, Any]:
+def parse_dot_env(data: str) -> dict[str, Any]:
     from dotenv import dotenv_values
 
     return dotenv_values(stream=StringIO(data))
@@ -176,7 +176,7 @@ def parse_json(data: str) -> Optional[Any]:
     return json.loads(data)
 
 
-def parse_yaml(data: str) -> Dict[str, Any]:
+def parse_yaml(data: str) -> dict[str, Any]:
     from yaml import safe_load
 
     return safe_load(data)
