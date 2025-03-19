@@ -2048,7 +2048,7 @@ class ProcWrapper:
         if finished_at:
             body["finished_at"] = finished_at.isoformat()
 
-        if output_value != UNSET_VALUE:
+        if (status == self.STATUS_SUCCEEDED) and (output_value != UNSET_VALUE):
             body["output_value"] = output_value
 
         if extra_runtime_metadata:
