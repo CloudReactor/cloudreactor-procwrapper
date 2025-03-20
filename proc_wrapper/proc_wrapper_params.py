@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from .runtime_metadata import RuntimeMetadata
 
 DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_MAX_LOG_LINE_LENGTH = 1000
 
 HEARTBEAT_DELAY_TOLERANCE_SECONDS = 60
 
@@ -115,6 +116,14 @@ IMMUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
     "result_value_format",
     "cleanup_result_file",
     "log_result_value",
+    "num_log_lines_sent_on_failure",
+    "num_log_lines_sent_on_timeout",
+    "num_log_lines_sent_on_success",
+    # "log_lines_sent_on_heartbeat",
+    "max_log_line_length",
+    "merge_stdout_and_stderr_logs",
+    "ignore_stdout",
+    "ignore_stderr",
 ]
 
 MUTABLE_PROPERTIES_COPIED_FROM_CONFIG = [
@@ -671,6 +680,14 @@ class ProcWrapperParams(ConfigResolverParams):
 
         self.log_level = DEFAULT_LOG_LEVEL
         self.include_timestamps_in_log: bool = True
+        self.num_log_lines_sent_on_failure: int = 0
+        self.num_log_lines_sent_on_timeout: int = 0
+        self.num_log_lines_sent_on_success: int = 0
+        # self.num_log_lines_sent_on_heartbeat: int = 0
+        self.max_log_line_length: int = DEFAULT_MAX_LOG_LINE_LENGTH
+        self.merge_stdout_and_stderr_logs: bool = True
+        self.ignore_stdout: bool = False
+        self.ignore_stderr: bool = False
 
         self.monitor_container_name: Optional[str] = None
         self.main_container_name: Optional[str] = None
@@ -1144,14 +1161,14 @@ class ProcWrapperParams(ConfigResolverParams):
 
         _logger.info(f"Task instance metadata = {self.task_instance_metadata}")
         _logger.info(f"Send runtime metadata = {self.send_runtime_metadata}")
-        _logger.info(
+        _logger.debug(
             f"Runtime metadata refresh interval = {self.runtime_metadata_refresh_interval}"
         )
 
         _logger.debug(f"Task is a service = {self.service}")
         _logger.debug(f"Max concurrency = {self.max_concurrency}")
-        _logger.debug(f"Offline mode = {self.offline_mode}")
-        _logger.debug(f"Prevent offline execution = {self.prevent_offline_execution}")
+        _logger.info(f"Offline mode = {self.offline_mode}")
+        _logger.info(f"Prevent offline execution = {self.prevent_offline_execution}")
         _logger.debug(f"Process retries = {self.process_max_retries}")
         _logger.debug(f"Process retry delay = {self.process_retry_delay}")
         _logger.debug(f"Process check interval = {self.process_check_interval}")
@@ -1161,7 +1178,7 @@ class ProcWrapperParams(ConfigResolverParams):
         )
 
         if not self.offline_mode:
-            _logger.debug(f"API base URL = '{self.api_base_url}'")
+            _logger.info(f"API base URL = '{self.api_base_url}'")
 
             if self.log_secrets:
                 _logger.debug(f"API key = '{self.api_key}'")
@@ -1195,15 +1212,16 @@ class ProcWrapperParams(ConfigResolverParams):
         super().log_configuration()
 
         _logger.debug(f"Execution method type = {self.execution_method_type}")
-        _logger.debug(f"Main container name = {self.main_container_name}")
-        _logger.debug(f"Monitor container name = {self.monitor_container_name}")
-        _logger.debug(f"Sidecar container mode = {self.sidecar_container_mode}")
 
         if not self.embedded_mode:
             command, shell = self.resolve_command_and_shell_flag()
             _logger.info(f"Command = {command}")
             _logger.info(f"Use shell = {shell} (shell mode = {self.shell_mode})")
             _logger.info(f"Work dir = '{self.work_dir}'")
+
+            _logger.debug(f"Main container name = {self.main_container_name}")
+            _logger.debug(f"Monitor container name = {self.monitor_container_name}")
+            _logger.debug(f"Sidecar container mode = {self.sidecar_container_mode}")
 
             enable_status_update_listener = self.enable_status_update_listener
             _logger.debug(f"Enable status listener = {enable_status_update_listener}")
@@ -1218,6 +1236,22 @@ class ProcWrapperParams(ConfigResolverParams):
 
         _logger.debug(f"Log input value = {self.log_input_value}")
         _logger.debug(f"Log result value = {self.log_result_value}")
+
+        _logger.debug(
+            f"Num log lines sent on failure = {self.num_log_lines_sent_on_failure}"
+        )
+        _logger.debug(
+            f"Num log lines sent on timeout = {self.num_log_lines_sent_on_timeout}"
+        )
+        _logger.debug(
+            f"Num log lines sent on success = {self.num_log_lines_sent_on_success}"
+        )
+        _logger.debug(f"Max log line length = {self.max_log_line_length}")
+        _logger.debug(
+            f"Merge stdout and stderr logs = {self.merge_stdout_and_stderr_logs}"
+        )
+        _logger.debug(f"Ignore stdout = {self.ignore_stdout}")
+        _logger.debug(f"Ignore stderr = {self.ignore_stderr}")
 
         if self.rollbar_access_token:
             if self.log_secrets:
@@ -1347,14 +1381,6 @@ class ProcWrapperParams(ConfigResolverParams):
         ).upper()
 
     def _override_immutable_from_env(self, env: dict[str, str]) -> None:
-        self.include_timestamps_in_log = (
-            string_to_bool(
-                env.get("PROC_WRAPPER_INCLUDE_TIMESTAMPS_IN_LOG"),
-                default_value=self.include_timestamps_in_log,
-            )
-            or False
-        )
-
         self.offline_mode = (
             string_to_bool(
                 env.get("PROC_WRAPPER_OFFLINE_MODE"), default_value=self.offline_mode
@@ -1369,8 +1395,6 @@ class ProcWrapperParams(ConfigResolverParams):
             )
             or False
         )
-
-        self.deployment = env.get("PROC_WRAPPER_DEPLOYMENT", self.deployment)
 
         self.task_version_number = coalesce(
             string_to_int(env.get("PROC_WRAPPER_TASK_VERSION_NUMBER")),
@@ -1393,6 +1417,47 @@ class ProcWrapperParams(ConfigResolverParams):
             self.deployment_task_execution_uuid,
         )
 
+        self.include_timestamps_in_log = (
+            string_to_bool(
+                env.get("PROC_WRAPPER_INCLUDE_TIMESTAMPS_IN_LOG"),
+                default_value=self.include_timestamps_in_log,
+            )
+            or False
+        )
+
+        self.input_env_var_name = coalesce(
+            env.get("PROC_WRAPPER_INPUT_ENV_VAR_NAME"), self.input_env_var_name
+        )
+
+        self.input_filename = coalesce(
+            env.get("PROC_WRAPPER_INPUT_FILENAME"), self.input_filename
+        )
+
+        self.input_value_format = coalesce(
+            env.get("PROC_WRAPPER_INPUT_VALUE_FORMAT"), self.input_value_format
+        )
+
+        self.log_input_value = cast(
+            bool,
+            string_to_bool(
+                env.get("PROC_WRAPPER_LOG_INPUT_VALUE"),
+                default_value=self.log_input_value,
+            ),
+        )
+
+        self.cleanup_input_file = cast(
+            bool,
+            string_to_bool(
+                env.get("PROC_WRAPPER_CLEANUP_INPUT_FILE"),
+                default_value=self.cleanup_input_file,
+            ),
+        )
+
+        if self.offline_mode:
+            return
+
+        self.deployment = env.get("PROC_WRAPPER_DEPLOYMENT", self.deployment)
+
         task_overrides_str = env.get("PROC_WRAPPER_AUTO_CREATE_TASK_PROPS")
         if task_overrides_str:
             try:
@@ -1414,9 +1479,6 @@ class ProcWrapperParams(ConfigResolverParams):
         self.task_name = env.get(
             "PROC_WRAPPER_TASK_NAME", auto_create_task_props.get("name", self.task_name)
         )
-
-        if self.offline_mode:
-            return
 
         max_concurrency = string_to_int(
             env.get("PROC_WRAPPER_TASK_MAX_CONCURRENCY"), negative_value=-1
@@ -1525,34 +1587,6 @@ class ProcWrapperParams(ConfigResolverParams):
             )
         )
 
-        self.input_env_var_name = coalesce(
-            env.get("PROC_WRAPPER_INPUT_ENV_VAR_NAME"), self.input_env_var_name
-        )
-
-        self.input_filename = coalesce(
-            env.get("PROC_WRAPPER_INPUT_FILENAME"), self.input_filename
-        )
-
-        self.input_value_format = coalesce(
-            env.get("PROC_WRAPPER_INPUT_VALUE_FORMAT"), self.input_value_format
-        )
-
-        self.log_input_value = cast(
-            bool,
-            string_to_bool(
-                env.get("PROC_WRAPPER_LOG_INPUT_VALUE"),
-                default_value=self.log_input_value,
-            ),
-        )
-
-        self.cleanup_input_file = cast(
-            bool,
-            string_to_bool(
-                env.get("PROC_WRAPPER_CLEANUP_INPUT_FILE"),
-                default_value=self.cleanup_input_file,
-            ),
-        )
-
         self.result_filename = coalesce(
             env.get("PROC_WRAPPER_RESULT_FILENAME"), self.result_filename
         )
@@ -1575,6 +1609,68 @@ class ProcWrapperParams(ConfigResolverParams):
                 env.get("PROC_WRAPPER_CLEANUP_RESULT_FILE"),
                 default_value=self.cleanup_result_file,
             ),
+        )
+
+        self.num_log_lines_sent_on_failure = (
+            string_to_int(
+                env.get("PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE"),
+                default_value=self.num_log_lines_sent_on_failure,
+            )
+            or 0
+        )
+
+        self.num_log_lines_sent_on_timeout = (
+            string_to_int(
+                env.get("PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_TIMEOUT"),
+                default_value=self.num_log_lines_sent_on_timeout,
+            )
+            or 0
+        )
+
+        self.num_log_lines_sent_on_success = (
+            string_to_int(
+                env.get("PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_SUCCESS"),
+                default_value=self.num_log_lines_sent_on_success,
+            )
+            or 0
+        )
+
+        # Future use, if we want to log lines sent on heartbeat
+        # self.num_log_lines_sent_on_heartbeat = string_to_int(
+        #     env.get("PROC_WRAPPER_LOG_LINES_SENT_ON_HEARTBEAT"),
+        #     default_value=self.num_log_lines_sent_on_heartbeat,
+        # ) or 0
+
+        self.max_log_line_length = (
+            string_to_int(
+                env.get("PROC_WRAPPER_MAX_LOG_LINE_LENGTH"),
+                default_value=self.max_log_line_length,
+            )
+            or 0
+        )
+
+        self.merge_stdout_and_stderr_logs = (
+            string_to_bool(
+                env.get("PROC_WRAPPER_MERGE_STDOUT_AND_STDERR_LOGS"),
+                default_value=self.merge_stdout_and_stderr_logs,
+            )
+            or False
+        )
+
+        self.ignore_stdout = (
+            string_to_bool(
+                env.get("PROC_WRAPPER_IGNORE_STDOUT"),
+                default_value=self.ignore_stdout,
+            )
+            or False
+        )
+
+        self.ignore_stderr = (
+            string_to_bool(
+                env.get("PROC_WRAPPER_IGNORE_STDERR"),
+                default_value=self.ignore_stderr,
+            )
+            or False
         )
 
         # Properties to be reported to CloudReactor
@@ -2305,7 +2401,60 @@ parameter is omitted, the result file will be deleted.""",
 Exclude timestamps in log (possibly because the log stream will be enriched by
 timestamps automatically by a logging service like AWS CloudWatch Logs)""",
     )
-
+    log_group.add_argument(
+        "--num-log-lines-sent-on-failure",
+        default=0,
+        help="""
+The number of trailing log lines to send to the API server if the Task
+Execution fails. Defaults to 0 (no log lines are sent).""",
+    )
+    log_group.add_argument(
+        "--num-log-lines-sent-on-timeout",
+        default=0,
+        help="""
+The number of trailing log lines to send to the API server if the Task Execution
+fails. Defaults to 0 (no log lines are sent).""",
+    )
+    log_group.add_argument(
+        "--num-log-lines-sent-on-success",
+        default=0,
+        help="""
+The number of trailing log lines to send to the API server if the Task Execution
+succeeds. Defaults to 0 (no log lines are sent).""",
+    )
+    # Future use, if we want to log lines sent on heartbeat
+    #     log_group.add_argument(
+    #         "--log-lines-sent-on-heartbeat",
+    #         default=0,
+    #         help="""
+    # The number of trailing log lines to send to the API server when sending
+    # heartbeats. Defaults to 0 (no log lines are sent).""",
+    #     )
+    log_group.add_argument(
+        "--max-log-line-length",
+        default=DEFAULT_MAX_LOG_LINE_LENGTH,
+        help=f"""
+The maximum number of characters in a saved log line. If a line is longer than
+this value, it will be truncated. Defaults to {DEFAULT_MAX_LOG_LINE_LENGTH}.""",
+    )
+    log_group.add_argument(
+        "--separate-stdout-and-stderr-logs",
+        action="store_false",
+        dest="merge_stdout_and_stderr_logs",
+        help="""
+Separate stdout and stderr streams when reporting log lines. Otherwise, the
+streams are merged into the stdout stream.""",
+    )
+    log_group.add_argument(
+        "--ignore-stdout",
+        action="store_true",
+        help="""Do send stdout log lines to the API server""",
+    )
+    log_group.add_argument(
+        "--ignore-stderr",
+        action="store_true",
+        help="""Do send stderr log lines to the API server""",
+    )
     process_group = parser.add_argument_group("process", "Process settings")
     process_group.add_argument(
         "-w",

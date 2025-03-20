@@ -592,6 +592,78 @@ def test_wrapped_mode_with_server(
                 assert not os.path.exists(result_filename)
 
 
+@pytest.mark.parametrize(
+    """
+    env_override, command,
+    expected_debug_log_tail, expected_error_log_tail
+    """,
+    [
+        ({"PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_SUCCESS": "2"}, "echo hi", "hi", None),
+        (
+            {"PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE": "2"},
+            "ls notafile",
+            "notafile",
+            None,
+        ),
+        (
+            {"PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE": "2"},
+            "echo aya; echo bus; echo cab; badcmd",
+            "cab",
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE": "2",
+                "PROC_WRAPPER_MERGE_STDOUT_AND_STDERR_LOGS": "0",
+            },
+            "ls notafile",
+            None,
+            "notafile",
+        ),
+        (
+            {
+                "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": "2",
+                "PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_TIMEOUT": "2",
+            },
+            "echo agh; sleep 5;",
+            "agh",
+            None,
+        ),
+    ],
+)
+def test_wrapped_mode_with_logs_sent_to_server(
+    httpserver: HTTPServer,
+    env_override: dict[str, str],
+    command: Optional[str],
+    expected_debug_log_tail: Optional[str],
+    expected_error_log_tail: Optional[str],
+) -> None:
+    env = make_online_base_env(httpserver.port, command=command)
+    env.update(env_override)
+
+    wrapper = make_wrapped_mode_proc_wrapper(env=env)
+
+    expect_task_execution_request(httpserver=httpserver, update=False)
+
+    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+
+    wrapper.run()
+
+    httpserver.check_assertions()
+
+    urd = fetch_update_request_data()
+
+    if expected_debug_log_tail:
+        assert urd["debug_log_tail"].index(expected_debug_log_tail) >= 0
+    else:
+        assert "debug_log_tail" not in urd
+
+    if expected_error_log_tail:
+        assert urd["error_log_tail"].index(expected_error_log_tail) >= 0
+    else:
+        assert "error_log_tail" not in urd
+
+
 TEST_DATETIME = datetime(2021, 8, 16, 14, 26, 54, tzinfo=timezone.utc)
 
 
@@ -964,6 +1036,7 @@ def callback_with_env_in_config(
 def test_env_pass_through():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override["ANOTHER_ENV"] = "250"
+    env_override["PROC_WRAPPER_OFFLINE_MODE"] = "1"
 
     wrapper = ProcWrapper(env_override=env_override)
     process_env = wrapper.make_process_env()
