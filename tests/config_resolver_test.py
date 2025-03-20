@@ -141,6 +141,7 @@ def put_aws_s3_file(
     return f"arn:aws:s3:::bucket/{name}"
 
 
+@mock_aws
 def test_env_in_aws_secrets_manager():
     # Disable botocore DEBUG logging because it leaks secrets
     logging.getLogger("botocore").setLevel(logging.INFO)
@@ -149,25 +150,24 @@ def test_env_in_aws_secrets_manager():
 
     params = ConfigResolverParams()
 
-    with mock_aws():
-        sm = boto3.client("secretsmanager", region_name=SECRETS_AWS_REGION)
-        secret_arn = put_aws_sm_secret(
-            sm,
-            "envs",
-            """
-            USERNAME=theuser
-            PASSWORD=thepass
-        """,
-        )
+    sm = boto3.client("secretsmanager", region_name=SECRETS_AWS_REGION)
+    secret_arn = put_aws_sm_secret(
+        sm,
+        "envs",
+        """
+        USERNAME=theuser
+        PASSWORD=thepass
+    """,
+    )
 
-        params.env_locations = [secret_arn]
+    params.env_locations = [secret_arn]
 
-        resolver = ConfigResolver(params=params, env_override=env_override)
+    resolver = ConfigResolver(params=params, env_override=env_override)
 
-        resolved_env, bad_vars = resolver.fetch_and_resolve_env()
-        assert resolved_env["USERNAME"] == "theuser"
-        assert resolved_env["PASSWORD"] == "thepass"
-        assert bad_vars == []
+    resolved_env, bad_vars = resolver.fetch_and_resolve_env()
+    assert resolved_env["USERNAME"] == "theuser"
+    assert resolved_env["PASSWORD"] == "thepass"
+    assert bad_vars == []
 
 
 def make_ssm_location(ssm_id: str, name: str, location_type: str) -> str:
@@ -190,6 +190,7 @@ def make_ssm_location(ssm_id: str, name: str, location_type: str) -> str:
         LOCATION_TYPE_ARN,
     ],
 )
+@mock_aws
 def test_env_in_aws_parameter_store(location_type: str):
     # Disable botocore DEBUG logging because it leaks secrets
     logging.getLogger("botocore").setLevel(logging.INFO)
@@ -200,28 +201,25 @@ def test_env_in_aws_parameter_store(location_type: str):
 
     name = "/a/b/envs"
 
-    with mock_aws():
-        ssm = boto3.client(service_name="ssm", region_name=SECRETS_AWS_REGION)
-        ssm_id = put_aws_ssm_secret(
-            ssm_client=ssm,
-            name=name,
-            value="""
-            USERNAME=theuser
-            PASSWORD=thepass
-        """,
-        )
+    ssm = boto3.client(service_name="ssm", region_name=SECRETS_AWS_REGION)
+    ssm_id = put_aws_ssm_secret(
+        ssm_client=ssm,
+        name=name,
+        value="""
+        USERNAME=theuser
+        PASSWORD=thepass
+    """,
+    )
 
-        location = make_ssm_location(
-            ssm_id=ssm_id, name=name, location_type=location_type
-        )
-        params.env_locations = [location]
+    location = make_ssm_location(ssm_id=ssm_id, name=name, location_type=location_type)
+    params.env_locations = [location]
 
-        resolver = ConfigResolver(params=params, env_override=env_override)
+    resolver = ConfigResolver(params=params, env_override=env_override)
 
-        resolved_env, bad_vars = resolver.fetch_and_resolve_env()
-        assert resolved_env["USERNAME"] == "theuser"
-        assert resolved_env["PASSWORD"] == "thepass"
-        assert bad_vars == []
+    resolved_env, bad_vars = resolver.fetch_and_resolve_env()
+    assert resolved_env["USERNAME"] == "theuser"
+    assert resolved_env["PASSWORD"] == "thepass"
+    assert bad_vars == []
 
 
 @pytest.mark.parametrize(
@@ -233,6 +231,7 @@ def test_env_in_aws_parameter_store(location_type: str):
         LOCATION_TYPE_ARN,
     ],
 )
+@mock_aws
 def test_string_list_in_aws_parameter_store(location_type: str):
     # Disable botocore DEBUG logging because it leaks secrets
     logging.getLogger("botocore").setLevel(logging.INFO)
@@ -241,31 +240,29 @@ def test_string_list_in_aws_parameter_store(location_type: str):
 
     params = ConfigResolverParams()
 
-    with mock_aws():
-        ssm = boto3.client(service_name="ssm", region_name=SECRETS_AWS_REGION)
-        name = "/prod/hosts"
-        ssm_id = put_aws_ssm_secret(
-            ssm_client=ssm, name=name, value="""host1,host2""", typ="StringList"
-        )
+    ssm = boto3.client(service_name="ssm", region_name=SECRETS_AWS_REGION)
+    name = "/prod/hosts"
+    ssm_id = put_aws_ssm_secret(
+        ssm_client=ssm, name=name, value="""host1,host2""", typ="StringList"
+    )
 
-        # Test with and without the version suffix
-        location = make_ssm_location(
-            ssm_id=ssm_id, name=name, location_type=location_type
-        )
+    # Test with and without the version suffix
+    location = make_ssm_location(ssm_id=ssm_id, name=name, location_type=location_type)
 
-        params.initial_config = {"hosts__to_resolve": location}
+    params.initial_config = {"hosts__to_resolve": location}
 
-        resolver = ConfigResolver(params=params, env_override=env_override)
+    resolver = ConfigResolver(params=params, env_override=env_override)
 
-        resolved_config, bad = resolver.fetch_and_resolve_config()
+    resolved_config, bad = resolver.fetch_and_resolve_config()
 
-        hosts = resolved_config.get("hosts")
-        expected_hosts = ["host1", "host2"]
-        assert hosts == expected_hosts
-        assert len(bad) == 0
+    hosts = resolved_config.get("hosts")
+    expected_hosts = ["host1", "host2"]
+    assert hosts == expected_hosts
+    assert len(bad) == 0
 
 
 @pytest.mark.skip(reason="moto does not support AWS AppConfig yet")
+@mock_aws
 def test_json_in_aws_app_config():
     # Disable botocore DEBUG logging because it leaks secrets
     logging.getLogger("botocore").setLevel(logging.INFO)
@@ -274,84 +271,83 @@ def test_json_in_aws_app_config():
 
     params = ConfigResolverParams()
 
-    with mock_aws():
-        app_config = boto3.client("appconfig")
+    app_config = boto3.client("appconfig")
 
-        response = app_config.create_application(Name="myapp")
-        app_id = response["Id"]
+    response = app_config.create_application(Name="myapp")
+    app_id = response["Id"]
 
-        response = app_config.create_environment(
-            ApplicationId=app_id,
-            Name="staging",
-        )
-        env_id = response["Id"]
+    response = app_config.create_environment(
+        ApplicationId=app_id,
+        Name="staging",
+    )
+    env_id = response["Id"]
 
-        response = app_config.create_configuration_profile(
-            ApplicationId=app_id,
-            Name="myconfig",
-            LocationUri="hosted",
-            Type="AWS.FreeForm",
-        )
+    response = app_config.create_configuration_profile(
+        ApplicationId=app_id,
+        Name="myconfig",
+        LocationUri="hosted",
+        Type="AWS.FreeForm",
+    )
 
-        profile_id = response["Id"]
+    profile_id = response["Id"]
 
-        response = app_config.create_hosted_configuration_version(
-            ApplicationId=app_id,
-            ConfigurationProfileId=profile_id,
-            Content=json.dumps(
-                {
-                    "username": "theuser",
-                    "password": "thepass",
-                }
-            ),
-            ContentType="application/json",
-            VersionLabel="v1.0.0",
-        )
+    response = app_config.create_hosted_configuration_version(
+        ApplicationId=app_id,
+        ConfigurationProfileId=profile_id,
+        Content=json.dumps(
+            {
+                "username": "theuser",
+                "password": "thepass",
+            }
+        ),
+        ContentType="application/json",
+        VersionLabel="v1.0.0",
+    )
 
-        response = app_config.create_deployment_strategy(
-            Name="mystrategy",
-            DeploymentDurationInMinutes=1,
-            GrowthFactor=100.0,
-        )
+    response = app_config.create_deployment_strategy(
+        Name="mystrategy",
+        DeploymentDurationInMinutes=1,
+        GrowthFactor=100.0,
+    )
 
-        strategy_id = response["Id"]
+    strategy_id = response["Id"]
 
-        response = app_config.start_deployment(
+    response = app_config.start_deployment(
+        ApplicationId=app_id,
+        EnvironmentId=env_id,
+        DeploymentStrategyId=strategy_id,
+        ConfigurationProfileId=profile_id,
+        ConfigurationVersion="1",
+    )
+
+    deployment_number = response["DeploymentNumber"]
+
+    deployed = False
+
+    while not deployed:
+        response = app_config.get_deployment(
             ApplicationId=app_id,
             EnvironmentId=env_id,
-            DeploymentStrategyId=strategy_id,
-            ConfigurationProfileId=profile_id,
-            ConfigurationVersion="1",
+            DeploymentNumber=deployment_number,
         )
 
-        deployment_number = response["DeploymentNumber"]
+        state = response["State"]
+        deployed = state == "DEPLOYED"
 
-        deployed = False
+        if deployed:
+            print("Deployed AppConfig data")
+        else:
+            print(f"Waiting for AppConfig data to be deployed, {state=}")
+            time.sleep(5)
 
-        while not deployed:
-            response = app_config.get_deployment(
-                ApplicationId=app_id,
-                EnvironmentId=env_id,
-                DeploymentNumber=deployment_number,
-            )
+    params.env_locations = ["aws:appconfig:myapp/staging/myconfig"]
 
-            state = response["State"]
-            deployed = state == "DEPLOYED"
+    resolver = ConfigResolver(params=params, env_override=env_override)
 
-            if deployed:
-                print("Deployed AppConfig data")
-            else:
-                print(f"Waiting for AppConfig data to be deployed, {state=}")
-                time.sleep(5)
-
-        params.env_locations = ["aws:appconfig:myapp/staging/myconfig"]
-
-        resolver = ConfigResolver(params=params, env_override=env_override)
-
-        resolved_config, bad_vars = resolver.fetch_and_resolve_config()
-        assert resolved_config["username"] == "theuser"
-        assert resolved_config["password"] == "thepass"
-        assert bad_vars == []
+    resolved_config, bad_vars = resolver.fetch_and_resolve_config()
+    assert resolved_config["username"] == "theuser"
+    assert resolved_config["password"] == "thepass"
+    assert bad_vars == []
 
 
 @pytest.mark.parametrize(
@@ -367,6 +363,7 @@ def test_json_in_aws_app_config():
         (None, None, "text/x-yaml"),
     ],
 )
+@mock_aws
 def test_yaml_config_in_aws_s3(
     format_method_suffix: Optional[str],
     extension: Optional[str],
@@ -385,31 +382,28 @@ def test_yaml_config_in_aws_s3(
 
     params = ConfigResolverParams()
 
-    with mock_aws():
-        s3_client = boto3.client("s3", region_name="us-east-2")
+    s3_client = boto3.client("s3", region_name="us-east-2")
 
-        name = "db"
+    name = "db"
 
-        if extension:
-            name += "." + extension
+    if extension:
+        name += "." + extension
 
-        s3_arn = put_aws_s3_file(
-            s3_client, name, yaml_string, content_type=content_type
-        )
+    s3_arn = put_aws_s3_file(s3_client, name, yaml_string, content_type=content_type)
 
-        location = s3_arn
+    location = s3_arn
 
-        if format_method_suffix:
-            location = s3_arn + "!" + format_method_suffix
+    if format_method_suffix:
+        location = s3_arn + "!" + format_method_suffix
 
-        params.config_locations = [location]
+    params.config_locations = [location]
 
-        resolver = ConfigResolver(params=params, env_override=env_override)
+    resolver = ConfigResolver(params=params, env_override=env_override)
 
-        resolved_config, bad_vars = resolver.fetch_and_resolve_config()
-        assert resolved_config["db"]["username"] == "yuser"
-        assert resolved_config["db"]["password"] == "ypw"
-        assert bad_vars == []
+    resolved_config, bad_vars = resolver.fetch_and_resolve_config()
+    assert resolved_config["db"]["username"] == "yuser"
+    assert resolved_config["db"]["password"] == "ypw"
+    assert bad_vars == []
 
     # Test one more with S3 support to check caching
     resolved_config, bad_vars = resolver.fetch_and_resolve_config()
@@ -474,25 +468,25 @@ def test_env_merging(merge_strategy: str, dimensions: dict[str, Any]):
 
 
 @pytest.mark.parametrize("prefix", ["AWS_SM_", ""])
+@mock_aws
 def test_resolve_env_with_aws_secrets_manager(prefix: str):
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     params = ConfigResolverParams()
 
-    with mock_aws():
-        sm = boto3.client("secretsmanager", region_name="us-east-2")
-        secret_arn = put_aws_sm_secret(sm, "mypass", "Secret PW")
+    sm = boto3.client("secretsmanager", region_name="us-east-2")
+    secret_arn = put_aws_sm_secret(sm, "mypass", "Secret PW")
 
-        env_override[prefix + "SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE"] = secret_arn
+    env_override[prefix + "SOME_ENV_FOR_PROC_WRAPPER_TO_RESOLVE"] = secret_arn
 
-        secret_arn = put_aws_sm_secret(sm, "anotherpass", "Secret PW 2")
+    secret_arn = put_aws_sm_secret(sm, "anotherpass", "Secret PW 2")
 
-        env_override[prefix + "ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE"] = secret_arn
+    env_override[prefix + "ANOTHER_ENV_FOR_PROC_WRAPPER_TO_RESOLVE"] = secret_arn
 
-        resolver = ConfigResolver(params=params, env_override=env_override)
-        resolved_env, bad_vars = resolver.fetch_and_resolve_env()
-        assert resolved_env["SOME_ENV"] == "Secret PW"
-        assert resolved_env["ANOTHER_ENV"] == "Secret PW 2"
-        assert bad_vars == []
+    resolver = ConfigResolver(params=params, env_override=env_override)
+    resolved_env, bad_vars = resolver.fetch_and_resolve_env()
+    assert resolved_env["SOME_ENV"] == "Secret PW"
+    assert resolved_env["ANOTHER_ENV"] == "Secret PW 2"
+    assert bad_vars == []
 
 
 def test_resolve_env_with_env_reference():

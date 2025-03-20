@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 import pytest
+from moto import mock_aws
 from pytest_httpserver import HTTPServer
 
 from proc_wrapper import DefaultRuntimeMetadataFetcher, ProcWrapperParams
@@ -28,6 +29,7 @@ from .test_commons import (
         ("nginx-curl", 0, 255),
     ],
 )
+@mock_aws
 def test_aws_ecs_runtime_metadata(
     main_container_name: Optional[str],
     current_container_index: int,
@@ -211,6 +213,7 @@ def test_aws_ecs_runtime_metadata(
         )
 
 
+@mock_aws
 def test_aws_lambda_runtime_metadata():
     env = make_fake_aws_lambda_env()
     context = FakeAwsLambdaContext()
@@ -270,6 +273,7 @@ def test_aws_lambda_runtime_metadata():
     assert metadata.is_execution_status_source is False
 
 
+@mock_aws
 def test_aws_codebuild_runtime_metadata():
     env = make_fake_aws_codebuild_env()
 
