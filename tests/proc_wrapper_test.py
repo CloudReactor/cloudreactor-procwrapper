@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import platform
 import random
@@ -803,7 +804,7 @@ def test_embedded_mode_with_server(
         assert should_succeed
     except RuntimeError as err:
         assert not should_succeed
-        assert str(err).find("you failed") >= 0
+        assert "you failed" in str(err)
     except Exception as ex:
         print(ex)
         assert False
@@ -1023,6 +1024,66 @@ def test_embedded_mode_with_sampling(
     else:
         assert not fail
         assert rv == "superduper"
+
+    httpserver.check_assertions()
+
+
+def bad_callback_with_logging(
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, str]
+) -> str:
+    logger = logging.getLogger("proc_wrapper_test")
+
+    logger.info("This should be truncated")
+    logger.info("This is an info message")
+    logger.error("This is an error message")
+    logger.debug("This is an debug message")
+    logger.error("This is another error message")
+
+    raise RuntimeError("Nope!")
+
+
+def test_embedded_mode_with_log_capture(httpserver: HTTPServer):
+    params = make_online_params(httpserver.port)
+    params.process_max_retries = 0
+    params.num_log_lines_sent_on_failure = 3
+
+    wrapper = ProcWrapper(params=params)
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
+    )
+
+    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+
+    logger = logging.getLogger("proc_wrapper_test")
+    logger.setLevel(logging.INFO)
+    log_handler = wrapper.get_embedded_logging_handler()
+    log_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(log_handler)
+
+    expect_task_execution_request(httpserver=httpserver, update=False)
+
+    cb = bad_callback_with_logging
+    try:
+        wrapper.managed_call(cb, "duper")
+    except RuntimeError:
+        pass
+    else:
+        assert False
+
+    crd = fetch_creation_request_data()
+    assert crd["num_log_lines_sent_on_failure"] == 3
+
+    urd = fetch_update_request_data()
+    log_tail = urd.get("debug_log_tail")
+
+    assert log_tail is not None
+    assert "truncated" not in log_tail
+    assert "an info message\n" in log_tail
+    assert "debug message" not in log_tail
+    assert "another error message" in log_tail
 
     httpserver.check_assertions()
 

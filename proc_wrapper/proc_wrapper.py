@@ -54,6 +54,7 @@ from .common_utils import (
     parse_data_string,
     string_to_bool,
     stringify_value,
+    truncate,
     write_data_to_file,
 )
 from .config_resolver import ConfigResolver
@@ -99,17 +100,12 @@ def _tee_log_stream(
     for line in iter(process_stream.readline, None):
         if line:
             sys_stream.write(line)
-            truncated = (
-                (line[: (max_line_length - 3)] + "...")
-                if len(line) > max_line_length
-                else line
-            )
-            line_queue.append(truncated)
+            line_queue.append(truncate(line, max_line_length))
         else:
             return
 
 
-def _extract_log_lines(line_queue: deque[str], max_lines: int) -> str:
+def _extract_log_lines(line_queue: deque[str], max_lines: int, separator: str) -> str:
     """
     Extract log lines from the queue, up to a maximum number of lines.
     """
@@ -124,11 +120,30 @@ def _extract_log_lines(line_queue: deque[str], max_lines: int) -> str:
             # Just in case we have fewer lines than expected
             break
 
-    rv = "".join(line_queue)
+    rv = separator.join(line_queue)
 
     line_queue.clear()
 
     return rv
+
+
+class DequeLoggingHandler(logging.Handler):
+    def __init__(self, dq: deque[str], max_line_length: int) -> None:
+        """
+        Initialize the logging handler with a deque to store log messages.
+        """
+        super().__init__()
+        self.dq = dq
+        self.max_line_length = max_line_length
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """
+        Emit a log record to the deque.
+        """
+        # This method is called by the logging framework when a log record is created.
+        # We append the formatted log message to the deque.
+        line = self.format(record)
+        self.dq.append(truncate(line, self.max_line_length))
 
 
 class ProcWrapper:
@@ -273,6 +288,7 @@ class ProcWrapper:
         self.stderr_log_line_deque: Optional[deque[str]] = None
         self.stdout_reader_thread: Optional[threading.Thread] = None
         self.stderr_reader_thread: Optional[threading.Thread] = None
+        self.embedded_logging_handler: Optional[logging.Handler] = None
 
         self.resolved_env: dict[str, str] = self.env
         self.failed_env_names: list[str] = []
@@ -367,6 +383,33 @@ class ProcWrapper:
             _logger.debug("Successfully installed exit handler and signal handler")
         else:
             _logger.debug("Skipping installation of exit handler and signal handler")
+
+    def get_embedded_logging_handler(self) -> logging.Handler:
+        """
+        Create a logging handler for the embedded mode.
+        """
+        if not self.params.embedded_mode:
+            raise RuntimeError("Not in embedded mode")
+
+        if self.embedded_logging_handler:
+            return self.embedded_logging_handler
+
+        buffer_size = self.params.log_buffer_size()
+
+        if buffer_size <= 0:
+            return logging.NullHandler()
+
+        dq: deque[str] = deque(maxlen=buffer_size)
+
+        if self.params.merge_stdout_and_stderr_logs:
+            self.stdout_log_line_deque = dq
+        else:
+            self.stderr_log_line_deque = dq
+
+        self.embedded_logging_handler = DequeLoggingHandler(
+            dq=dq, max_line_length=self.params.max_log_line_length
+        )
+        return self.embedded_logging_handler
 
     def log_configuration(self, initial: bool = False) -> None:
         if initial:
@@ -1413,17 +1456,8 @@ class ProcWrapper:
         if self.offline_mode:
             _logger.info("Not opening status socket or saving logs.")
         else:
-            num_lines = max(
-                self.params.num_log_lines_sent_on_failure,
-                self.params.num_log_lines_sent_on_timeout,
-                self.params.num_log_lines_sent_on_success,
-            )
-
-            if (
-                (num_lines > 0)
-                and (self.params.max_log_line_length > 0)
-                and not (self.params.ignore_stdout and self.params.ignore_stderr)
-            ):
+            num_lines = self.params.log_buffer_size()
+            if num_lines > 0:
                 if not self.params.ignore_stdout:
                     self.stdout_log_line_deque = deque(maxlen=num_lines)
                     popen_stdout = subprocess.PIPE
@@ -2176,14 +2210,19 @@ class ProcWrapper:
             num_log_lines = self.params.num_log_lines_sent_on_timeout
 
         if num_log_lines > 0:
+            separator = "\n" if self.params.embedded_mode else ""
             if self.stdout_log_line_deque and (self.stdout_reader_thread is None):
                 body["debug_log_tail"] = _extract_log_lines(
-                    line_queue=self.stdout_log_line_deque, max_lines=num_log_lines
+                    line_queue=self.stdout_log_line_deque,
+                    max_lines=num_log_lines,
+                    separator=separator,
                 )
 
             if self.stderr_log_line_deque and (self.stderr_reader_thread is None):
                 body["error_log_tail"] = _extract_log_lines(
-                    line_queue=self.stderr_log_line_deque, max_lines=num_log_lines
+                    line_queue=self.stderr_log_line_deque,
+                    max_lines=num_log_lines,
+                    separator=separator,
                 )
 
         return body

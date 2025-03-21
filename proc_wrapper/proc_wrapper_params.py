@@ -1380,6 +1380,21 @@ class ProcWrapperParams(ConfigResolverParams):
             self.prevent_offline_execution
         ).upper()
 
+    def log_buffer_size(self) -> int:
+        """
+        Returns required number of lines in the log buffer.
+        """
+        if (self.max_log_line_length <= 0) or (
+            self.ignore_stdout and self.ignore_stderr
+        ):
+            return 0
+
+        return max(
+            self.num_log_lines_sent_on_failure,
+            self.num_log_lines_sent_on_timeout,
+            self.num_log_lines_sent_on_success,
+        )
+
     def _override_immutable_from_env(self, env: dict[str, str]) -> None:
         self.offline_mode = (
             string_to_bool(

@@ -101,6 +101,10 @@ def strip_after(s: str, partial_suffix: str) -> tuple[str, Optional[str]]:
     return (s, None)
 
 
+def truncate(s: str, max_length: int) -> str:
+    return (s[: (max_length - 3)] + "...") if len(s) > max_length else s
+
+
 def safe_get(
     obj: Any, prop_name: str, default_value: Optional[Any] = None
 ) -> Optional[Any]:
