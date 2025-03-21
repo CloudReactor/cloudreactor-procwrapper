@@ -12,4 +12,5 @@ then
 fi
 
 export PROC_WRAPPER_TASK_COMMAND="$CMD"
+export PROC_WRAPPER_LOG_LEVEL=DEBUG
 exec poetry run proc_wrapper --log-secrets -e $SCRIPT_ABS_DIR/common.env -e $SCRIPT_ABS_DIR/secret.env
