@@ -842,13 +842,11 @@ class ProcWrapper:
                     self.params.api_request_timeout, empty_value=-1
                 ),
                 "status_update_interval_seconds": encode_int(
-                    self.params.status_update_interval, empty_value=-1
+                    self.params.status_update_interval
                 ),
-                "status_update_port": encode_int(
-                    self.params.status_update_socket_port, empty_value=-1
-                ),
+                "status_update_port": encode_int(self.params.status_update_socket_port),
                 "status_update_message_max_bytes": encode_int(
-                    self.params.status_update_message_max_bytes, empty_value=-1
+                    self.params.status_update_message_max_bytes
                 ),
                 "num_log_lines_sent_on_failure": self.params.num_log_lines_sent_on_failure,
                 "num_log_lines_sent_on_timeout": self.params.num_log_lines_sent_on_timeout,
