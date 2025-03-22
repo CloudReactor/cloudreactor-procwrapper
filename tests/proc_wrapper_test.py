@@ -1042,10 +1042,19 @@ def bad_callback_with_logging(
     raise RuntimeError("Nope!")
 
 
-def test_embedded_mode_with_log_capture(httpserver: HTTPServer):
+@pytest.mark.parametrize(
+    """
+    merge_stdout_and_stderr_logs
+    """,
+    [(True), (False)],
+)
+def test_embedded_mode_with_log_capture(
+    merge_stdout_and_stderr_logs: bool, httpserver: HTTPServer
+):
     params = make_online_params(httpserver.port)
     params.process_max_retries = 0
     params.num_log_lines_sent_on_failure = 3
+    params.merge_stdout_and_stderr_logs = merge_stdout_and_stderr_logs
 
     wrapper = ProcWrapper(params=params)
 
@@ -1077,13 +1086,58 @@ def test_embedded_mode_with_log_capture(httpserver: HTTPServer):
     assert crd["num_log_lines_sent_on_failure"] == 3
 
     urd = fetch_update_request_data()
-    log_tail = urd.get("debug_log_tail")
+    tail_prop = "debug_log_tail" if merge_stdout_and_stderr_logs else "error_log_tail"
+    log_tail = urd.get(tail_prop)
 
     assert log_tail is not None
     assert "truncated" not in log_tail
     assert "an info message\n" in log_tail
     assert "debug message" not in log_tail
     assert "another error message" in log_tail
+
+    httpserver.check_assertions()
+
+
+def callback_with_debug_output(
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, str]
+) -> str:
+    wrapper.debug_output("Line one")
+    wrapper.debug_output("Line two")
+    wrapper.debug_output("Line three")
+    wrapper.debug_output("Line four")
+
+    return "yes"
+
+
+def test_embedded_mode_with_debug_log_capture(httpserver: HTTPServer):
+    params = make_online_params(httpserver.port)
+    params.process_max_retries = 0
+    params.num_log_lines_sent_on_success = 3
+
+    wrapper = ProcWrapper(params=params)
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
+    )
+
+    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+
+    expect_task_execution_request(httpserver=httpserver, update=False)
+
+    cb = callback_with_debug_output
+
+    assert wrapper.managed_call(cb, "duper") == "yes"
+
+    crd = fetch_creation_request_data()
+    assert crd["num_log_lines_sent_on_success"] == 3
+
+    urd = fetch_update_request_data()
+    log_tail = urd.get("debug_log_tail")
+
+    assert log_tail is not None
+    assert "one" not in log_tail
+    assert "Line two\n" in log_tail
+    assert "Line four" in log_tail
 
     httpserver.check_assertions()
 

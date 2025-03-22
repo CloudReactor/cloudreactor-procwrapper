@@ -411,6 +411,21 @@ class ProcWrapper:
         )
         return self.embedded_logging_handler
 
+    def debug_output(self, msg: str) -> None:
+        """
+        Add a message to the debug log.
+        """
+        if self.stdout_log_line_deque is None:
+            buffer_size = self.params.log_buffer_size()
+            if buffer_size <= 0:
+                return
+
+            self.stdout_log_line_deque = deque(maxlen=buffer_size)
+
+        self.stdout_log_line_deque.append(
+            truncate(msg, self.params.max_log_line_length)
+        )
+
     def log_configuration(self, initial: bool = False) -> None:
         if initial:
             _logger.info(f"Wrapper version = {ProcWrapper.VERSION}")
