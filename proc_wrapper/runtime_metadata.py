@@ -1004,7 +1004,7 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "public_ipv4s": "public_ip_v4_addresses",
         "ipv6s": "ip_v6_addresses",
         "subnet_ipv4_cidr_block": "ip_v4_subnet_cidr_block",
-        "subnet_ipv6_cidr_block": "ip_v6_subnet_cidr_blocks",
+        "subnet_ipv6_cidr_blocks": "ip_v6_subnet_cidr_blocks",
     }
 
     def fetch(
