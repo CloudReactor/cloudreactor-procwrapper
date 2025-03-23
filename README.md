@@ -41,18 +41,19 @@ AWS AppConfig, AWS S3, or local files and extracts them into the process
 environment (for command-lines) or configuration (for functions)
 * When used with the CloudReactor service:
   * Reports when a process/function starts and when it exits, along with the
-  exit code and runtime metadata (if running in AWS ECS, AWS Lambda, or AWS CodeBuild)
+  exit code and runtime metadata (if running in AWS EC2, AWS ECS, AWS Lambda,
+  or AWS CodeBuild)
   * Sends heartbeats, optionally with status information like the number of
   items processed
+  * After execution finishes, sends a tail of logs
   * Prevents too many concurrent executions
   * Accepts input values and sends output values, for history and/or Workflow data flow
   * Stops execution when manually stopped in the CloudReactor dashboard
-  * Sends CloudReactor the data necessary to start the process / function if running in AWS ECS, AWS Lambda, or AWS CodeBuild
 
 ## How it works
 
 First, secrets and other configuration are fetched and resolved from
-providers like AWS Secrets Manager, AWS S3, or the local filesystem.
+providers like AWS Secrets Manager or the local filesystem.
 
 Just before your code runs, the module requests the Task Management server to create a
 Task Execution associated with the Task name or UUID which you pass to the
@@ -106,12 +107,16 @@ external links in the dashboard, by setting the environment variable
 
 ### Execution Methods
 
-CloudReactor currently supports four Execution Methods:
+proc_wrapper attempts detects the execution method your Task is
+running with and sends that information to the Task Management server, provided
+you configure your Task to be auto-created.
+
+CloudReactor currently has special support for four Execution Methods:
 
 1) [AWS ECS (in Fargate)](https://aws.amazon.com/fargate/)
 2) [AWS Lambda](https://aws.amazon.com/lambda/)
-3) [AWS CodeBuild](https://aws.amazon.com/codebuild/)
-4) Unknown
+3) [AWS EC2](https://aws.amazon.com/ec2/)
+4) [AWS CodeBuild](https://aws.amazon.com/codebuild/)
 
 If a Task is running in AWS ECS, CloudReactor is able to run additional
 Task Executions, provided the details of running the Task is provided
@@ -125,18 +130,19 @@ provided they are run in AWS ECS.
 If a Task is running in AWS Lambda, CloudReactor is able to run additional
 Task Executions after the first run of the function.
 
-However, a Task may use the Unknown execution method if it is not running
-in AWS ECS, AWS Lambda, or AWS CodeBuild. If that is the case, CloudReactor
-won't be able to start the Task in the dashboard or as part of a Workflow,
-schedule the Task, or setup a service with the Task. But the advantage is
-that the Task code can be executed by any method available to you,
+If a Task is running in AWS EC2, the `execution_method_type` setting should be
+set to `AWS EC2` so that proc_wrapper can pull EC2 metadata and send it back
+to the Task Management server. Also, the `ec2` extra is required when installing
+the module.
+
+If proc_wrapper cannot automatically detect the execution method type,
+it will mark the Task as using the Unknown execution method. If that is the case, CloudReactor won't be able to start the Task in the dashboard or as part of a
+Workflow, schedule the Task, or setup a service with the Task. But the advantage
+is that the Task code can be executed by any method available to you,
 such as bare metal servers, VM's, or Kubernetes.
 All Tasks in CloudReactor, regardless of execution method, have their
 history kept and are monitored.
 
-This module detects the execution method your Task is
-running with and sends that information to the Task Management server, provided
-you configure your Task to be auto-created.
 
 ### Passive Tasks
 
@@ -186,7 +192,7 @@ Secrets Manager and extract them with jsonpath-ng, for example.
 
 To download and run the wrapper on a RHEL/Fedora/Amazon Linux 2 machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.5.0/bin/pyinstaller/al2/5.5.0/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/6.0.0/bin/pyinstaller/al2/6.0.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 Example Dockerfiles of known working environments are available for
@@ -200,7 +206,7 @@ Fedora 27 or later are supported.
 
 On a Debian based (including Ubuntu) machine:
 
-    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/5.5.0/bin/pyinstaller/debian-amd64/5.5.0/proc_wrapper.bin
+    RUN wget -nv https://github.com/CloudReactor/cloudreactor-procwrapper/raw/6.0.0/bin/pyinstaller/debian-amd64/6.0.0/proc_wrapper.bin
     ENTRYPOINT ["proc_wrapper.bin"]
 
 See the example
@@ -276,274 +282,276 @@ Or, if you have python installed:
 
 Here are all the options:
 
-    usage: proc_wrapper [-h] [-v] [-n TASK_NAME] [--task-uuid TASK_UUID] [-a] [--auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME]
-                        [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID] [--auto-create-task-props AUTO_CREATE_TASK_PROPS] [--force-task-active] [--task-execution-uuid TASK_EXECUTION_UUID]
-                        [--task-version-number TASK_VERSION_NUMBER] [--task-version-text TASK_VERSION_TEXT] [--task-version-signature TASK_VERSION_SIGNATURE] [--build-task-execution-uuid BUILD_TASK_EXECUTION_UUID]
-                        [--deployment-task-execution-uuid DEPLOYMENT_TASK_EXECUTION_UUID] [--execution-method-props EXECUTION_METHOD_PROPS] [--task-instance-metadata TASK_INSTANCE_METADATA] [-s] [--schedule SCHEDULE]
-                        [--max-concurrency MAX_CONCURRENCY] [--max-conflicting-age MAX_CONFLICTING_AGE] [--api-base-url API_BASE_URL] [-k API_KEY] [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
-                        [--api-error-timeout API_ERROR_TIMEOUT] [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT] [--api-retry-delay API_RETRY_DELAY] [--api-resume-delay API_RESUME_DELAY]
-                        [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT] [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
-                        [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY] [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-p] [-m API_MANAGED_PROBABILITY]
-                        [--api-failure-report-probability API_FAILURE_REPORT_PROBABILITY] [--api-timeout-report-probability API_TIMEOUT_REPORT_PROBABILITY] [-d DEPLOYMENT] [--send-input-value] [--send-pid] [--send-hostname]
-                        [--no-send-runtime-metadata] [--runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL] [-i INPUT_VALUE] [--input-env-var-name INPUT_ENV_VAR_NAME] [--input-filename INPUT_FILENAME]
-                        [--cleanup-input-file] [--input-value-format INPUT_VALUE_FORMAT] [--result-filename RESULT_FILENAME] [--result-value-format RESULT_VALUE_FORMAT] [--no-cleanup-result-file]
-                        [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets] [--log-input-value] [--log-result-value] [--exclude-timestamps-in-log] [-w WORK_DIR] [-c COMMAND_LINE] [--shell-mode {auto,enable,disable}]
-                        [--no-strip-shell-wrapping] [--no-process-group-termination] [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES] [--process-retry-delay PROCESS_RETRY_DELAY] [--process-check-interval PROCESS_CHECK_INTERVAL]
-                        [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD] [--enable-status-update-listener] [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
-                        [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES] [--status-update-interval STATUS_UPDATE_INTERVAL] [-e ENV_LOCATIONS] [--config CONFIG_LOCATIONS]
-                        [--config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}] [--overwrite-env-during-resolution] [--config-ttl CONFIG_TTL] [--no-fail-fast-config-resolution]
-                        [--resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX] [--resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX] [--resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX]
-                        [--resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX] [--env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG] [--config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV]
-                        [--env-output-filename ENV_OUTPUT_FILENAME] [--env-output-format ENV_OUTPUT_FORMAT] [--config-output-filename CONFIG_OUTPUT_FILENAME] [--config-output-format CONFIG_OUTPUT_FORMAT]
-                        [--exit-after-writing-variables] [--main-container-name MAIN_CONTAINER_NAME] [--monitor-container-name MONITOR_CONTAINER_NAME] [--sidecar-container-mode] [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
-                        [--rollbar-retries ROLLBAR_RETRIES] [--rollbar-retry-delay ROLLBAR_RETRY_DELAY] [--rollbar-timeout ROLLBAR_TIMEOUT]
-                        ...
+```
+usage: proc_wrapper [-h] [-v] [-n TASK_NAME] [--task-uuid TASK_UUID] [-a] [--auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME]
+                    [--auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID] [--auto-create-task-props AUTO_CREATE_TASK_PROPS] [--force-task-active] [--task-execution-uuid TASK_EXECUTION_UUID]
+                    [--task-version-number TASK_VERSION_NUMBER] [--task-version-text TASK_VERSION_TEXT] [--task-version-signature TASK_VERSION_SIGNATURE] [--build-task-execution-uuid BUILD_TASK_EXECUTION_UUID]
+                    [--deployment-task-execution-uuid DEPLOYMENT_TASK_EXECUTION_UUID] [--execution-method-props EXECUTION_METHOD_PROPS] [--task-instance-metadata TASK_INSTANCE_METADATA] [-s] [--schedule SCHEDULE]
+                    [--max-concurrency MAX_CONCURRENCY] [--max-conflicting-age MAX_CONFLICTING_AGE] [--api-base-url API_BASE_URL] [-k API_KEY] [--api-heartbeat-interval API_HEARTBEAT_INTERVAL]
+                    [--api-error-timeout API_ERROR_TIMEOUT] [--api-final-update-timeout API_FINAL_UPDATE_TIMEOUT] [--api-retry-delay API_RETRY_DELAY] [--api-resume-delay API_RESUME_DELAY]
+                    [--api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT] [--api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT]
+                    [--api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY] [--api-request-timeout API_REQUEST_TIMEOUT] [-o] [-p] [-m API_MANAGED_PROBABILITY]
+                    [--api-failure-report-probability API_FAILURE_REPORT_PROBABILITY] [--api-timeout-report-probability API_TIMEOUT_REPORT_PROBABILITY] [-d DEPLOYMENT] [--send-input-value] [--send-pid] [--send-hostname]
+                    [--no-send-runtime-metadata] [--runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL] [-i INPUT_VALUE] [--input-env-var-name INPUT_ENV_VAR_NAME] [--input-filename INPUT_FILENAME]
+                    [--cleanup-input-file] [--input-value-format INPUT_VALUE_FORMAT] [--result-filename RESULT_FILENAME] [--result-value-format RESULT_VALUE_FORMAT] [--no-cleanup-result-file]
+                    [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log-secrets] [--log-input-value] [--log-result-value] [--exclude-timestamps-in-log] [-w WORK_DIR] [-c COMMAND_LINE] [--shell-mode {auto,enable,disable}]
+                    [--no-strip-shell-wrapping] [--no-process-group-termination] [-t PROCESS_TIMEOUT] [-r PROCESS_MAX_RETRIES] [--process-retry-delay PROCESS_RETRY_DELAY] [--process-check-interval PROCESS_CHECK_INTERVAL]
+                    [--process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD] [--enable-status-update-listener] [--status-update-socket-port STATUS_UPDATE_SOCKET_PORT]
+                    [--status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES] [--status-update-interval STATUS_UPDATE_INTERVAL] [-e ENV_LOCATIONS] [--config CONFIG_LOCATIONS]
+                    [--config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}] [--overwrite-env-during-resolution] [--config-ttl CONFIG_TTL] [--no-fail-fast-config-resolution]
+                    [--resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX] [--resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX] [--resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX]
+                    [--resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX] [--env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG] [--config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV]
+                    [--env-output-filename ENV_OUTPUT_FILENAME] [--env-output-format ENV_OUTPUT_FORMAT] [--config-output-filename CONFIG_OUTPUT_FILENAME] [--config-output-format CONFIG_OUTPUT_FORMAT]
+                    [--exit-after-writing-variables] [--main-container-name MAIN_CONTAINER_NAME] [--monitor-container-name MONITOR_CONTAINER_NAME] [--sidecar-container-mode] [--rollbar-access-token ROLLBAR_ACCESS_TOKEN]
+                    [--rollbar-retries ROLLBAR_RETRIES] [--rollbar-retry-delay ROLLBAR_RETRY_DELAY] [--rollbar-timeout ROLLBAR_TIMEOUT]
+                    ...
 
-    Wraps the execution of processes so that a service API endpoint (CloudReactor) is optionally informed of the progress. Also implements retries, timeouts, and secret injection into the environment.
+Wraps the execution of processes so that a service API endpoint (CloudReactor) is optionally informed of the progress. Also implements retries, timeouts, and secret injection into the environment.
 
-    positional arguments:
-      command
+positional arguments:
+  command
 
-    optional arguments:
-      -h, --help            show this help message and exit
-      -v, --version         Print the version and exit
+optional arguments:
+  -h, --help            show this help message and exit
+  -v, --version         Print the version and exit
 
-    task:
-      Task settings
+task:
+  Task settings
 
-      -n TASK_NAME, --task-name TASK_NAME
-                            Name of Task (either the Task Name or the Task UUID must be specified
-      --task-uuid TASK_UUID
-                            UUID of Task (either the Task Name or the Task UUID must be specified)
-      -a, --auto-create-task
-                            Create the Task even if not known by the Task Management server
-      --auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
-                            Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run
-                            Environment UUID is not specified.
-      --auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID
-                            UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task)
-      --auto-create-task-props AUTO_CREATE_TASK_PROPS
-                            Additional properties of the auto-created Task, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create for the schema.
-      --force-task-active   Indicates that the auto-created Task should be scheduled and made a service by the Task Management server, if applicable. Otherwise, auto-created Tasks are marked passive.
-      --task-execution-uuid TASK_EXECUTION_UUID
-                            UUID of Task Execution to attach to
-      --task-version-number TASK_VERSION_NUMBER
-                            Numeric version of the Task's source code
-      --task-version-text TASK_VERSION_TEXT
-                            Human readable version of the Task's source code
-      --task-version-signature TASK_VERSION_SIGNATURE
-                            Version signature of the Task's source code (such as a git commit hash)
-      --build-task-execution-uuid BUILD_TASK_EXECUTION_UUID
-                            UUID of Task Execution that built this Task's source code
-      --deployment-task-execution-uuid DEPLOYMENT_TASK_EXECUTION_UUID
-                            UUID of Task Execution that deployed this Task to the Runtime Environment
-      --execution-method-props EXECUTION_METHOD_PROPS
-                            Additional properties of the execution method, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_task_executions_create for the schema.
-      --task-instance-metadata TASK_INSTANCE_METADATA
-                            Additional metadata about the Task instance, in JSON format
-      -s, --service         Indicate that this is a Task that should run indefinitely
-      --schedule SCHEDULE   Execution schedule reported to the Task Management server
-      --max-concurrency MAX_CONCURRENCY
-                            Maximum number of concurrent Task Executions of the same Task. Defaults to 1.
-      --max-conflicting-age MAX_CONFLICTING_AGE
-                            Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit. Defaults to the heartbeat interval, plus 60 seconds for services that send heartbeats. Otherwise, defaults to no limit.
+  -n TASK_NAME, --task-name TASK_NAME
+                        Name of Task (either the Task Name or the Task UUID must be specified
+  --task-uuid TASK_UUID
+                        UUID of Task (either the Task Name or the Task UUID must be specified)
+  -a, --auto-create-task
+                        Create the Task even if not known by the Task Management server
+  --auto-create-task-run-environment-name AUTO_CREATE_TASK_RUN_ENVIRONMENT_NAME
+                        Name of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task). Defaults to the deployment name if the Run
+                        Environment UUID is not specified.
+  --auto-create-task-run-environment-uuid AUTO_CREATE_TASK_RUN_ENVIRONMENT_UUID
+                        UUID of the Run Environment to use if auto-creating the Task (either the name or UUID of the Run Environment must be specified if auto-creating the Task)
+  --auto-create-task-props AUTO_CREATE_TASK_PROPS
+                        Additional properties of the auto-created Task, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_tasks_create for the schema.
+  --force-task-active   Indicates that the auto-created Task should be scheduled and made a service by the Task Management server, if applicable. Otherwise, auto-created Tasks are marked passive.
+  --task-execution-uuid TASK_EXECUTION_UUID
+                        UUID of Task Execution to attach to
+  --task-version-number TASK_VERSION_NUMBER
+                        Numeric version of the Task's source code
+  --task-version-text TASK_VERSION_TEXT
+                        Human readable version of the Task's source code
+  --task-version-signature TASK_VERSION_SIGNATURE
+                        Version signature of the Task's source code (such as a git commit hash)
+  --build-task-execution-uuid BUILD_TASK_EXECUTION_UUID
+                        UUID of Task Execution that built this Task's source code
+  --deployment-task-execution-uuid DEPLOYMENT_TASK_EXECUTION_UUID
+                        UUID of Task Execution that deployed this Task to the Runtime Environment
+  --execution-method-props EXECUTION_METHOD_PROPS
+                        Additional properties of the execution method, in JSON format. See https://apidocs.cloudreactor.io/#operation/api_v1_task_executions_create for the schema.
+  --task-instance-metadata TASK_INSTANCE_METADATA
+                        Additional metadata about the Task instance, in JSON format
+  -s, --service         Indicate that this is a Task that should run indefinitely
+  --schedule SCHEDULE   Execution schedule reported to the Task Management server
+  --max-concurrency MAX_CONCURRENCY
+                        Maximum number of concurrent Task Executions of the same Task. Defaults to 1.
+  --max-conflicting-age MAX_CONFLICTING_AGE
+                        Maximum age of conflicting Tasks to consider, in seconds. -1 means no limit. Defaults to the heartbeat interval, plus 60 seconds for services that send heartbeats. Otherwise, defaults to no limit.
 
-    api:
-      API client settings
+api:
+  API client settings
 
-      --api-base-url API_BASE_URL
-                            Base URL of API server. Defaults to https://api.cloudreactor.io
-      -k API_KEY, --api-key API_KEY
-                            API key. Must have at least the Task access level, or Developer access level for auto-created Tasks.
-      --api-heartbeat-interval API_HEARTBEAT_INTERVAL
-                            Number of seconds to wait between sending heartbeats to the Task Management server. -1 means to not send heartbeats. Defaults to 30 for concurrency limited services, 300 otherwise.
-      --api-error-timeout API_ERROR_TIMEOUT
-                            Number of seconds to wait while receiving recoverable errors from the API server. Defaults to 300.
-      --api-final-update-timeout API_FINAL_UPDATE_TIMEOUT
-                            Number of seconds to wait while receiving recoverable errors from the Task Management server when sending the final update before exiting. Defaults to 1800.
-      --api-retry-delay API_RETRY_DELAY
-                            Number of seconds to wait before retrying an API request. Defaults to 120.
-      --api-resume-delay API_RESUME_DELAY
-                            Number of seconds to wait before resuming API requests, after retries are exhausted. Defaults to 600. -1 means to never resume.
-      --api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT
-                            Number of seconds to keep retrying Task Execution creation while receiving error responses from the Task Management server. -1 means to keep trying indefinitely. Defaults to 300.
-      --api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT
-                            Number of seconds to keep retrying Task Execution creation while conflict is detected by the Task Management server. -1 means to keep trying indefinitely. Defaults to 1800 for concurrency limited
-                            services, 0 otherwise.
-      --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
-                            Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to 60 for concurrency-limited services, 120 otherwise.
-      --api-request-timeout API_REQUEST_TIMEOUT
-                            Timeout for contacting API server, in seconds. Defaults to 30.
-      -o, --offline-mode    Do not communicate with or rely on an API server
-      -p, --prevent-offline-execution
-                            Do not start processes if the Task Management server is unavailable or the wrapper is misconfigured.
-      -m API_MANAGED_PROBABILITY, --api-managed-probability API_MANAGED_PROBABILITY
-                            Sample notifications to the Task Management server with a given probability when starting an execution. Defaults to 1.0 (always send notifications).
-      --api-failure-report-probability API_FAILURE_REPORT_PROBABILITY
-                            If the notification of an execution was not previously sent on startup and the execution fails, notify the Task Management server with the given probability. Defaults to 1.0 (always send failure
-                            notifications).
-      --api-timeout-report-probability API_TIMEOUT_REPORT_PROBABILITY
-                            If the notification of an execution was not previously sent on startup and the execution times out, notify the Task Management server with given probability. Defaults to 1.0 (always send timeout
-                            notifications).
-      -d DEPLOYMENT, --deployment DEPLOYMENT
-                            Deployment name (production, staging, etc.)
-      --send-input-value    Send the input value the Task Management server
-      --send-pid            Send the process ID to the Task Management server
-      --send-hostname       Send the hostname to the Task Management server
-      --no-send-runtime-metadata
-                            Do not send metadata about the runtime environment
-      --runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL
-                            Refresh interval for runtime metadata, in seconds. The default value depends on the execution method.
+  --api-base-url API_BASE_URL
+                        Base URL of API server. Defaults to https://api.cloudreactor.io
+  -k API_KEY, --api-key API_KEY
+                        API key. Must have at least the Task access level, or Developer access level for auto-created Tasks.
+  --api-heartbeat-interval API_HEARTBEAT_INTERVAL
+                        Number of seconds to wait between sending heartbeats to the Task Management server. -1 means to not send heartbeats. Defaults to 30 for concurrency limited services, 300 otherwise.
+  --api-error-timeout API_ERROR_TIMEOUT
+                        Number of seconds to wait while receiving recoverable errors from the API server. Defaults to 300.
+  --api-final-update-timeout API_FINAL_UPDATE_TIMEOUT
+                        Number of seconds to wait while receiving recoverable errors from the Task Management server when sending the final update before exiting. Defaults to 1800.
+  --api-retry-delay API_RETRY_DELAY
+                        Number of seconds to wait before retrying an API request. Defaults to 120.
+  --api-resume-delay API_RESUME_DELAY
+                        Number of seconds to wait before resuming API requests, after retries are exhausted. Defaults to 600. -1 means to never resume.
+  --api-task-execution-creation-error-timeout API_TASK_EXECUTION_CREATION_ERROR_TIMEOUT
+                        Number of seconds to keep retrying Task Execution creation while receiving error responses from the Task Management server. -1 means to keep trying indefinitely. Defaults to 300.
+  --api-task-execution-creation-conflict-timeout API_TASK_EXECUTION_CREATION_CONFLICT_TIMEOUT
+                        Number of seconds to keep retrying Task Execution creation while conflict is detected by the Task Management server. -1 means to keep trying indefinitely. Defaults to 1800 for concurrency limited
+                        services, 0 otherwise.
+  --api-task-execution-creation-conflict-retry-delay API_TASK_EXECUTION_CREATION_CONFLICT_RETRY_DELAY
+                        Number of seconds between attempts to retry Task Execution creation after conflict is detected. Defaults to 60 for concurrency-limited services, 120 otherwise.
+  --api-request-timeout API_REQUEST_TIMEOUT
+                        Timeout for contacting API server, in seconds. Defaults to 30.
+  -o, --offline-mode    Do not communicate with or rely on an API server
+  -p, --prevent-offline-execution
+                        Do not start processes if the Task Management server is unavailable or the wrapper is misconfigured.
+  -m API_MANAGED_PROBABILITY, --api-managed-probability API_MANAGED_PROBABILITY
+                        Sample notifications to the Task Management server with a given probability when starting an execution. Defaults to 1.0 (always send notifications).
+  --api-failure-report-probability API_FAILURE_REPORT_PROBABILITY
+                        If the notification of an execution was not previously sent on startup and the execution fails, notify the Task Management server with the given probability. Defaults to 1.0 (always send failure
+                        notifications).
+  --api-timeout-report-probability API_TIMEOUT_REPORT_PROBABILITY
+                        If the notification of an execution was not previously sent on startup and the execution times out, notify the Task Management server with given probability. Defaults to 1.0 (always send timeout
+                        notifications).
+  -d DEPLOYMENT, --deployment DEPLOYMENT
+                        Deployment name (production, staging, etc.)
+  --send-input-value    Send the input value the Task Management server
+  --send-pid            Send the process ID to the Task Management server
+  --send-hostname       Send the hostname to the Task Management server
+  --no-send-runtime-metadata
+                        Do not send metadata about the runtime environment
+  --runtime-metadata-refresh-interval RUNTIME_METADATA_REFRESH_INTERVAL
+                        Refresh interval for runtime metadata, in seconds. The default value depends on the execution method.
 
-    io:
-      Input and result settings
+io:
+  Input and result settings
 
-      -i INPUT_VALUE, --input-value INPUT_VALUE
-                            The input value
-      --input-env-var-name INPUT_ENV_VAR_NAME
-                            The value of this environment variable is used as the input value for the wrapped process or embedded function. The value is sent back to the API server as the input value of the Task Execution.
-      --input-filename INPUT_FILENAME
-                            The name of the file containing the value used as the input value for the wrapped process or embedded function. The contents of the file are sent back to the API server as the input value of the
-                            Task Execution.
-      --cleanup-input-file  Remove the input file before exit. If this parameter is omitted, the input file will only be removed if it was written by the wrapper.
-      --input-value-format INPUT_VALUE_FORMAT
-                            The format of the value used as the input value for the Task Execution. Options are 'json', 'yaml', or 'text'. Defaults to 'text'.
-      --result-filename RESULT_FILENAME
-                            The name of the file the wrapped process will write with the result value. The contents of the file are sent back to the API server as the result value of the Task Execution.
-      --result-value-format RESULT_VALUE_FORMAT
-                            The format of the file that the wrapped process will write with the result value. Options are 'json', 'yaml', or 'text'. Defaults to 'text'.
-      --no-cleanup-result-file
-                            Do not delete the result file after the Task Execution completes. If this parameter is omitted, the result file will be deleted.
+  -i INPUT_VALUE, --input-value INPUT_VALUE
+                        The input value
+  --input-env-var-name INPUT_ENV_VAR_NAME
+                        The value of this environment variable is used as the input value for the wrapped process or embedded function. The value is sent back to the API server as the input value of the Task Execution.
+  --input-filename INPUT_FILENAME
+                        The name of the file containing the value used as the input value for the wrapped process or embedded function. The contents of the file are sent back to the API server as the input value of the
+                        Task Execution.
+  --cleanup-input-file  Remove the input file before exit. If this parameter is omitted, the input file will only be removed if it was written by the wrapper.
+  --input-value-format INPUT_VALUE_FORMAT
+                        The format of the value used as the input value for the Task Execution. Options are 'json', 'yaml', or 'text'. Defaults to 'text'.
+  --result-filename RESULT_FILENAME
+                        The name of the file the wrapped process will write with the result value. The contents of the file are sent back to the API server as the result value of the Task Execution.
+  --result-value-format RESULT_VALUE_FORMAT
+                        The format of the file that the wrapped process will write with the result value. Options are 'json', 'yaml', or 'text'. Defaults to 'text'.
+  --no-cleanup-result-file
+                        Do not delete the result file after the Task Execution completes. If this parameter is omitted, the result file will be deleted.
 
-    log:
-      Logging settings
+log:
+  Logging settings
 
-      -l {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
-                            Log level
-      --log-secrets         Log sensitive information
-      --log-input-value     Log input value
-      --log-result-value    Log result value
-      --exclude-timestamps-in-log
-                            Exclude timestamps in log (possibly because the log stream will be enriched by timestamps automatically by a logging service like AWS
-                            CloudWatch Logs)
-      --num-log-lines-sent-on-failure NUM_LOG_LINES_SENT_ON_FAILURE
-                            The number of trailing log lines to send to the API server if the Task Execution fails. Defaults to 0 (no log lines are sent).
-      --num-log-lines-sent-on-timeout NUM_LOG_LINES_SENT_ON_TIMEOUT
-                            The number of trailing log lines to send to the API server if the Task Execution fails. Defaults to 0 (no log lines are sent).
-      --num-log-lines-sent-on-success NUM_LOG_LINES_SENT_ON_SUCCESS
-                            The number of trailing log lines to send to the API server if the Task Execution succeeds. Defaults to 0 (no log lines are sent).
-      --max-log-line-length MAX_LOG_LINE_LENGTH
-                            The maximum number of characters in a saved log line. If a line is longer than this value, it will be truncated. Defaults to 1000.
-      --separate-stdout-and-stderr-logs
-                            Separate stdout and stderr streams when reporting log lines. Otherwise, the streams are merged into the stdout stream.
-      --ignore-stdout       Do send stdout log lines to the API server
-      --ignore-stderr       Do send stderr log lines to the API server
+  -l {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                        Log level
+  --log-secrets         Log sensitive information
+  --log-input-value     Log input value
+  --log-result-value    Log result value
+  --exclude-timestamps-in-log
+                        Exclude timestamps in log (possibly because the log stream will be enriched by timestamps automatically by a logging service like AWS
+                        CloudWatch Logs)
+  --num-log-lines-sent-on-failure NUM_LOG_LINES_SENT_ON_FAILURE
+                        The number of trailing log lines to send to the API server if the Task Execution fails. Defaults to 0 (no log lines are sent).
+  --num-log-lines-sent-on-timeout NUM_LOG_LINES_SENT_ON_TIMEOUT
+                        The number of trailing log lines to send to the API server if the Task Execution fails. Defaults to 0 (no log lines are sent).
+  --num-log-lines-sent-on-success NUM_LOG_LINES_SENT_ON_SUCCESS
+                        The number of trailing log lines to send to the API server if the Task Execution succeeds. Defaults to 0 (no log lines are sent).
+  --max-log-line-length MAX_LOG_LINE_LENGTH
+                        The maximum number of characters in a saved log line. If a line is longer than this value, it will be truncated. Defaults to 1000.
+  --separate-stdout-and-stderr-logs
+                        Separate stdout and stderr streams when reporting log lines. Otherwise, the streams are merged into the stdout stream.
+  --ignore-stdout       Do send stdout log lines to the API server
+  --ignore-stderr       Do send stderr log lines to the API server
 
-    process:
-      Process settings
+process:
+  Process settings
 
-      -w WORK_DIR, --work-dir WORK_DIR
-                            Working directory. Defaults to the current directory.
-      -c COMMAND_LINE, --command-line COMMAND_LINE
-                            Command line to execute
-      --shell-mode {auto,enable,disable}
-                            Indicates if the process command should be executed in a shell. Executing in a shell allows shell scripts, commands, and expressions to be used, with the disadvantage that termination signals may
-                            not be propagated to child processes. Options are: enable -- Force the command to be executed in a shell; disable -- Force the command to be executed without a shell; auto -- Auto-detect the shell
-                            mode by analyzing the command.
-      --no-strip-shell-wrapping
-                            Do not strip the command-line of shell wrapping like "/bin/sh -c" that can be introduced by Docker when using shell form of ENTRYPOINT and CMD.
-      --no-process-group-termination
-                            Send termination and kill signals to the wrapped process only, instead of its process group (which is the default). Sending to the process group allows all child processes to receive the signals,
-                            even if the wrapped process does not forward signals. However, if your wrapped process manually handles and forwards signals to its child processes, you probably want to send signals to only your
-                            wrapped process.
-      -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
-                            Timeout for process completion, in seconds. -1 means no timeout, which is the default.
-      -r PROCESS_MAX_RETRIES, --process-max-retries PROCESS_MAX_RETRIES
-                            Maximum number of times to retry failed processes. -1 means to retry forever. Defaults to 0.
-      --process-retry-delay PROCESS_RETRY_DELAY
-                            Number of seconds to wait before retrying a process. Defaults to 60.
-      --process-check-interval PROCESS_CHECK_INTERVAL
-                            Number of seconds to wait between checking the status of processes. Defaults to 10.
-      --process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD
-                            Number of seconds to wait after sending SIGTERM to a process, but before killing it with SIGKILL. Defaults to 30.
+  -w WORK_DIR, --work-dir WORK_DIR
+                        Working directory. Defaults to the current directory.
+  -c COMMAND_LINE, --command-line COMMAND_LINE
+                        Command line to execute
+  --shell-mode {auto,enable,disable}
+                        Indicates if the process command should be executed in a shell. Executing in a shell allows shell scripts, commands, and expressions to be used, with the disadvantage that termination signals may
+                        not be propagated to child processes. Options are: enable -- Force the command to be executed in a shell; disable -- Force the command to be executed without a shell; auto -- Auto-detect the shell
+                        mode by analyzing the command.
+  --no-strip-shell-wrapping
+                        Do not strip the command-line of shell wrapping like "/bin/sh -c" that can be introduced by Docker when using shell form of ENTRYPOINT and CMD.
+  --no-process-group-termination
+                        Send termination and kill signals to the wrapped process only, instead of its process group (which is the default). Sending to the process group allows all child processes to receive the signals,
+                        even if the wrapped process does not forward signals. However, if your wrapped process manually handles and forwards signals to its child processes, you probably want to send signals to only your
+                        wrapped process.
+  -t PROCESS_TIMEOUT, --process-timeout PROCESS_TIMEOUT
+                        Timeout for process completion, in seconds. -1 means no timeout, which is the default.
+  -r PROCESS_MAX_RETRIES, --process-max-retries PROCESS_MAX_RETRIES
+                        Maximum number of times to retry failed processes. -1 means to retry forever. Defaults to 0.
+  --process-retry-delay PROCESS_RETRY_DELAY
+                        Number of seconds to wait before retrying a process. Defaults to 60.
+  --process-check-interval PROCESS_CHECK_INTERVAL
+                        Number of seconds to wait between checking the status of processes. Defaults to 10.
+  --process-termination-grace-period PROCESS_TERMINATION_GRACE_PERIOD
+                        Number of seconds to wait after sending SIGTERM to a process, but before killing it with SIGKILL. Defaults to 30.
 
-    updates:
-      Status update settings
+updates:
+  Status update settings
 
-      --enable-status-update-listener
-                            Listen for status updates from the process, sent on the status socket port via UDP. If not specified, status update messages will not be read.
-      --status-update-socket-port STATUS_UPDATE_SOCKET_PORT
-                            The port used to receive status updates from the process. Defaults to 2373.
-      --status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES
-                            The maximum number of bytes status update messages can be. Defaults to 65536.
-      --status-update-interval STATUS_UPDATE_INTERVAL
-                            Minimum of number of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.
+  --enable-status-update-listener
+                        Listen for status updates from the process, sent on the status socket port via UDP. If not specified, status update messages will not be read.
+  --status-update-socket-port STATUS_UPDATE_SOCKET_PORT
+                        The port used to receive status updates from the process. Defaults to 2373.
+  --status-update-message-max-bytes STATUS_UPDATE_MESSAGE_MAX_BYTES
+                        The maximum number of bytes status update messages can be. Defaults to 65536.
+  --status-update-interval STATUS_UPDATE_INTERVAL
+                        Minimum of number of seconds to wait between sending status updates to the API server. -1 means to not send status updates except with heartbeats. Defaults to -1.
 
-    configuration:
-      Environment/configuration resolution settings
+configuration:
+  Environment/configuration resolution settings
 
-      -e ENV_LOCATIONS, --env ENV_LOCATIONS
-                            Location of either local file, AWS S3 ARN, AWS Secrets Manager ARN, or AWS Systems Manager Parameter Store identifier containing properties used to populate the environment for embedded mode, or
-                            the process environment for wrapped mode. By default, the file format is assumed to be dotenv. Specify multiple times to include multiple locations.
-      --config CONFIG_LOCATIONS
-                            Location of either local file, AWS S3 ARN, AWS Secrets Manager ARN, or AWS Systems Manager Parameter Store identifier containing properties used to populate the configuration for embedded mode. By
-                            default, the file format is assumed to be in JSON. Specify multiple times to include multiple locations.
-      --config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
-                            Merge strategy for merging configurations. Defaults to 'DEEP', which does not require mergedeep. Besides the 'SHALLOW' strategy, all other strategies require the mergedeep extra to be installed.
-      --overwrite-env-during-resolution
-                            Overwrite existing environment variables when resolving them
-      --config-ttl CONFIG_TTL
-                            Number of seconds to cache resolved environment variables and configuration properties instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.
-      --no-fail-fast-config-resolution
-                            Continue execution even if an error occurs resolving the configuration
-      --resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX
-                            Required prefix for names of environment variables that should resolved. The prefix will be removed in the resolved variable name. Defaults to ''.
-      --resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX
-                            Required suffix for names of environment variables that should resolved. The suffix will be removed in the resolved variable name. Defaults to '_FOR_PROC_WRAPPER_TO_RESOLVE'.
-      --resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX
-                            Required prefix for names of configuration properties that should resolved. The prefix will be removed in the resolved property name. Defaults to ''.
-      --resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX
-                            Required suffix for names of configuration properties that should resolved. The suffix will be removed in the resolved property name. Defaults to '__to_resolve'.
-      --env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG
-                            The name of the environment variable used to set to the value of the JSON encoded configuration. Defaults to not setting any environment variable.
-      --config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV
-                            The name of the configuration property used to set to the value of the JSON encoded environment. Defaults to not setting any property.
-      --env-output-filename ENV_OUTPUT_FILENAME
-                            The filename to write the resolved environment variables to. Defaults to '.env' if the env output format is 'dotenv', 'env.json' if the env output format is 'json', and 'env.yml' if the config
-                            output format is 'yaml'.
-      --env-output-format ENV_OUTPUT_FORMAT
-                            The format used to write the resolved environment variables file. One of 'dotenv', 'json', or 'yaml'. Will be auto-detected from the filename of the env output filename if possible. Defaults to
-                            'dotenv' if the env output filename is set but the format cannot be auto-detected from the filename.
-      --config-output-filename CONFIG_OUTPUT_FILENAME
-                            The filename to write the resolved configuration to. Defaults to 'config.json' if config output format is 'json', 'config.yml' if the config output format is 'yaml', and 'config.env' if the config
-                            output format is 'dotenv'.
-      --config-output-format CONFIG_OUTPUT_FORMAT
-                            The format used to write the resolved configuration file. One of 'dotenv', 'json', or 'yaml'. Will be auto-detected from the filename of the config output filename if possible. Defaults to 'json'
-                            if the config output filename is set but the format cannot be auto-detected from the filename.
-      --exit-after-writing-variables
-                            Exit after writing the resolved environment variables and configuration
+  -e ENV_LOCATIONS, --env ENV_LOCATIONS
+                        Location of either local file, AWS S3 ARN, AWS Secrets Manager ARN, or AWS Systems Manager Parameter Store identifier containing properties used to populate the environment for embedded mode, or
+                        the process environment for wrapped mode. By default, the file format is assumed to be dotenv. Specify multiple times to include multiple locations.
+  --config CONFIG_LOCATIONS
+                        Location of either local file, AWS S3 ARN, AWS Secrets Manager ARN, or AWS Systems Manager Parameter Store identifier containing properties used to populate the configuration for embedded mode. By
+                        default, the file format is assumed to be in JSON. Specify multiple times to include multiple locations.
+  --config-merge-strategy {DEEP,SHALLOW,REPLACE,ADDITIVE,TYPESAFE_REPLACE,TYPESAFE_ADDITIVE}
+                        Merge strategy for merging configurations. Defaults to 'DEEP', which does not require mergedeep. Besides the 'SHALLOW' strategy, all other strategies require the mergedeep extra to be installed.
+  --overwrite-env-during-resolution
+                        Overwrite existing environment variables when resolving them
+  --config-ttl CONFIG_TTL
+                        Number of seconds to cache resolved environment variables and configuration properties instead of refreshing them when a process restarts. -1 means to never refresh. Defaults to -1.
+  --no-fail-fast-config-resolution
+                        Continue execution even if an error occurs resolving the configuration
+  --resolved-env-var-name-prefix RESOLVED_ENV_VAR_NAME_PREFIX
+                        Required prefix for names of environment variables that should resolved. The prefix will be removed in the resolved variable name. Defaults to ''.
+  --resolved-env-var-name-suffix RESOLVED_ENV_VAR_NAME_SUFFIX
+                        Required suffix for names of environment variables that should resolved. The suffix will be removed in the resolved variable name. Defaults to '_FOR_PROC_WRAPPER_TO_RESOLVE'.
+  --resolved-config-property-name-prefix RESOLVED_CONFIG_PROPERTY_NAME_PREFIX
+                        Required prefix for names of configuration properties that should resolved. The prefix will be removed in the resolved property name. Defaults to ''.
+  --resolved-config-property-name-suffix RESOLVED_CONFIG_PROPERTY_NAME_SUFFIX
+                        Required suffix for names of configuration properties that should resolved. The suffix will be removed in the resolved property name. Defaults to '__to_resolve'.
+  --env-var-name-for-config ENV_VAR_NAME_FOR_CONFIG
+                        The name of the environment variable used to set to the value of the JSON encoded configuration. Defaults to not setting any environment variable.
+  --config-property-name-for-env CONFIG_PROPERTY_NAME_FOR_ENV
+                        The name of the configuration property used to set to the value of the JSON encoded environment. Defaults to not setting any property.
+  --env-output-filename ENV_OUTPUT_FILENAME
+                        The filename to write the resolved environment variables to. Defaults to '.env' if the env output format is 'dotenv', 'env.json' if the env output format is 'json', and 'env.yml' if the config
+                        output format is 'yaml'.
+  --env-output-format ENV_OUTPUT_FORMAT
+                        The format used to write the resolved environment variables file. One of 'dotenv', 'json', or 'yaml'. Will be auto-detected from the filename of the env output filename if possible. Defaults to
+                        'dotenv' if the env output filename is set but the format cannot be auto-detected from the filename.
+  --config-output-filename CONFIG_OUTPUT_FILENAME
+                        The filename to write the resolved configuration to. Defaults to 'config.json' if config output format is 'json', 'config.yml' if the config output format is 'yaml', and 'config.env' if the config
+                        output format is 'dotenv'.
+  --config-output-format CONFIG_OUTPUT_FORMAT
+                        The format used to write the resolved configuration file. One of 'dotenv', 'json', or 'yaml'. Will be auto-detected from the filename of the config output filename if possible. Defaults to 'json'
+                        if the config output filename is set but the format cannot be auto-detected from the filename.
+  --exit-after-writing-variables
+                        Exit after writing the resolved environment variables and configuration
 
-    container:
-      Container settings
+container:
+  Container settings
 
-      --main-container-name MAIN_CONTAINER_NAME
-                            The name of the container that is monitored
-      --monitor-container-name MONITOR_CONTAINER_NAME
-                            The name of the container that will monitor the main container
-      --sidecar-container-mode
-                            Indicates that the current container is a sidecar container that will monitor the main container
+  --main-container-name MAIN_CONTAINER_NAME
+                        The name of the container that is monitored
+  --monitor-container-name MONITOR_CONTAINER_NAME
+                        The name of the container that will monitor the main container
+  --sidecar-container-mode
+                        Indicates that the current container is a sidecar container that will monitor the main container
 
-    rollbar:
-      Rollbar settings
+rollbar:
+  Rollbar settings
 
-      --rollbar-access-token ROLLBAR_ACCESS_TOKEN
-                            Access token for Rollbar (used to report error when communicating with API server)
-      --rollbar-retries ROLLBAR_RETRIES
-                            Number of retries per Rollbar request. Defaults to 2.
-      --rollbar-retry-delay ROLLBAR_RETRY_DELAY
-                            Number of seconds to wait before retrying a Rollbar request. Defaults to 120.
-      --rollbar-timeout ROLLBAR_TIMEOUT
-                            Timeout for contacting Rollbar server, in seconds. Defaults to 30.
+  --rollbar-access-token ROLLBAR_ACCESS_TOKEN
+                        Access token for Rollbar (used to report error when communicating with API server)
+  --rollbar-retries ROLLBAR_RETRIES
+                        Number of retries per Rollbar request. Defaults to 2.
+  --rollbar-retry-delay ROLLBAR_RETRY_DELAY
+                        Number of seconds to wait before retrying a Rollbar request. Defaults to 120.
+  --rollbar-timeout ROLLBAR_TIMEOUT
+                        Timeout for contacting Rollbar server, in seconds. Defaults to 30.
+```
 
 These environment variables take precedence over command-line arguments:
 
@@ -1036,32 +1044,34 @@ specified. The `config` argument
 passed to the your callback function will contain a merged dictionary of all
 fetched and parsed dictionary values. For example:
 
-    def callback(wrapper: ProcWrapper, cbdata: str,
-            config: dict[str, Any]) -> str:
-        return "super" + cbdata + config["username"]
+```python
+def callback(wrapper: ProcWrapper, cbdata: str,
+        config: dict[str, Any]) -> str:
+    return "super" + cbdata + config["username"]
 
 
-    def main():
-        params = ProcWrapperParams()
+def main():
+    params = ProcWrapperParams()
 
-        # Optional: you can set an initial configuration dictionary which will
-        # have its values included in the final configuration unless overridden.
-        params.initial_config = {
-            "log_level": "DEBUG"
-        }
+    # Optional: you can set an initial configuration dictionary which will
+    # have its values included in the final configuration unless overridden.
+    params.initial_config = {
+        "log_level": "DEBUG"
+    }
 
-        # You can omit this if you set PROC_WRAPPER_CONFIG_LOCATIONS environment
-        # variable to the same ARN
-        params.config_locations = [
-            "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY",
-            # More secret locations can be added here, and their values will
-            # be merged
-        ]
+    # You can omit this if you set PROC_WRAPPER_CONFIG_LOCATIONS environment
+    # variable to the same ARN
+    params.config_locations = [
+        "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY",
+        # More secret locations can be added here, and their values will
+        # be merged
+    ]
 
-        wrapper = ProcWrapper(params=params)
+    wrapper = ProcWrapper(params=params)
 
-        # Returns "superduperpostgres"
-        return wrapper.managed_call(callback, "duper")
+    # Returns "superduperpostgres"
+    return wrapper.managed_call(callback, "duper")
+```
 
 #### Merging Secrets
 
@@ -1107,21 +1117,24 @@ removed during resolution. It can also be configured with the `PROC_WRAPPER_RESO
 
 In embedded mode, if you want the final configuration dictionary to look like:
 
-    {
-      "db_username": "postgres",
-      "db_password": "badpassword",
-      ...
-    }
-
+```js
+{
+  "db_username": "postgres",
+  "db_password": "badpassword",
+  ...
+}
+```
 
 The initial configuration dictionary would look like:
 
-    {
-      "db_username__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY|JP:$.username",
-      "db_password__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY|JP:$.password",
+```js
+{
+  "db_username__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY|JP:$.username",
+  "db_password__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:db-PPrpY|JP:$.password",
 
-      ...
-    }
+  ...
+}
+```
 
 (The `__to_resolve` suffix (with 2 underscores!) of keys is removed during
 resolution. It can also be configured with the `resolved_config_property_name_suffix`
@@ -1129,43 +1142,52 @@ property of `ProcWrapperParams`.)
 
 proc_wrapper can also resolve keys in embedded dictionaries, like:
 
-    {
-      "db": {
-        "username__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY|JP:$.username",
-        "password__to_resolve":
-        "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY|JP:$.password",
-        ...
-      },
-      ...
-    }
+```js
+{
+  "db": {
+    "username__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY|JP:$.username",
+    "password__to_resolve":
+    "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY|JP:$.password",
+    ...
+  },
+  ...
+}
+```
 
 up to a maximum depth that you can control with `ProcWrapperParams.max_config_resolution_depth` (which defaults to 5). That would resolve to
 
-    {
-      "db": {
-        "username": "postgres",
-        "password": "badpassword"
-        ...
-      },
-      ...
-    }
+```js
+{
+  "db": {
+    "username": "postgres",
+    "password": "badpassword"
+    ...
+  },
+  ...
+}
+```
 
 You can also inject entire dictionaries, like:
 
-    {
-      "db__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY",
-      ...
-    }
+```js
+{
+  "db__to_resolve": "arn:aws:secretsmanager:us-east-2:1234567890:secret:config-PPrpY",
+  ...
+}
+```
 
 which would resolve to
 
-    {
-      "db": {
-        "username": "postgres",
-        "password": "badpassword"
-      },
-      ...
-    }
+
+```js
+{
+  "db": {
+    "username": "postgres",
+    "password": "badpassword"
+  },
+  ...
+}
+```
 
 To enable secret resolution in wrapped mode, set environment variable `PROC_WRAPPER_RESOLVE_SECRETS` to `TRUE`. In embedded mode, secret
 resolution is enabled by default; set the
@@ -1233,23 +1255,6 @@ of the process have completed. However, for debugging, the
 proc_wrapper to skip executing a process, and skip the deletion of the
 variable output files.
 
-## Runtime metadata
-
-Unless runtime metadata fetching is disabled, proc_wrapper automatically tries
-to fetch metadata about the runtime environment when running in:
-
-* AWS ECS
-* AWS Lambda
-* AWS Codebuild
-
-Additionally, it can fetch metadata when running in AWS EC2, if the
-`execution_method_type` argument is set to `AWS EC2`.
-
-proc_wrapper sends this metadata to the API server at the start and end of
-a Task Execution. The API server can use this data both to aid the user
-in debugging the Task Execution and also to discover how to start new
-Task Executions.
-
 ## Input and Result Values
 
 CloudReactor tracks the input and result values of Task Executions, and
@@ -1311,12 +1316,12 @@ setting the environment variable `PROC_WRAPPER_MERGE_STDOUT_AND_STDERR_LOGS` to
 In embedded mode, instances of ProcWrapper provides two methods to capture
 logs:
 
-* `debug_output(self, msg: str)`: adds the message to the debug log
-* `get_embedded_logging_handler(self)` returns a logging handler to be used with
+* `debug_output(msg)`: adds the message to the debug log
+* `get_embedded_logging_handler()` returns a logging handler to be used with
 python's logging package. Messages sent to this handler are added to the
 error log, which is by default merged with the debug log. Example usage:
 
-```
+```python
 def callback(wrapper: ProcWrapper, cbdata: Any, config[dict[str, str]]) -> str:
     logger = logging.getLogger("myapp")
     logger.setLevel(logging.INFO)
@@ -1326,8 +1331,13 @@ def callback(wrapper: ProcWrapper, cbdata: Any, config[dict[str, str]]) -> str:
     )
     logger.addHandler(log_handler)
 
-    # adds the message to the Task Execution's debug log
+    # Adds the message to the Task Execution's debug log if the
+    # merge_stdout_with_stderr setting is False (the default). Otherwise, this
+    # adds the message to the error log.
     logger.info("I am logging!")
+
+    # Always adds the message to the debug log
+    wrapper.debug_output("Debugging is hard")
 
     return 'Done!'
 ```
@@ -1348,61 +1358,65 @@ proc_wrapper program via UDP port 2373 (configurable with the
 If your application code is in python, you can use the provided
 `StatusUpdater` class to do this:
 
-    from proc_wrapper import StatusUpdater
+```python
+from proc_wrapper import StatusUpdater
 
-    with StatusUpdater() as updater:
-        updater.send_update(last_status_message="Starting ...")
-        success_count = 0
+with StatusUpdater() as updater:
+    updater.send_update(last_status_message="Starting ...")
+    success_count = 0
 
-        for i in range(100):
-            try:
-                do_work()
-                success_count += 1
-                updater.send_update(success_count=success_count)
-            except Exception:
-                failed_count += 1
-                updater.send_update(failed_count=failed_count)
+    for i in range(100):
+        try:
+            do_work()
+            success_count += 1
+            updater.send_update(success_count=success_count)
+        except Exception:
+            failed_count += 1
+            updater.send_update(failed_count=failed_count)
 
-        updater.send_update(last_status_message="Finished!")
+    updater.send_update(last_status_message="Finished!")
+```
 
 ### Status Updates in Embedded Mode
 
 In embedded mode, your callback in python code can use the wrapper instance to
 send updates:
 
-    from typing import Any, Mapping
+```python
+from typing import Any, Mapping
 
-    import proc_wrapper
-    from proc_wrapper import ProcWrapper
+import proc_wrapper
+from proc_wrapper import ProcWrapper
 
-    def fun(wrapper: ProcWrapper, cbdata: dict[str, int],
-            config: Mapping[str, Any]) -> int:
-        wrapper.update_status(last_status_message="Starting the fun ...")
+def fun(wrapper: ProcWrapper, cbdata: dict[str, int],
+        config: Mapping[str, Any]) -> int:
+    wrapper.update_status(last_status_message="Starting the fun ...")
 
-        success_count = 0
-        error_count = 0
-        for i in range(100):
-            try:
-                do_work()
-                success_count += 1
-            except Exception:
+    success_count = 0
+    error_count = 0
+    for i in range(100):
+        try:
+            do_work()
+            success_count += 1
+        except Exception:
 
-                error_count += 1
-            wrapper.update_status(success_count=success_count,
-                    error_count=error_count)
+            error_count += 1
+        wrapper.update_status(success_count=success_count,
+                error_count=error_count)
 
-        wrapper.update_status(last_status_message="The fun is over.")
+    wrapper.update_status(last_status_message="The fun is over.")
 
-        return cbdata["a"]
+    return cbdata["a"]
 
-    params = ProcWrapperParams()
-    params.auto_create_task = True
-    params.auto_create_task_run_environment_name = "production"
-    params.task_name = "embedded_test"
-    params.api_key = "YOUR_CLOUDREACTOR_API_KEY"
+params = ProcWrapperParams()
+params.auto_create_task = True
+params.auto_create_task_run_environment_name = "production"
+params.task_name = "embedded_test"
+params.api_key = "YOUR_CLOUDREACTOR_API_KEY"
 
-    proc_wrapper = ProcWrapper(params=params)
-    proc_wrapper.managed_call(fun, {"a": 1, "b": 2})
+proc_wrapper = ProcWrapper(params=params)
+proc_wrapper.managed_call(fun, {"a": 1, "b": 2})
+```
 
 ## Sampling
 
