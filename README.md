@@ -222,25 +222,22 @@ Install this module via pip (or your favorite package manager):
 `cloudreactor-procwrapper` doesn't have any required dependencies, but it can
 be installed with the following extras:
 
-`aws`: Support for fetching secrets from AWS Secrets Manager,
-Systems Manager Parameter Store (SSM), or S3, and
+* `aws`: Support for fetching secrets from AWS Secrets Manager,
+Systems Manager Parameter Store (SSM), App Config, or S3, and
 determining the assumed role, implemented by the
 [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 library. Note that you don't need this extra when running in AWS Lambda,
-as it's included already.
-
-`jsonpath`: Support for secret resolution using JSON Path, implemented by the
+as it's included already in the Lambda environment.
+* `jsonpath`: Support for secret resolution using JSON Path, implemented by the
 [jsonpath-ng](https://github.com/h2non/jsonpath-ng) library
-
-`yaml`: Support for configuration files in YAML format, implemented by the
+* `yaml`: Support for configuration files in YAML format, implemented by the
 [pyyaml](https://pyyaml.org/) library
-
-`dotenv`: Support for environment variables defined in the dotenv format,
+* `dotenv`: Support for environment variables defined in the dotenv format,
 implemented by the [dotenv](https://github.com/theskumar/python-dotenv) library
-
-`mergedeep`: Support for secret object value merging using alternative
+* `mergedeep`: Support for secret object value merging using alternative
 strategies, implemented by the
 [mergedeep](https://github.com/clarketm/mergedeep) library
+* `ec2`: Support for fetching EC2 metadata using the [ec2-metadata](https://github.com/adamchainz/ec2-metadata) library
 
 Use brackets after `cloudreactor-procwrapper` to enable support for the desired
 functionality. For example, to install AWS support, JSON Path secret resolution,
@@ -427,7 +424,20 @@ Here are all the options:
       --log-input-value     Log input value
       --log-result-value    Log result value
       --exclude-timestamps-in-log
-                            Exclude timestamps in log (possibly because the log stream will be enriched by timestamps automatically by a logging service like AWS CloudWatch Logs)
+                            Exclude timestamps in log (possibly because the log stream will be enriched by timestamps automatically by a logging service like AWS
+                            CloudWatch Logs)
+      --num-log-lines-sent-on-failure NUM_LOG_LINES_SENT_ON_FAILURE
+                            The number of trailing log lines to send to the API server if the Task Execution fails. Defaults to 0 (no log lines are sent).
+      --num-log-lines-sent-on-timeout NUM_LOG_LINES_SENT_ON_TIMEOUT
+                            The number of trailing log lines to send to the API server if the Task Execution fails. Defaults to 0 (no log lines are sent).
+      --num-log-lines-sent-on-success NUM_LOG_LINES_SENT_ON_SUCCESS
+                            The number of trailing log lines to send to the API server if the Task Execution succeeds. Defaults to 0 (no log lines are sent).
+      --max-log-line-length MAX_LOG_LINE_LENGTH
+                            The maximum number of characters in a saved log line. If a line is longer than this value, it will be truncated. Defaults to 1000.
+      --separate-stdout-and-stderr-logs
+                            Separate stdout and stderr streams when reporting log lines. Otherwise, the streams are merged into the stdout stream.
+      --ignore-stdout       Do send stdout log lines to the API server
+      --ignore-stderr       Do send stderr log lines to the API server
 
     process:
       Process settings
@@ -615,6 +625,13 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_RESULT_VALUE_FORMAT
 * PROC_WRAPPER_RESULT_FILENAME
 * PROC_WRAPPER_CLEANUP_RESULT_FILE (TRUE or FALSE)
+* PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE
+* PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_TIMEOUT
+* PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_SUCCESS
+* PROC_WRAPPER_MAX_LOG_LINE_LENGTH
+* PROC_WRAPPER_MERGE_STDOUT_AND_STDERR_LOGS (TRUE or FALSE)
+* PROC_WRAPPER_IGNORE_STDOUT (TRUE or FALSE)
+* PROC_WRAPPER_IGNORE_STDERR (TRUE or FALSE)
 * PROC_WRAPPER_STATUS_UPDATE_SOCKET_PORT
 * PROC_WRAPPER_STATUS_UPDATE_MESSAGE_MAX_BYTES
 * PROC_WRAPPER_ROLLBAR_ACCESS_TOKEN
@@ -781,6 +798,15 @@ keys and values in the dictionary will be used to to set these attributes in
 | status_update_interval                           | int        	| No      	| Yes                  	 |
 | log_level                                        | str        	| No      	| Yes                  	 |
 | include_timestamps_in_log                        | bool      	| No      	| Yes                  	 |
+| log_input_value                                  | bool      	| No      	| Yes                  	 |
+| log_result_value                                 | bool      	| No      	| Yes                  	 |
+| num_log_lines_sent_on_failure                    | int      	| No      	| Yes                  	 |
+| num_log_lines_sent_on_timeout                    | int      	| No      	| Yes                  	 |
+| num_log_lines_sent_on_success                    | int      	| No      	| Yes                  	 |
+| max_log_line_length                              | int      	| No      	| Yes                  	 |
+| merge_stdout_and_stderr_logs                     | bool      	| No      	| Yes                  	 |
+| ignore_stdout                                    | bool      	| No      	| Yes                  	 |
+| ignore_stderr                                    | bool      	| No      	| Yes                  	 |
 | api_key                                          | str        	| Yes     	| Yes                  	 |
 | api_request_timeout                              | int        	| Yes      	| Yes                  	 |
 | api_error_timeout                                | int        	| Yes     	| Yes                  	 |
@@ -1268,6 +1294,43 @@ or the corresponding environment variables `PROC_WRAPPER_LOG_INPUT_VALUE` and
 `PROC_WRAPPER_LOG_RESULT_VALUE` set to `TRUE`. Also, if a result filename was
 specified, the result file is deleted before exiting, unless
 `--no-cleanup-result-file` is specified.
+
+## Log Capture
+
+proc_wrapper can capture the last few lines (tail) of the output that a
+wrapped process writes to stdout and/or stderr, and send it to the API Server
+for debugging / searching purposes. To enable this feature, set the
+`num_log_lines_sent_on_failure`, `num_log_lines_sent_on_timeout`, and/or
+`num_log_lines_sent_on_success` which determine the number of lines sent back
+if the process fails, times out, or succeeds, respectively. stdout always goes
+to the debug log of a Task Execution. By default,
+stdout and stderr are merged into the debug log, but you can disable by
+setting the environment variable `PROC_WRAPPER_MERGE_STDOUT_AND_STDERR_LOGS` to
+`FALSE`. If disabled, stderr will be saved in the error log of the Task Execution.
+
+In embedded mode, instances of ProcWrapper provides two methods to capture
+logs:
+
+* `debug_output(self, msg: str)`: adds the message to the debug log
+* `get_embedded_logging_handler(self)` returns a logging handler to be used with
+python's logging package. Messages sent to this handler are added to the
+error log, which is by default merged with the debug log. Example usage:
+
+```
+def callback(wrapper: ProcWrapper, cbdata: Any, config[dict[str, str]]) -> str:
+    logger = logging.getLogger("myapp")
+    logger.setLevel(logging.INFO)
+    log_handler = wrapper.get_embedded_logging_handler()
+    log_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(log_handler)
+
+    # adds the message to the Task Execution's debug log
+    logger.info("I am logging!")
+
+    return 'Done!'
+```
 
 ## Status Updates
 
