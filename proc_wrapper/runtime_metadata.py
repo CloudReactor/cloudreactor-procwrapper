@@ -1134,7 +1134,11 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
         all_network_props["networks"] = task_execution_networks
         all_network_props["mac_address"] = ec2_metadata.mac
         aws_props["network"] = all_network_props
-        aws_props["tags"] = dict(ec2_metadata.tags)
+
+        try:
+            aws_props["tags"] = dict(ec2_metadata.tags)
+        except Exception:
+            _logger.info("tags not available in EC2 metadata, this must be enabled")
 
         derived = {"aws": aws_props}
 
