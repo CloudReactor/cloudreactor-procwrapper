@@ -1082,7 +1082,7 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
             for in_prop, out_prop in self.NETWORK_PROPERTY_MAPPINGS.items():
                 network_props[out_prop] = getattr(iface, in_prop)
 
-            ip_v4_addresses = iface.ipv4_associations.keys()
+            ip_v4_addresses = list(iface.ipv4_associations.keys())
             network_props["ip_v4_addresses"] = ip_v4_addresses
             host_addresses += ip_v4_addresses
 
