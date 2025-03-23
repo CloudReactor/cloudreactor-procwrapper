@@ -1379,9 +1379,15 @@ class ProcWrapper:
             want_config=self.override_params_from_config,
         )
 
-        self.runtime_metadata = self.runtime_metadata_fetcher.fetch(
-            env=self.resolved_env, context=self.runtime_context
-        )
+        try:
+            rm = self.runtime_metadata_fetcher.fetch(
+                env=self.resolved_env, context=self.runtime_context
+            )
+
+            if rm:
+                self.runtime_metadata = rm
+        except Exception:
+            _logger.exception("Failed to fetch runtime metadata during _reload_params()")
 
         self._override_params_from_env_and_config(mutable_only=True)
 
