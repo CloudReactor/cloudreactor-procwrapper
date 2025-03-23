@@ -288,7 +288,6 @@ class ProcWrapper:
         self.stderr_log_line_deque: Optional[deque[str]] = None
         self.stdout_reader_thread: Optional[threading.Thread] = None
         self.stderr_reader_thread: Optional[threading.Thread] = None
-        self.embedded_logging_handler: Optional[logging.Handler] = None
 
         self.resolved_env: dict[str, str] = self.env
         self.failed_env_names: list[str] = []
@@ -391,25 +390,28 @@ class ProcWrapper:
         if not self.params.embedded_mode:
             raise RuntimeError("Not in embedded mode")
 
-        if self.embedded_logging_handler:
-            return self.embedded_logging_handler
+        dq: Optional[deque[str]] = (
+            self.stdout_log_line_deque
+            if self.params.merge_stdout_and_stderr_logs
+            else self.stderr_log_line_deque
+        )
 
-        buffer_size = self.params.log_buffer_size()
+        if dq is None:
+            buffer_size = self.params.log_buffer_size()
 
-        if buffer_size <= 0:
-            return logging.NullHandler()
+            if buffer_size <= 0:
+                return logging.NullHandler()
 
-        dq: deque[str] = deque(maxlen=buffer_size)
+            dq = deque(maxlen=buffer_size)
 
-        if self.params.merge_stdout_and_stderr_logs:
-            self.stdout_log_line_deque = dq
-        else:
-            self.stderr_log_line_deque = dq
+            if self.params.merge_stdout_and_stderr_logs:
+                self.stdout_log_line_deque = dq
+            else:
+                self.stderr_log_line_deque = dq
 
-        self.embedded_logging_handler = DequeLoggingHandler(
+        return DequeLoggingHandler(
             dq=dq, max_line_length=self.params.max_log_line_length
         )
-        return self.embedded_logging_handler
 
     def debug_output(self, msg: str) -> None:
         """
