@@ -546,6 +546,7 @@ These environment variables take precedence over command-line arguments:
 * PROC_WRAPPER_AUTO_CREATE_TASK_PROPS (JSON encoded property map)
 * PROC_WRAPPER_TASK_IS_PASSIVE (TRUE OR FALSE)
 * PROC_WRAPPER_TASK_IS_SERVICE (TRUE or FALSE)
+* PROC_WRAPPER_EXECUTION_METHOD_TYPE
 * PROC_WRAPPER_EXECUTION_METHOD_PROPS (JSON encoded property map)
 * PROC_WRAPPER_TASK_MAX_CONCURRENCY (set to -1 to indicate no limit)
 * PROC_WRAPPER_PREVENT_OFFLINE_EXECUTION (TRUE or FALSE)
@@ -1206,6 +1207,23 @@ of the process have completed. However, for debugging, the
 proc_wrapper to skip executing a process, and skip the deletion of the
 variable output files.
 
+## Runtime metadata
+
+Unless runtime metadata fetching is disabled, proc_wrapper automatically tries
+to fetch metadata about the runtime environment when running in:
+
+* AWS ECS
+* AWS Lambda
+* AWS Codebuild
+
+Additionally, it can fetch metadata when running in AWS EC2, if the
+`execution_method_type` argument is set to `AWS EC2`.
+
+proc_wrapper sends this metadata to the API server at the start and end of
+a Task Execution. The API server can use this data both to aid the user
+in debugging the Task Execution and also to discover how to start new
+Task Executions.
+
 ## Input and Result Values
 
 CloudReactor tracks the input and result values of Task Executions, and
@@ -1337,7 +1355,7 @@ embedded function succeeds, no communication with the Task Management server wil
 However, if the wrapped process or embedded function fails, proc_wrapper will communicate
 with the Task Management server with probability `api-failure-notification-probability`, creating
 a Task Exection at that point with a `FAILED` status. Similarly, if the wrapped process
-times out, proc_wrapper will communicate  with the Task Management server with probability
+times out, proc_wrapper will communicate with the Task Management server with probability
 `api-timeout-notification-probability`, creating
 a Task Exection at that point with a `TERMINATED_AFTER_TIME_OUT` status.
 (Currently, timing out embedded functions is not supported.)
