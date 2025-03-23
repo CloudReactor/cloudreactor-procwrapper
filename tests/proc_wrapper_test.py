@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import platform
 import random
@@ -592,6 +593,82 @@ def test_wrapped_mode_with_server(
                 assert not os.path.exists(result_filename)
 
 
+@pytest.mark.parametrize(
+    """
+    env_override, command,
+    expected_debug_log_tail, expected_error_log_tail
+    """,
+    [
+        ({"PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_SUCCESS": "2"}, "echo hi", "hi", None),
+        (
+            {"PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE": "2"},
+            "ls notafile",
+            "notafile",
+            None,
+        ),
+        (
+            {"PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE": "2"},
+            "echo aya; echo bus; echo cab; badcmd",
+            "cab",
+            None,
+        ),
+        (
+            {
+                "PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_FAILURE": "2",
+                "PROC_WRAPPER_MERGE_STDOUT_AND_STDERR_LOGS": "0",
+            },
+            "ls notafile",
+            None,
+            "notafile",
+        ),
+        (
+            {
+                "PROC_WRAPPER_PROCESS_TIMEOUT_SECONDS": "2",
+                "PROC_WRAPPER_NUM_LOG_LINES_SENT_ON_TIMEOUT": "2",
+            },
+            "echo agh; sleep 5;",
+            "agh",
+            None,
+        ),
+    ],
+)
+def test_wrapped_mode_with_logs_sent_to_server(
+    httpserver: HTTPServer,
+    env_override: dict[str, str],
+    command: str,
+    expected_debug_log_tail: Optional[str],
+    expected_error_log_tail: Optional[str],
+) -> None:
+    # Shell commands are not working
+    if (";" in command) and platform.system() == "Windows":
+        return
+
+    env = make_online_base_env(httpserver.port, command=command)
+    env.update(env_override)
+
+    wrapper = make_wrapped_mode_proc_wrapper(env=env)
+
+    expect_task_execution_request(httpserver=httpserver, update=False)
+
+    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+
+    wrapper.run()
+
+    httpserver.check_assertions()
+
+    urd = fetch_update_request_data()
+
+    if expected_debug_log_tail:
+        assert urd["debug_log_tail"].index(expected_debug_log_tail) >= 0
+    else:
+        assert "debug_log_tail" not in urd
+
+    if expected_error_log_tail:
+        assert urd["error_log_tail"].index(expected_error_log_tail) >= 0
+    else:
+        assert "error_log_tail" not in urd
+
+
 TEST_DATETIME = datetime(2021, 8, 16, 14, 26, 54, tzinfo=timezone.utc)
 
 
@@ -731,7 +808,7 @@ def test_embedded_mode_with_server(
         assert should_succeed
     except RuntimeError as err:
         assert not should_succeed
-        assert str(err).find("you failed") >= 0
+        assert "you failed" in str(err)
     except Exception as ex:
         print(ex)
         assert False
@@ -955,6 +1032,120 @@ def test_embedded_mode_with_sampling(
     httpserver.check_assertions()
 
 
+def bad_callback_with_logging(
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, str]
+) -> str:
+    logger = logging.getLogger("proc_wrapper_test")
+
+    logger.info("This should be truncated")
+    logger.info("This is an info message")
+    logger.error("This is an error message")
+    logger.debug("This is an debug message")
+    logger.error("This is another error message")
+
+    raise RuntimeError("Nope!")
+
+
+@pytest.mark.parametrize(
+    """
+    merge_stdout_and_stderr_logs
+    """,
+    [(True), (False)],
+)
+def test_embedded_mode_with_log_capture(
+    merge_stdout_and_stderr_logs: bool, httpserver: HTTPServer
+):
+    params = make_online_params(httpserver.port)
+    params.process_max_retries = 0
+    params.num_log_lines_sent_on_failure = 3
+    params.merge_stdout_and_stderr_logs = merge_stdout_and_stderr_logs
+
+    wrapper = ProcWrapper(params=params)
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
+    )
+
+    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+
+    logger = logging.getLogger("proc_wrapper_test")
+    logger.setLevel(logging.INFO)
+    log_handler = wrapper.get_embedded_logging_handler()
+    log_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(log_handler)
+
+    expect_task_execution_request(httpserver=httpserver, update=False)
+
+    cb = bad_callback_with_logging
+    try:
+        wrapper.managed_call(cb, "duper")
+    except RuntimeError:
+        pass
+    else:
+        assert False
+
+    crd = fetch_creation_request_data()
+    assert crd["num_log_lines_sent_on_failure"] == 3
+
+    urd = fetch_update_request_data()
+    tail_prop = "debug_log_tail" if merge_stdout_and_stderr_logs else "error_log_tail"
+    log_tail = urd.get(tail_prop)
+
+    assert log_tail is not None
+    assert "truncated" not in log_tail
+    assert "an info message\n" in log_tail
+    assert "debug message" not in log_tail
+    assert "another error message" in log_tail
+
+    httpserver.check_assertions()
+
+
+def callback_with_debug_output(
+    wrapper: ProcWrapper, cbdata: str, config: dict[str, str]
+) -> str:
+    wrapper.debug_output("Line one")
+    wrapper.debug_output("Line two")
+    wrapper.debug_output("Line three")
+    wrapper.debug_output("Line four")
+
+    return "yes"
+
+
+def test_embedded_mode_with_debug_log_capture(httpserver: HTTPServer):
+    params = make_online_params(httpserver.port)
+    params.process_max_retries = 0
+    params.num_log_lines_sent_on_success = 3
+
+    wrapper = ProcWrapper(params=params)
+
+    fetch_creation_request_data = expect_task_execution_request(
+        httpserver=httpserver, update=False
+    )
+
+    fetch_update_request_data = expect_task_execution_request(httpserver=httpserver)
+
+    expect_task_execution_request(httpserver=httpserver, update=False)
+
+    cb = callback_with_debug_output
+
+    assert wrapper.managed_call(cb, "duper") == "yes"
+
+    crd = fetch_creation_request_data()
+    assert crd["num_log_lines_sent_on_success"] == 3
+
+    urd = fetch_update_request_data()
+    log_tail = urd.get("debug_log_tail")
+
+    assert log_tail is not None
+    assert "one" not in log_tail
+    assert "Line two\n" in log_tail
+    assert "Line four" in log_tail
+
+    httpserver.check_assertions()
+
+
 def callback_with_env_in_config(
     wrapper: ProcWrapper, cbdata: str, config: dict[str, Any]
 ) -> str:
@@ -964,6 +1155,7 @@ def callback_with_env_in_config(
 def test_env_pass_through():
     env_override = RESOLVE_ENV_BASE_ENV.copy()
     env_override["ANOTHER_ENV"] = "250"
+    env_override["PROC_WRAPPER_OFFLINE_MODE"] = "1"
 
     wrapper = ProcWrapper(env_override=env_override)
     process_env = wrapper.make_process_env()

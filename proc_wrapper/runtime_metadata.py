@@ -977,35 +977,27 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "ami_id",
         "ami_manifest_path",
         "instance_type",
-        "instance_profile_id",
-        "instance_profile_arn",
         "reservation_id",
-        "domain",
-        "partition",
-        "security_groups",
     ]
 
     COPIED_EXECUTION_METHOD_PROPERTIES = [
         "ami_launch_index",
+        "autoscaling_target_lifecycle_state",
         "instance_action",
         "instance_id",
         "instance_life_cycle",
-        "kernel_id",
-        "mac_address",
+        "kernel_id"
     ]
 
-    NETWORK_PROPERTY_MAPPINGS = {
+    EXECUTION_METHOD_NETWORK_PROPERTY_MAPPINGS = {
         "device_number": "device_number",
         "interface_id": "eni_id",
         "mac": "mac_address",
-        "owner_id": "aws_account_id",
         "private_hostname": "private_dns_name",
         "public_hostname": "public_dns_name",
         "private_ipv4s": "private_ip_v4_addresses",
         "public_ipv4s": "public_ip_v4_addresses",
         "ipv6s": "ip_v6_addresses",
-        "subnet_ipv4_cidr_block": "ip_v4_subnet_cidr_block",
-        "subnet_ipv6_cidr_block": "ip_v6_subnet_cidr_blocks",
     }
 
     def fetch(
@@ -1041,8 +1033,16 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
         region = ec2_metadata.region
 
         common_props: dict[str, Any] = {}
+
         for p in self.COPIED_COMMON_PROPERTIES:
             common_props[p] = getattr(ec2_metadata, p)
+
+        if ec2_metadata.instance_profile_id:
+            common_props["instance_profile"] = {
+                "id": ec2_metadata.instance_profile_id,
+                "name": ec2_metadata.instance_profile_name,
+                "arn": ec2_metadata.instance_profile_arn,
+            }
 
         execution_method: dict[str, Any] = {}
 
@@ -1064,45 +1064,25 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
         execution_method.update(common_props)
         execution_method_capability.update(common_props)
 
-        all_network_props = {
-            "region": region,
-            "availability_zone": ec2_metadata.availability_zone,
-        }
-
         task_execution_networks = []
+        task_networks = []
         host_addresses = []
         host_names = []
 
         for name, iface in ec2_metadata.network_interfaces.items():
             network_props: dict[str, Any] = {
                 "name": name,
-            }
-
-            for in_prop, out_prop in self.NETWORK_PROPERTY_MAPPINGS.items():
-                network_props[out_prop] = getattr(iface, in_prop)
-
-            ip_v4_addresses = iface.ipv4_associations.keys()
-            network_props["ip_v4_addresses"] = ip_v4_addresses
-            host_addresses += ip_v4_addresses
-
-            private_hostname = iface.private_hostname
-            if private_hostname:
-                host_names.append(private_hostname)
-
-            public_hostname = iface.public_hostname
-            if public_hostname:
-                host_names.append(public_hostname)
-
-            network_props["vpc"] = {
-                "id": iface.vpc_id,
-                "ip_v4_cidr_blocks": [b for b in iface.vpc_ipv4_cidr_blocks if b],
-                "ip_v6_cidr_blocks": iface.vpc_ipv6_cidr_blocks,
-            }
-
-            network_props["subnet"] = {
-                "id": iface.subnet_id,
-                "ip_v4_cidr_blocks": [iface.subnet_ipv4_cidr_block],
-                "ip_v6_cidr_blocks": iface.subnet_ipv6_cidr_blocks,
+                "aws_account_id": iface.owner_id,
+                "vpc": {
+                    "id": iface.vpc_id,
+                    "ip_v4_cidr_blocks": [b for b in iface.vpc_ipv4_cidr_blocks if b],
+                    "ip_v6_cidr_blocks": iface.vpc_ipv6_cidr_blocks,
+                },
+                "subnet": {
+                    "id": iface.subnet_id,
+                    "ip_v4_cidr_blocks": [iface.subnet_ipv4_cidr_block],
+                    "ip_v6_cidr_blocks": iface.subnet_ipv6_cidr_blocks,
+                },
             }
 
             sgs = []
@@ -1116,15 +1096,49 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
             network_props["security_groups"] = sgs
 
+            task_networks.append(network_props.copy())
+
+            for in_prop, out_prop in self.EXECUTION_METHOD_NETWORK_PROPERTY_MAPPINGS.items():
+                network_props[out_prop] = getattr(iface, in_prop)
+
+            ip_v4_addresses = list(iface.ipv4_associations.keys())
+            network_props["ip_v4_addresses"] = ip_v4_addresses
+            host_addresses += ip_v4_addresses
+
+            private_hostname = iface.private_hostname
+            if private_hostname:
+                host_names.append(private_hostname)
+
+            public_hostname = iface.public_hostname
+            if public_hostname:
+                host_names.append(public_hostname)
+
             task_execution_networks.append(network_props)
 
-        all_network_props["networks"] = task_execution_networks
+        all_network_props = {
+            "region": region,
+            "availability_zone": ec2_metadata.availability_zone,
+        }
 
-        aws_props = {"network": all_network_props}
+        aws_props = {
+            "aws_account_id": ec2_metadata.account_id,
+            "domain": ec2_metadata.domain,
+            "partition": ec2_metadata.partition,
+        }
 
         task_aws_props = aws_props.copy()
         task_network_props = all_network_props.copy()
+        task_network_props["networks"] = task_networks
         task_aws_props["network"] = task_network_props
+
+        all_network_props["networks"] = task_execution_networks
+        all_network_props["mac_address"] = ec2_metadata.mac
+        aws_props["network"] = all_network_props
+
+        try:
+            aws_props["tags"] = dict(ec2_metadata.tags)
+        except Exception:
+            _logger.info("tags not available in EC2 metadata, this must be enabled")
 
         derived = {"aws": aws_props}
 

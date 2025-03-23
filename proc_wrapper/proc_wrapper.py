@@ -32,13 +32,15 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from io import RawIOBase
 from subprocess import Popen, TimeoutExpired
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, TextIO, Union
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -52,6 +54,7 @@ from .common_utils import (
     parse_data_string,
     string_to_bool,
     stringify_value,
+    truncate,
     write_data_to_file,
 )
 from .config_resolver import ConfigResolver
@@ -86,6 +89,61 @@ def _signal_handler(signum, frame):
     # This will cause the exit handler to be executed, if it is registered.
     # TODO: use different exit code if configured
     sys.exit(0)
+
+
+def _tee_log_stream(
+    process_stream: TextIO,
+    sys_stream: TextIO,
+    line_queue: deque[str],
+    max_line_length: int,
+) -> None:
+    for line in iter(process_stream.readline, None):
+        if line:
+            sys_stream.write(line)
+            line_queue.append(truncate(line, max_line_length))
+        else:
+            return
+
+
+def _extract_log_lines(line_queue: deque[str], max_lines: int, separator: str) -> str:
+    """
+    Extract log lines from the queue, up to a maximum number of lines.
+    """
+    num_lines = len(line_queue)
+    num_lines_to_remove = max(0, num_lines - max_lines)
+
+    while num_lines_to_remove > 0:
+        try:
+            line_queue.popleft()
+            num_lines_to_remove -= 1
+        except IndexError:
+            # Just in case we have fewer lines than expected
+            break
+
+    rv = separator.join(line_queue)
+
+    line_queue.clear()
+
+    return rv
+
+
+class DequeLoggingHandler(logging.Handler):
+    def __init__(self, dq: deque[str], max_line_length: int) -> None:
+        """
+        Initialize the logging handler with a deque to store log messages.
+        """
+        super().__init__()
+        self.dq = dq
+        self.max_line_length = max_line_length
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """
+        Emit a log record to the deque.
+        """
+        # This method is called by the logging framework when a log record is created.
+        # We append the formatted log message to the deque.
+        line = self.format(record)
+        self.dq.append(truncate(line, self.max_line_length))
 
 
 class ProcWrapper:
@@ -163,6 +221,8 @@ class ProcWrapper:
     _SEND_RESULT_NON_FATAL_FAILURE = 2
     _SEND_RESULT_SKIPPED = 3
 
+    _LOG_READER_TIMEOUT_SECONDS = 30
+
     def __init__(
         self,
         params: Optional[ProcWrapperParams] = None,
@@ -224,6 +284,10 @@ class ProcWrapper:
         self.runtime_metadata: Optional[RuntimeMetadata] = None
         self.runtime_metadata_last_refreshed_at: Optional[float] = None
         self.runtime_metadata_last_sent_at: Optional[float] = None
+        self.stdout_log_line_deque: Optional[deque[str]] = None
+        self.stderr_log_line_deque: Optional[deque[str]] = None
+        self.stdout_reader_thread: Optional[threading.Thread] = None
+        self.stderr_reader_thread: Optional[threading.Thread] = None
 
         self.resolved_env: dict[str, str] = self.env
         self.failed_env_names: list[str] = []
@@ -318,6 +382,51 @@ class ProcWrapper:
             _logger.debug("Successfully installed exit handler and signal handler")
         else:
             _logger.debug("Skipping installation of exit handler and signal handler")
+
+    def get_embedded_logging_handler(self) -> logging.Handler:
+        """
+        Create a logging handler for the embedded mode.
+        """
+        if not self.params.embedded_mode:
+            raise RuntimeError("Not in embedded mode")
+
+        dq: Optional[deque[str]] = (
+            self.stdout_log_line_deque
+            if self.params.merge_stdout_and_stderr_logs
+            else self.stderr_log_line_deque
+        )
+
+        if dq is None:
+            buffer_size = self.params.log_buffer_size()
+
+            if buffer_size <= 0:
+                return logging.NullHandler()
+
+            dq = deque(maxlen=buffer_size)
+
+            if self.params.merge_stdout_and_stderr_logs:
+                self.stdout_log_line_deque = dq
+            else:
+                self.stderr_log_line_deque = dq
+
+        return DequeLoggingHandler(
+            dq=dq, max_line_length=self.params.max_log_line_length
+        )
+
+    def debug_output(self, msg: str) -> None:
+        """
+        Add a message to the debug log.
+        """
+        if self.stdout_log_line_deque is None:
+            buffer_size = self.params.log_buffer_size()
+            if buffer_size <= 0:
+                return
+
+            self.stdout_log_line_deque = deque(maxlen=buffer_size)
+
+        self.stdout_log_line_deque.append(
+            truncate(msg, self.params.max_log_line_length)
+        )
 
     def log_configuration(self, initial: bool = False) -> None:
         if initial:
@@ -752,6 +861,7 @@ class ProcWrapper:
             self.started_at = self.started_at or datetime.now(timezone.utc)
 
             body = {
+                "embedded_mode": self.params.embedded_mode,
                 "started_at": self.started_at.isoformat(),
                 "status": status,
                 "task_version_number": self.params.task_version_number,
@@ -792,15 +902,19 @@ class ProcWrapper:
                     self.params.api_request_timeout, empty_value=-1
                 ),
                 "status_update_interval_seconds": encode_int(
-                    self.params.status_update_interval, empty_value=-1
+                    self.params.status_update_interval
                 ),
-                "status_update_port": encode_int(
-                    self.params.status_update_socket_port, empty_value=-1
-                ),
+                "status_update_port": encode_int(self.params.status_update_socket_port),
                 "status_update_message_max_bytes": encode_int(
-                    self.params.status_update_message_max_bytes, empty_value=-1
+                    self.params.status_update_message_max_bytes
                 ),
-                "embedded_mode": self.params.embedded_mode,
+                "num_log_lines_sent_on_failure": self.params.num_log_lines_sent_on_failure,
+                "num_log_lines_sent_on_timeout": self.params.num_log_lines_sent_on_timeout,
+                "num_log_lines_sent_on_success": self.params.num_log_lines_sent_on_success,
+                "max_log_line_length": self.params.max_log_line_length,
+                "merge_stdout_and_stderr_logs": self.params.merge_stdout_and_stderr_logs,
+                "ignore_stdout": self.params.ignore_stdout,
+                "ignore_stderr": self.params.ignore_stderr,
             }
 
             if self.params.send_input_value and (self.input_value != UNSET_VALUE):
@@ -1265,9 +1379,15 @@ class ProcWrapper:
             want_config=self.override_params_from_config,
         )
 
-        self.runtime_metadata = self.runtime_metadata_fetcher.fetch(
-            env=self.resolved_env, context=self.runtime_context
-        )
+        try:
+            rm = self.runtime_metadata_fetcher.fetch(
+                env=self.resolved_env, context=self.runtime_context
+            )
+
+            if rm:
+                self.runtime_metadata = rm
+        except Exception:
+            _logger.exception("Failed to fetch runtime metadata during _reload_params()")
 
         self._override_params_from_env_and_config(mutable_only=True)
 
@@ -1353,10 +1473,27 @@ class ProcWrapper:
         if not should_run:
             return self._exit_or_raise(self._EXIT_CODE_GENERIC_ERROR)
 
-        if (not self.offline_mode) and self.params.enable_status_update_listener:
-            self._open_status_socket()
+        popen_stdout: Optional[Any] = None
+        popen_stderr: Optional[Any] = None
+
+        if self.offline_mode:
+            _logger.info("Not opening status socket or saving logs.")
         else:
-            _logger.info("Not opening status socket.")
+            num_lines = self.params.log_buffer_size()
+            if num_lines > 0:
+                if not self.params.ignore_stdout:
+                    self.stdout_log_line_deque = deque(maxlen=num_lines)
+                    popen_stdout = subprocess.PIPE
+
+                if not self.params.ignore_stderr:
+                    if self.params.merge_stdout_and_stderr_logs:
+                        popen_stderr = subprocess.STDOUT
+                    else:
+                        self.stderr_log_line_deque = deque(maxlen=num_lines)
+                        popen_stderr = subprocess.PIPE
+
+            if self.params.enable_status_update_listener:
+                self._open_status_socket()
 
         first_attempt_started_at: Optional[float] = None
         latest_attempt_started_at: Optional[float] = None
@@ -1393,10 +1530,17 @@ class ProcWrapper:
                     f"Running process (attempt {self.attempt_count}/{self.max_execution_attempts}) ..."
                 )
                 try:
-                    self._start_command(command=command, shell=shell)
+                    self._start_command(
+                        command=command,
+                        shell=shell,
+                        popen_stdout=popen_stdout,
+                        popen_stderr=popen_stderr,
+                    )
                 except Exception:
                     _logger.exception(f"Failed to start command '{command}'")
                     monitor_process_exit_code = self._EXIT_CODE_CONFIGURATION_ERROR
+
+            self._start_log_capture()
 
             done_polling = False
             while not done_polling:
@@ -1492,6 +1636,8 @@ class ProcWrapper:
 
                     done_polling = True
 
+                    self._end_log_capture()
+
                     if exit_code == self._EXIT_CODE_SUCCESS:
                         self.print_final_status(
                             exit_code=0,
@@ -1549,7 +1695,12 @@ class ProcWrapper:
                     command, shell = self.params.resolve_command_and_shell_flag()
 
                 if monitor_process_exit_code is not None:
-                    self._start_command(command=command, shell=shell)
+                    self._start_command(
+                        command=command,
+                        shell=shell,
+                        popen_stdout=popen_stdout,
+                        popen_stderr=popen_stderr,
+                    )
 
         if self.attempt_count >= self.max_execution_attempts:
             self.print_final_status(
@@ -1733,6 +1884,9 @@ class ProcWrapper:
                 _logger.exception(f"Could not kill process with pid {pid}")
 
         self.process = None
+
+        self._end_log_capture()
+
         return None
 
     def _ensure_non_embedded_mode(self):
@@ -1741,39 +1895,48 @@ class ProcWrapper:
                 "Called method is only for wrapped process (non-embedded) mode"
             )
 
-    def _start_command(self, command: Union[str, list[str]], shell: bool):
+    def _start_command(
+        self,
+        command: Union[str, list[str]],
+        shell: bool,
+        popen_stdout: Optional[Any],
+        popen_stderr: Optional[Any],
+    ):
         if self.process_env is None:
             self.process_env = self.make_process_env()
             if self.process_env and self.params.log_secrets:
                 _logger.debug(f"process_env={self.process_env}")
 
-        # Set the session ID so we can kill the process as a group, so we kill
-        # all subprocesses. See https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true
-        # On Windows, os does not have setsid function.
-        preexec_fn = (
-            getattr(os, "setsid", None)
-            if self.params.process_group_termination
-            else None
-        )
-
+        start_new_session = False
         creationflags = 0
+        if self.params.process_group_termination:
+            if self.is_windows:
+                creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP")
+            elif os.name == "posix":
+                start_new_session = True
 
-        if self.params.process_group_termination and self.is_windows:
-            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP")
+        bufsize = -1
+        text = None
+
+        if popen_stdout or popen_stderr:
+            bufsize = 1
+            text = True
 
         self.process = Popen(
             command,
+            bufsize=bufsize,
             shell=shell,
-            stdout=None,
-            stderr=None,
+            stdout=popen_stdout,
+            stderr=popen_stderr,
+            start_new_session=start_new_session,
             env=self.process_env,
             cwd=self.params.work_dir,
-            preexec_fn=preexec_fn,
+            text=text,
             creationflags=creationflags,
         )
 
         pid = self.process.pid
-        _logger.info(f"pid = {pid}")
+        _logger.info(f"{pid=}")
 
         if (
             pid
@@ -2061,6 +2224,30 @@ class ProcWrapper:
                 for_task=False,
             )
 
+        num_log_lines = 0
+        if status == self.STATUS_FAILED:
+            num_log_lines = self.params.num_log_lines_sent_on_failure
+        elif status == self.STATUS_SUCCEEDED:
+            num_log_lines = self.params.num_log_lines_sent_on_success
+        elif status != self.STATUS_RUNNING:
+            num_log_lines = self.params.num_log_lines_sent_on_timeout
+
+        if num_log_lines > 0:
+            separator = "\n" if self.params.embedded_mode else ""
+            if self.stdout_log_line_deque and (self.stdout_reader_thread is None):
+                body["debug_log_tail"] = _extract_log_lines(
+                    line_queue=self.stdout_log_line_deque,
+                    max_lines=num_log_lines,
+                    separator=separator,
+                )
+
+            if self.stderr_log_line_deque and (self.stderr_reader_thread is None):
+                body["error_log_tail"] = _extract_log_lines(
+                    line_queue=self.stderr_log_line_deque,
+                    max_lines=num_log_lines,
+                    separator=separator,
+                )
+
         return body
 
     def _compute_successful_request_deadline(
@@ -2235,6 +2422,8 @@ class ProcWrapper:
                         is_final_update=is_final_update,
                     )
 
+                    print(f"computed {deadline=}, now = {time.time()}")
+
                 self.last_api_request_failed_at = time.time()
 
                 api_request_data.pop("response", None)
@@ -2247,6 +2436,8 @@ class ProcWrapper:
 
                 self._report_error(error_message, api_request_data)
 
+            print(f"{deadline=}, now = {time.time()}")
+
             if (deadline is None) or (time.time() < deadline):
                 _logger.debug(f"Sleeping {retry_delay} seconds after request error ...")
                 time.sleep(retry_delay)
@@ -2254,16 +2445,17 @@ class ProcWrapper:
 
         self.api_server_retries_exhausted = True
 
-        if is_task_execution_creation_request and (
-            self.params.prevent_offline_execution or self.was_conflict
-        ):
-            _logger.critical(
-                "Exiting because Task Execution creation timed out and offline execution is prevented or there was a conflict."
-            )
-            exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(
-                status_code or 0, self._EXIT_CODE_GENERIC_ERROR
-            )
-            self._exit_or_raise(exit_code)
+        if is_task_execution_creation_request:
+            if self.params.prevent_offline_execution or self.was_conflict:
+                _logger.critical(
+                    "Exiting because Task Execution creation timed out and offline execution is prevented or there was a conflict."
+                )
+                exit_code = self._RESPONSE_CODE_TO_EXIT_CODE.get(
+                    status_code or 0, self._EXIT_CODE_GENERIC_ERROR
+                )
+                self._exit_or_raise(exit_code)
+            else:
+                self.skip_start_notification = True
 
         self._report_error(
             "Exhausted retry timeout, not sending any more API requests.",
@@ -2342,6 +2534,47 @@ class ProcWrapper:
                 handler.setFormatter(formatter)
             except Exception:
                 _logger.warning("Can't set formatter on logger")
+
+    def _start_log_capture(self) -> None:
+        self._end_log_capture()
+
+        if self.process:
+            if self.process.stdout and (self.stdout_log_line_deque is not None):
+                self.stdout_reader_thread = threading.Thread(
+                    target=_tee_log_stream,
+                    args=(
+                        self.process.stdout,
+                        sys.stdout,
+                        self.stdout_log_line_deque,
+                        self.params.max_log_line_length,
+                    ),
+                    daemon=True,
+                )
+                self.stdout_reader_thread.start()
+
+            if self.process.stderr and (self.stderr_log_line_deque is not None):
+                self.stderr_reader_thread = threading.Thread(
+                    target=_tee_log_stream,
+                    args=(
+                        self.process.stderr,
+                        sys.stderr,
+                        self.stderr_log_line_deque,
+                        self.params.max_log_line_length,
+                    ),
+                    daemon=True,
+                )
+                self.stderr_reader_thread.start()
+        else:
+            _logger.error("No process to start log capture on")
+
+    def _end_log_capture(self) -> None:
+        if self.stdout_reader_thread:
+            self.stdout_reader_thread.join(timeout=self._LOG_READER_TIMEOUT_SECONDS)
+            self.stdout_reader_thread = None
+
+        if self.stderr_reader_thread:
+            self.stderr_reader_thread.join(timeout=self._LOG_READER_TIMEOUT_SECONDS)
+            self.stderr_reader_thread = None
 
     def _exit_or_raise(self, exit_code: int) -> int:
         if self.params.embedded_mode:
