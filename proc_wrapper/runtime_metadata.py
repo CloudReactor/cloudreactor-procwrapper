@@ -990,8 +990,7 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
         "instance_action",
         "instance_id",
         "instance_life_cycle",
-        "kernel_id",
-        "mac_address",
+        "kernel_id"
     ]
 
     NETWORK_PROPERTY_MAPPINGS = {
@@ -1048,6 +1047,8 @@ class AwsEc2RuntimeMetadataFetcher(RuntimeMetadataFetcher):
 
         for p in self.COPIED_EXECUTION_METHOD_PROPERTIES:
             execution_method[p] = getattr(ec2_metadata, p)
+
+        execution_method["mac_address"] = ec2_metadata.mac
 
         if ec2_metadata.spot_instance_action:
             execution_method[
