@@ -1387,7 +1387,9 @@ class ProcWrapper:
             if rm:
                 self.runtime_metadata = rm
         except Exception:
-            _logger.exception("Failed to fetch runtime metadata during _reload_params()")
+            _logger.exception(
+                "Failed to fetch runtime metadata during _reload_params()"
+            )
 
         self._override_params_from_env_and_config(mutable_only=True)
 
@@ -2422,8 +2424,6 @@ class ProcWrapper:
                         is_final_update=is_final_update,
                     )
 
-                    print(f"computed {deadline=}, now = {time.time()}")
-
                 self.last_api_request_failed_at = time.time()
 
                 api_request_data.pop("response", None)
@@ -2435,8 +2435,6 @@ class ProcWrapper:
                     error_message = f"Unhandled exception: {ex}"
 
                 self._report_error(error_message, api_request_data)
-
-            print(f"{deadline=}, now = {time.time()}")
 
             if (deadline is None) or (time.time() < deadline):
                 _logger.debug(f"Sleeping {retry_delay} seconds after request error ...")
