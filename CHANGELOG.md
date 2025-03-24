@@ -143,3 +143,10 @@ Fixes:
 
 Breaking changes:
 * Drop support for Python 3.8
+
+## v6.0.1 (2025-03-24)
+Fixes:
+* Remove extra print statements
+
+Features:
+* Add executables for Debian and Win64. No Amazon Linux 2 executable this release due to python 3.9 not being available by default.
