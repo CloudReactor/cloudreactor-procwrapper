@@ -1,4 +1,4 @@
-FROM python:3.10.12-slim-buster
+FROM python:3.9.17-slim-buster
 
 LABEL maintainer="jeff@cloudreactor.io"
 
@@ -29,12 +29,12 @@ RUN \
         # upx
 
 WORKDIR /root/app
-RUN pip install --no-input --no-cache-dir --upgrade pip==22.2.2
+RUN pip install --no-input --no-cache-dir --upgrade pip==25.0.1
 
 COPY proc_wrapper-requirements.txt .
 
 RUN pip install -r proc_wrapper-requirements.txt
-RUN pip install pyinstaller==5.4.1
+RUN pip install pyinstaller==6.12.0
 
 COPY proc_wrapper ./proc_wrapper
 
