@@ -150,3 +150,10 @@ Fixes:
 
 Features:
 * Add executables for Debian and Win64. No Amazon Linux 2 executable this release due to python 3.9 not being available by default.
+
+
+## v6.0.2 (2025-03-24)
+Fixes:
+* Workaround missing boto3 client close() methods in PyInstaller executables
+* Downgrade to python 3.9 in PyInstaller executable for Debian due to "ModuleNotFoundError: No module named 'configparser'" error
+* Use region in Secrets Manager ARN by default
