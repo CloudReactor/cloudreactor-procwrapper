@@ -373,20 +373,14 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
     ) -> tuple[str, Optional[str], Optional[Any]]:
         region_name = self.aws_region_name
 
-        if not region_name:
-            parts = location.split(":")
-
-            if len(parts) < 4:
-                raise ValueError(
-                    f"Invalid AWS Secrets Manager ARN '{location}', must include region"
-                )
-
-            if parts[0] != "arn":
-                raise ValueError(
-                    f"Invalid AWS Secrets Manager ARN '{location}', must start with 'arn'"
-                )
-
+        parts = location.split(":")
+        if (len(parts) >= 4) and (parts[0] == "arn"):
             region_name = parts[3]
+
+        if not region_name:
+            raise ValueError(
+                f"Invalid AWS Secrets Manager ARN '{location}', region name is missing"
+            )
 
         client = self.get_or_create_aws_secrets_manager_client(region_name=region_name)
 
