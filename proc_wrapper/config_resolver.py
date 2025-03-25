@@ -339,6 +339,15 @@ class AwsSecretProvider(SecretProvider):
     def __init__(self, name: str, value_prefixes: Optional[list[str]]):
         super().__init__(name=name, value_prefixes=value_prefixes, should_cache=True)
 
+    def safe_close(self, client: Optional[Any]) -> None:
+        # When running in an executable created by PyInstaller, boto3 clients
+        # may not have a close() method
+        if client and hasattr(client, "close"):
+            try:
+                client.close()
+            except Exception as e:
+                _logger.debug(f"Failed to close boto3 client: {e}")
+
     def make_client_config(self) -> Any:
         from botocore.config import Config
 
@@ -346,7 +355,7 @@ class AwsSecretProvider(SecretProvider):
 
 
 class AwsSecretsManagerSecretProvider(AwsSecretProvider):
-    def __init__(self, aws_region_name: str):
+    def __init__(self, aws_region_name: Optional[str]):
         super().__init__(
             name=SECRET_PROVIDER_AWS_SECRETS_MANAGER,
             value_prefixes=[AWS_SECRETS_MANAGER_PREFIX],
@@ -355,9 +364,6 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
         self.aws_secrets_manager_client_create_attempted_at: Optional[float] = None
         self.aws_region_name = aws_region_name
 
-        if not aws_region_name:
-            _logger.debug("Cannot determine AWS region to use with Secrets Manager")
-
     def fetch_internal(
         self,
         location: str,
@@ -365,12 +371,24 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
         env: dict[str, str],
         explicit_format: Optional[str],
     ) -> tuple[str, Optional[str], Optional[Any]]:
-        if not self.aws_region_name:
-            raise RuntimeError(
-                "Can't use AWS Secrets Manager without AWS region setting"
-            )
+        region_name = self.aws_region_name
 
-        client = self.get_or_create_aws_secrets_manager_client()
+        if not region_name:
+            parts = location.split(":")
+
+            if len(parts) < 4:
+                raise ValueError(
+                    f"Invalid AWS Secrets Manager ARN '{location}', must include region"
+                )
+
+            if parts[0] != "arn":
+                raise ValueError(
+                    f"Invalid AWS Secrets Manager ARN '{location}', must start with 'arn'"
+                )
+
+            region_name = parts[3]
+
+        client = self.get_or_create_aws_secrets_manager_client(region_name=region_name)
 
         if client is None:
             raise RuntimeError("Can't create AWS Secrets Manager client")
@@ -384,9 +402,11 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
 
             return (string_value, explicit_format, None)
         finally:
-            client.close()
+            self.safe_close(client)
 
-    def get_or_create_aws_secrets_manager_client(self) -> Optional[Any]:
+    def get_or_create_aws_secrets_manager_client(
+        self, region_name: Optional[str] = None
+    ) -> Optional[Any]:
         if not self.aws_secrets_manager_client:
             if self.aws_secrets_manager_client_create_attempted_at:
                 return None
@@ -403,7 +423,7 @@ class AwsSecretsManagerSecretProvider(AwsSecretProvider):
 
             self.aws_secrets_manager_client = boto3.client(
                 service_name="secretsmanager",
-                region_name=self.aws_region_name,
+                region_name=(region_name or self.aws_region_name),
                 config=self.make_client_config(),
             )
 
@@ -458,8 +478,7 @@ class AwsSystemsManagerParameterStoreSecretProvider(AwsSecretProvider):
             else:
                 return (raw_value, explicit_format, None)
         finally:
-            if client:
-                client.close()
+            self.safe_close(client)
 
     def get_or_create_aws_ssm_client(self, region_name: Optional[str]) -> Optional[Any]:
         try:
@@ -544,7 +563,7 @@ class AwsAppConfigSecretProvider(AwsSecretProvider):
                 _logger.debug(f"Got configuration value {raw_value} for '{location}'")
                 return (raw_value, explicit_format or format, None)
         finally:
-            client.close()
+            self.safe_close(client)
 
     def get_or_create_aws_app_config_client(self) -> Optional[Any]:
         if not self.aws_app_config_client:
