@@ -2,7 +2,8 @@ FROM public.ecr.aws/amazonlinux/amazonlinux:2023.6.20250303.0
 
 LABEL maintainer="jeff@cloudreactor.io"
 
-RUN dnf install -y shadow-utils openssl openssl-devel binutils python3-pip
+RUN dnf update && \
+  dnf install -y shadow-utils openssl openssl-devel binutils python3-pip
 
 RUN groupadd appuser && useradd -g appuser --create-home appuser
 USER appuser
