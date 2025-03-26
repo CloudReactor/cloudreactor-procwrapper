@@ -1,0 +1,26 @@
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023.6.20250303.0
+
+LABEL maintainer="jeff@cloudreactor.io"
+
+RUN dnf install -y shadow-utils openssl openssl-devel binutils python3-pip
+
+RUN groupadd appuser && useradd -g appuser --create-home appuser
+USER appuser
+WORKDIR /home/appuser
+
+#RUN curl -O https://bootstrap.pypa.io/get-pip.py
+#RUN python3 get-pip.py --user
+
+RUN pip3 install --no-input --no-cache-dir --upgrade pip==25.0.1
+
+COPY proc_wrapper-requirements.txt .
+
+RUN pip3 install -r proc_wrapper-requirements.txt
+RUN pip3 install certifi
+RUN pip3 install pyinstaller==6.12.0
+
+COPY proc_wrapper ./proc_wrapper
+
+RUN python3.9 /home/appuser/.local/lib/python3.9/site-packages/PyInstaller/ -F --name proc_wrapper --noupx --clean proc_wrapper/__main__.py
+
+ENTRYPOINT ["ls", "-la", "dist/proc_wrapper"]
