@@ -1,26 +1,43 @@
-FROM amazonlinux:2.0.20220805.0
+FROM public.ecr.aws/amazonlinux/amazonlinux:2.0.20250305.0
 
 LABEL maintainer="jeff@cloudreactor.io"
 
-RUN yum install -y shadow-utils openssl binutils glibc ca-certificates curl python3.7 python3-pip libssl-dev
+RUN yum -y update && yum -y groupinstall "Development Tools" && \
+   yum -y install gcc openssl-devel bzip2-devel libffi-devel \
+   shadow-utils openssl binutils glibc ca-certificates curl python3-pip libssl-dev
+
+WORKDIR /root/app
+RUN curl -O https://www.python.org/ftp/python/3.9.21/Python-3.9.21.tgz && \
+  tar zxvf Python-3.9.21.tgz
+
+WORKDIR /root/app/Python-3.9.21/
+# --enable-shared is needed for PyInstaller to work properly, it looks for
+# libpython3.9.so.1.0
+RUN ./configure --enable-shared && make && make altinstall
+
+RUN alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 2 && \
+  alternatives --auto python3
+
+RUN curl -O https://bootstrap.pypa.io/get-pip.py
+
+RUN echo "/usr/local/lib" | tee -a /etc/ld.so.conf.d/python3.9.conf && \
+  ldconfig
+
+RUN python3.9 get-pip.py --user
+RUN alternatives --install /usr/bin/pip3 pip3 /usr/bin/pip3.9 2
 
 RUN groupadd appuser && useradd -g appuser --create-home appuser
 USER appuser
 WORKDIR /home/appuser
 
-#RUN curl -O https://bootstrap.pypa.io/get-pip.py
-#RUN python3 get-pip.py --user
-
-RUN pip3 install --no-input --no-cache-dir --upgrade pip==22.2.2
-
 COPY proc_wrapper-requirements.txt .
 
-RUN pip3 install -r proc_wrapper-requirements.txt
-RUN pip3 install certifi
-RUN pip3 install pyinstaller==5.4.1
+RUN pip3.9 install -r proc_wrapper-requirements.txt
+RUN pip3.9 install certifi
+RUN pip3.9 install pyinstaller==6.12.0
 
 COPY proc_wrapper ./proc_wrapper
 
-RUN python3 /home/appuser/.local/lib/python3.7/site-packages/PyInstaller/ -F --name proc_wrapper --noupx --clean proc_wrapper/__main__.py
+RUN python3.9 /home/appuser/.local/lib/python3.9/site-packages/PyInstaller/ -F --name proc_wrapper --noupx --clean proc_wrapper/__main__.py
 
 ENTRYPOINT ["ls", "-la", "dist/proc_wrapper"]
